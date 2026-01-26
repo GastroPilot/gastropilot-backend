@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from httpx import AsyncClient, ASGITransport
 
 from app.database import Base
-from app.database.instance import get_session as get_db_session
+from app.dependencies import get_session as get_db_session
 from app.main import app
 from app.auth import hash_password, create_access_token
 
