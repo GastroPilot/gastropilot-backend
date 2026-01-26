@@ -206,7 +206,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: staging
-      url: https://api-staging.gastropilot.app
+      url: https://api-staging.gpilot.app
     steps:
       - name: Deploy to Staging Server
         uses: appleboy/ssh-action@v1.0.3
@@ -261,7 +261,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'demo'
     environment:
       name: demo
-      url: https://api-demo.gastropilot.app
+      url: https://api-demo.gpilot.app
     steps:
       - name: Deploy to Demo Server
         uses: appleboy/ssh-action@v1.0.3
@@ -312,7 +312,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
     environment:
       name: production
-      url: https://api.gastropilot.app
+      url: https://api.gpilot.app
     steps:
       - name: Deploy to Production Server
         uses: appleboy/ssh-action@v1.0.3
