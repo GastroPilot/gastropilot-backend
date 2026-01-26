@@ -1,15 +1,13 @@
-from fastapi import Depends, HTTPException, status, Request, Cookie
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import Optional
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from fastapi import Cookie, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+
+from app.auth import verify_token
 from app.database.instance import async_session
 from app.database.models import User
-from app.auth import verify_token
 from app.services.license_service import license_service
-from app.settings import USE_HTTPONLY_COOKIES
 from app.utils.cookies import get_token_from_cookie_or_header
 
 security = HTTPBearer(auto_error=False)  # Don't auto-error to allow cookie fallback
@@ -34,38 +32,38 @@ async def get_session():
 
 
 async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    access_token: Optional[str] = Cookie(default=None),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    access_token: str | None = Cookie(default=None),
 ) -> User:
     """
     Holt den aktuellen User aus dem JWT-Token.
-    
+
     Supports both:
     - HttpOnly cookies (when USE_HTTPONLY_COOKIES=true)
     - Authorization header (Bearer token)
-    
+
     Cookies take precedence when USE_HTTPONLY_COOKIES is enabled.
     """
     # Get token from cookie or header
     header_token = credentials.credentials if credentials else None
     token = get_token_from_cookie_or_header(access_token, header_token)
-    
+
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     payload = verify_token(token)
-    
+
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     user_id = payload.get("sub") or payload.get("user_id")
     if not user_id:
         raise HTTPException(
@@ -73,24 +71,23 @@ async def get_current_user(
             detail="Token missing user_id",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == int(user_id)))
         user = result.scalar_one_or_none()
-        
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         if not user.is_active:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User account is inactive"
+                status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive"
             )
-        
+
         return user
 
 
@@ -101,7 +98,7 @@ async def require_servecta_role(
     if current_user.role != "servecta":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions: servecta role required"
+            detail="Insufficient permissions: servecta role required",
         )
     return current_user
 
@@ -113,7 +110,7 @@ async def require_restaurantinhaber_role(
     if current_user.role not in ["restaurantinhaber", "servecta"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions: restaurantinhaber or servecta role required"
+            detail="Insufficient permissions: restaurantinhaber or servecta role required",
         )
     return current_user
 
@@ -125,7 +122,7 @@ async def require_schichtleiter_role(
     if current_user.role not in ["schichtleiter", "restaurantinhaber", "servecta"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions: schichtleiter, restaurantinhaber or servecta role required"
+            detail="Insufficient permissions: schichtleiter, restaurantinhaber or servecta role required",
         )
     return current_user
 
@@ -137,7 +134,7 @@ async def require_mitarbeiter_role(
     if current_user.role not in ["mitarbeiter", "schichtleiter", "restaurantinhaber", "servecta"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions: mitarbeiter role or higher required"
+            detail="Insufficient permissions: mitarbeiter role or higher required",
         )
     return current_user
 
@@ -149,8 +146,7 @@ async def require_reservations_module(
     await license_service.ensure_initialized()
     if not license_service.is_feature_enabled("reservations_module"):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Reservations module is not licensed"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Reservations module is not licensed"
         )
     return current_user
 
@@ -162,8 +158,7 @@ async def require_orders_module(
     await license_service.ensure_initialized()
     if not license_service.is_feature_enabled("orders_module"):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Orders module is not licensed"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Orders module is not licensed"
         )
     return current_user
 
@@ -187,13 +182,12 @@ def normalize_datetime_to_utc(dt: datetime) -> datetime:
     """Konvertiert ein datetime-Objekt zu UTC (wenn es noch nicht in UTC ist)."""
     if dt.tzinfo is None:
         # Naive datetime: assume it's local time and convert to UTC
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     # Aware datetime: convert to UTC
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 # License/Module Dependencies
-from app.services.license_service import license_service
 
 
 async def require_reservations_module():
@@ -205,7 +199,7 @@ async def require_reservations_module():
     if not license_service.is_feature_enabled("reservations_module"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Reservations module is not enabled for this license"
+            detail="Reservations module is not enabled for this license",
         )
 
 
@@ -218,5 +212,5 @@ async def require_orders_module():
     if not license_service.is_feature_enabled("orders_module"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Orders module is not enabled for this license"
+            detail="Orders module is not enabled for this license",
         )

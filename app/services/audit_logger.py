@@ -1,9 +1,10 @@
 """
 Audit-Logger: schreibt strukturierte Audit-Logs in die Datenbank.
 """
+
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +25,7 @@ def _serialize_value(value: Any) -> Any:
     return value
 
 
-def _serialize_details(details: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _serialize_details(details: dict[str, Any] | None) -> dict[str, Any] | None:
     if details is None:
         return None
     return {key: _serialize_value(value) for key, value in details.items()}
@@ -33,14 +34,14 @@ def _serialize_details(details: Optional[Dict[str, Any]]) -> Optional[Dict[str, 
 async def create_audit_log(
     session: AsyncSession,
     *,
-    restaurant_id: Optional[int],
-    user_id: Optional[int],
+    restaurant_id: int | None,
+    user_id: int | None,
     entity_type: str,
-    entity_id: Optional[int],
+    entity_id: int | None,
     action: str,
-    description: Optional[str] = None,
-    details: Optional[Dict[str, Any]] = None,
-    ip_address: Optional[str] = None,
+    description: str | None = None,
+    details: dict[str, Any] | None = None,
+    ip_address: str | None = None,
     use_own_transaction: bool = False,
 ) -> None:
     """

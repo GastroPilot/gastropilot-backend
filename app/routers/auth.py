@@ -1,15 +1,37 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
-from app.dependencies import get_session, get_current_user, require_servecta_role, require_restaurantinhaber_role
-from app.database.models import User, RefreshToken
-from app.auth import hash_password, verify_password, create_access_token, create_refresh_token, hash_refresh_token, verify_token
-from app.schemas import LoginRequest, NFCLoginRequest, TokenResponse, UserRead, UserCreate, UserUpdate, RefreshRequest
-from app.settings import ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS, USE_HTTPONLY_COOKIES
-from app.utils.cookies import set_auth_cookies, clear_auth_cookies
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth import (
+    create_access_token,
+    create_refresh_token,
+    hash_password,
+    hash_refresh_token,
+    verify_password,
+    verify_token,
+)
+from app.database.models import RefreshToken, User
+from app.dependencies import (
+    get_current_user,
+    get_session,
+    require_restaurantinhaber_role,
+)
+from app.schemas import (
+    LoginRequest,
+    NFCLoginRequest,
+    RefreshRequest,
+    TokenResponse,
+    UserCreate,
+    UserRead,
+    UserUpdate,
+)
+from app.settings import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    USE_HTTPONLY_COOKIES,
+)
+from app.utils.cookies import clear_auth_cookies, set_auth_cookies
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -19,12 +41,10 @@ SERVECTA_OPERATOR_NUMBERS = ["0000", "0001"]
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
-    login_data: LoginRequest,
-    response: Response,
-    session: AsyncSession = Depends(get_session)
+    login_data: LoginRequest, response: Response, session: AsyncSession = Depends(get_session)
 ):
     """Login mit Bedienernummer und PIN.
-    
+
     When USE_HTTPONLY_COOKIES is enabled, tokens are also set as HttpOnly cookies
     for improved security against XSS attacks.
     """
@@ -32,32 +52,29 @@ async def login(
         select(User).where(User.operator_number == login_data.operator_number)
     )
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid operator number or PIN"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid operator number or PIN"
         )
-    
+
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is inactive"
+            status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive"
         )
-    
+
     if not verify_password(login_data.pin, user.pin_hash):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid operator number or PIN"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid operator number or PIN"
         )
-    user.last_login_at_utc = datetime.now(timezone.utc)
+    user.last_login_at_utc = datetime.now(UTC)
 
     access_token = create_access_token(
         data={
             "user_id": user.id,
             "sub": str(user.id),
             "operator_number": user.operator_number,
-            "role": user.role
+            "role": user.role,
         }
     )
     refresh_token = create_refresh_token(user.id)
@@ -67,9 +84,9 @@ async def login(
     if not payload or "exp" not in payload:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not issue refresh token"
+            detail="Could not issue refresh token",
         )
-    expires_at = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
+    expires_at = datetime.fromtimestamp(payload["exp"], tz=UTC)
     session.add(
         RefreshToken(
             user_id=user.id,
@@ -87,40 +104,31 @@ async def login(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
 @router.post("/login-nfc", response_model=TokenResponse)
-async def login_nfc(
-    login_data: NFCLoginRequest,
-    session: AsyncSession = Depends(get_session)
-):
+async def login_nfc(login_data: NFCLoginRequest, session: AsyncSession = Depends(get_session)):
     """Login mit NFC-Tag-ID (ohne PIN)."""
-    result = await session.execute(
-        select(User).where(User.nfc_tag_id == login_data.nfc_tag_id)
-    )
+    result = await session.execute(select(User).where(User.nfc_tag_id == login_data.nfc_tag_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid NFC tag ID"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid NFC tag ID")
+
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is inactive"
+            status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive"
         )
-    user.last_login_at_utc = datetime.now(timezone.utc)
+    user.last_login_at_utc = datetime.now(UTC)
 
     access_token = create_access_token(
         data={
             "user_id": user.id,
             "sub": str(user.id),
             "operator_number": user.operator_number,
-            "role": user.role
+            "role": user.role,
         }
     )
     refresh_token = create_refresh_token(user.id)
@@ -130,9 +138,9 @@ async def login_nfc(
     if not payload or "exp" not in payload:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not issue refresh token"
+            detail="Could not issue refresh token",
         )
-    expires_at = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
+    expires_at = datetime.fromtimestamp(payload["exp"], tz=UTC)
     session.add(
         RefreshToken(
             user_id=user.id,
@@ -146,14 +154,12 @@ async def login_nfc(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
 @router.get("/me", response_model=UserRead)
-async def get_current_user_info(
-    current_user: User = Depends(get_current_user)
-):
+async def get_current_user_info(current_user: User = Depends(get_current_user)):
     """Gibt Informationen über den aktuellen User zurück."""
     return current_user
 
@@ -161,13 +167,13 @@ async def get_current_user_info(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     response: Response,
-    refresh_token_cookie: Optional[str] = Cookie(default=None, alias="refresh_token"),
+    refresh_token_cookie: str | None = Cookie(default=None, alias="refresh_token"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
     """
     Logout: Revokes the current refresh token and clears auth cookies.
-    
+
     This endpoint:
     1. Revokes the refresh token in the database (if found)
     2. Clears all authentication cookies
@@ -180,12 +186,12 @@ async def logout(
         )
         db_token = result.scalar_one_or_none()
         if db_token and db_token.revoked_at is None:
-            db_token.revoked_at = datetime.now(timezone.utc)
+            db_token.revoked_at = datetime.now(UTC)
             await session.commit()
-    
+
     # Clear cookies
     clear_auth_cookies(response)
-    
+
     return None
 
 
@@ -211,7 +217,7 @@ async def refresh_tokens(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     token_hash = hash_refresh_token(body.refresh_token)
     result = await session.execute(
         select(RefreshToken).where(RefreshToken.token_hash == token_hash)
@@ -239,10 +245,10 @@ async def refresh_tokens(
 
     # Rotate: revoke old, issue new refresh token
     db_token.revoked_at = now
-    
+
     # First commit the revocation to prevent race conditions
     await session.commit()
-    
+
     new_refresh_token = create_refresh_token(user.id)
     new_payload = verify_token(new_refresh_token, token_type="refresh")
     if not new_payload or "exp" not in new_payload:
@@ -250,11 +256,11 @@ async def refresh_tokens(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not issue new refresh token",
         )
-    new_expires_at = datetime.fromtimestamp(new_payload["exp"], tz=timezone.utc)
-    
+    new_expires_at = datetime.fromtimestamp(new_payload["exp"], tz=UTC)
+
     # Create new token with unique hash check
     new_token_hash = hash_refresh_token(new_refresh_token)
-    
+
     # Check if token hash already exists (edge case protection)
     existing_check = await session.execute(
         select(RefreshToken).where(RefreshToken.token_hash == new_token_hash)
@@ -268,9 +274,9 @@ async def refresh_tokens(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Could not issue new refresh token",
             )
-        new_expires_at = datetime.fromtimestamp(new_payload["exp"], tz=timezone.utc)
+        new_expires_at = datetime.fromtimestamp(new_payload["exp"], tz=UTC)
         new_token_hash = hash_refresh_token(new_refresh_token)
-    
+
     session.add(
         RefreshToken(
             user_id=user.id,
@@ -302,17 +308,17 @@ async def refresh_tokens(
 @router.get("/operators", response_model=list[UserRead])
 async def list_operators(
     session: AsyncSession = Depends(get_session),
-    current_user = Depends(require_restaurantinhaber_role)
+    current_user=Depends(require_restaurantinhaber_role),
 ):
     """Listet alle Bediener auf (Servecta und Restaurantinhaber).
     Restaurantinhaber sehen keine Servecta-Benutzer."""
     result = await session.execute(select(User).order_by(User.operator_number))
     all_users = result.scalars().all()
-    
+
     # Restaurantinhaber dürfen Servecta-Benutzer nicht sehen
     if current_user.role == "restaurantinhaber":
         all_users = [u for u in all_users if u.role != "servecta"]
-    
+
     return all_users
 
 
@@ -320,7 +326,7 @@ async def list_operators(
 async def create_operator(
     operator_data: UserCreate,
     session: AsyncSession = Depends(get_session),
-    current_user = Depends(require_restaurantinhaber_role)
+    current_user=Depends(require_restaurantinhaber_role),
 ):
     """Erstellt einen neuen Bediener (Servecta und Restaurantinhaber).
     Restaurantinhaber können keine Servecta-Rolle vergeben."""
@@ -331,24 +337,23 @@ async def create_operator(
     existing_user = result.scalar_one_or_none()
     if existing_user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Operator number already exists"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Operator number already exists"
         )
-    
+
     # Prüfe ob Bedienernummer reserviert ist (0000, 0001 für Servecta)
     if operator_data.operator_number in SERVECTA_OPERATOR_NUMBERS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Operator number {operator_data.operator_number} is reserved for Servecta"
+            detail=f"Operator number {operator_data.operator_number} is reserved for Servecta",
         )
-    
+
     # Restaurantinhaber können keine Servecta-Rolle vergeben
     if current_user.role == "restaurantinhaber" and operator_data.role == "servecta":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Restaurantinhaber cannot create Servecta users"
+            detail="Restaurantinhaber cannot create Servecta users",
         )
-    
+
     # Prüfe ob NFC-Tag-ID bereits existiert (falls gesetzt)
     if operator_data.nfc_tag_id:
         result_nfc = await session.execute(
@@ -357,10 +362,9 @@ async def create_operator(
         existing_user_nfc = result_nfc.scalar_one_or_none()
         if existing_user_nfc:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="NFC tag ID already exists"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="NFC tag ID already exists"
             )
-    
+
     user = User(
         operator_number=operator_data.operator_number,
         pin_hash=hash_password(operator_data.pin),
@@ -368,13 +372,13 @@ async def create_operator(
         first_name=operator_data.first_name,
         last_name=operator_data.last_name,
         role=operator_data.role,
-        is_active=True
+        is_active=True,
     )
-    
+
     session.add(user)
     await session.commit()
     await session.refresh(user)
-    
+
     return user
 
 
@@ -383,24 +387,21 @@ async def update_operator(
     operator_id: int,
     operator_data: UserUpdate,
     session: AsyncSession = Depends(get_session),
-    current_user = Depends(require_restaurantinhaber_role)
+    current_user=Depends(require_restaurantinhaber_role),
 ):
     """Aktualisiert einen Bediener (Servecta und Restaurantinhaber).
     Restaurantinhaber können keine Servecta-Benutzer bearbeiten."""
     user = await session.get(User, operator_id)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Operator not found"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Operator not found")
+
     # Restaurantinhaber können keine Servecta-Benutzer bearbeiten
     if current_user.role == "restaurantinhaber" and user.role == "servecta":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Restaurantinhaber cannot edit Servecta users"
+            detail="Restaurantinhaber cannot edit Servecta users",
         )
-    
+
     # Prüfe ob Bedienernummer geändert wird und bereits existiert
     update_data = operator_data.model_dump(exclude_unset=True)
     if "operator_number" in update_data:
@@ -410,61 +411,55 @@ async def update_operator(
             if update_data["operator_number"] in SERVECTA_OPERATOR_NUMBERS:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Operator number {update_data['operator_number']} is reserved for Servecta"
+                    detail=f"Operator number {update_data['operator_number']} is reserved for Servecta",
                 )
             # Prüfe ob die neue Bedienernummer bereits existiert
             result = await session.execute(
                 select(User).where(
-                    User.operator_number == update_data["operator_number"],
-                    User.id != operator_id
+                    User.operator_number == update_data["operator_number"], User.id != operator_id
                 )
             )
             existing_user = result.scalar_one_or_none()
             if existing_user:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Operator number already exists"
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Operator number already exists"
                 )
-    
+
     # Restaurantinhaber können keine Servecta-Rolle vergeben
     if "role" in update_data:
         if current_user.role == "restaurantinhaber" and update_data["role"] == "servecta":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Restaurantinhaber cannot assign Servecta role"
+                detail="Restaurantinhaber cannot assign Servecta role",
             )
         # Verhindere, dass Servecta-Rolle entfernt wird, wenn Bedienernummer 0000 oder 0001 ist
         if user.operator_number in SERVECTA_OPERATOR_NUMBERS and update_data["role"] != "servecta":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Servecta operator numbers must have servecta role"
+                detail="Servecta operator numbers must have servecta role",
             )
-    
+
     # Prüfe ob NFC-Tag-ID geändert wird und bereits existiert
     if "nfc_tag_id" in update_data and update_data["nfc_tag_id"]:
         result_nfc = await session.execute(
-            select(User).where(
-                User.nfc_tag_id == update_data["nfc_tag_id"],
-                User.id != operator_id
-            )
+            select(User).where(User.nfc_tag_id == update_data["nfc_tag_id"], User.id != operator_id)
         )
         existing_user_nfc = result_nfc.scalar_one_or_none()
         if existing_user_nfc:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="NFC tag ID already exists"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="NFC tag ID already exists"
             )
-    
+
     # PIN hashen, falls geändert
     if "pin" in update_data:
         update_data["pin_hash"] = hash_password(update_data.pop("pin"))
-    
+
     for field, value in update_data.items():
         setattr(user, field, value)
-    
+
     await session.commit()
     await session.refresh(user)
-    
+
     return user
 
 
@@ -472,30 +467,27 @@ async def update_operator(
 async def delete_operator(
     operator_id: int,
     session: AsyncSession = Depends(get_session),
-    current_user = Depends(require_restaurantinhaber_role)
+    current_user=Depends(require_restaurantinhaber_role),
 ):
     """Löscht einen Bediener (Servecta und Restaurantinhaber).
     Restaurantinhaber können keine Servecta-Benutzer löschen."""
     user = await session.get(User, operator_id)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Operator not found"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Operator not found")
+
     # Restaurantinhaber können keine Servecta-Benutzer löschen
     if current_user.role == "restaurantinhaber" and user.role == "servecta":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Restaurantinhaber cannot delete Servecta users"
+            detail="Restaurantinhaber cannot delete Servecta users",
         )
-    
+
     # Verhindere Löschen von Servecta-Bedienernummern
     if user.operator_number in SERVECTA_OPERATOR_NUMBERS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Servecta operator numbers cannot be deleted"
+            detail="Servecta operator numbers cannot be deleted",
         )
-    
+
     await session.delete(user)
     await session.commit()

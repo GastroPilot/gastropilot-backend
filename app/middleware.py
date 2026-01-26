@@ -1,17 +1,20 @@
 """
 Middleware für Logging, Security Headers und Request Handling
 """
-import logging
-import time
-import json
+
 import asyncio
+import json
+import logging
 import sys
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Callable, Optional
+import time
+from collections.abc import Callable
+from datetime import UTC, datetime
 from logging.handlers import TimedRotatingFileHandler
-from pythonjsonlogger import jsonlogger
+from pathlib import Path
+
 from fastapi import Request, Response
+from pythonjsonlogger import jsonlogger
+from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.auth import verify_token
@@ -19,149 +22,147 @@ from app.database.instance import async_session
 from app.database.models import User
 from app.services.activity_logger import create_activity_log
 from app.services.audit_logger import create_audit_log
-from sqlalchemy import select
 from app.settings import (
-    LOG_LEVEL,
-    LOG_FORMAT,
+    ALLOWED_HOSTS,
+    ENV,
+    LOG_BACKUP_COUNT,
     LOG_DIR,
     LOG_FILE_NAME,
-    LOG_BACKUP_COUNT,
+    LOG_LEVEL,
     LOG_MAX_TOTAL_BYTES,
-    ALLOWED_HOSTS,
     REQUEST_TIMEOUT,
-    ENV,
-    ACTIVITY_LOGGING_ENABLED,
 )
-
 
 # ==================== LOGGING SETUP ====================
 
+
 class JSONFormatter(jsonlogger.JsonFormatter):
     """Custom JSON Formatter mit zusätzlichen Informationen"""
+
     def add_fields(self, log_record, record, message_dict):
         super(JSONFormatter, self).add_fields(log_record, record, message_dict)
-        log_record['timestamp'] = datetime.now(timezone.utc).isoformat()
-        log_record['level'] = record.levelname
-        log_record['logger'] = record.name
+        log_record["timestamp"] = datetime.now(UTC).isoformat()
+        log_record["level"] = record.levelname
+        log_record["logger"] = record.name
 
 
 class ColoredConsoleFormatter(logging.Formatter):
     """Farbiger Formatter für Console-Ausgabe mit strukturierter Darstellung"""
-    
+
     # Prüfe ob Terminal Farben unterstützt
-    _supports_color = sys.stdout.isatty() if hasattr(sys.stdout, 'isatty') else True
-    
+    _supports_color = sys.stdout.isatty() if hasattr(sys.stdout, "isatty") else True
+
     # ANSI Farbcodes
     COLORS = {
-        'DEBUG': '\033[36m',      # Cyan
-        'INFO': '\033[32m',       # Grün
-        'WARNING': '\033[33m',    # Gelb
-        'ERROR': '\033[31m',      # Rot
-        'CRITICAL': '\033[35m',   # Magenta
-        'RESET': '\033[0m',       # Reset
-        'BOLD': '\033[1m',
-        'DIM': '\033[2m',
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Grün
+        "WARNING": "\033[33m",  # Gelb
+        "ERROR": "\033[31m",  # Rot
+        "CRITICAL": "\033[35m",  # Magenta
+        "RESET": "\033[0m",  # Reset
+        "BOLD": "\033[1m",
+        "DIM": "\033[2m",
     }
-    
+
     # Method-Farben
     METHOD_COLORS = {
-        'GET': '\033[94m',        # Hellblau
-        'POST': '\033[92m',       # Hellgrün
-        'PUT': '\033[93m',        # Gelb
-        'PATCH': '\033[96m',      # Cyan
-        'DELETE': '\033[91m',     # Hellrot
-        'OPTIONS': '\033[90m',    # Grau
+        "GET": "\033[94m",  # Hellblau
+        "POST": "\033[92m",  # Hellgrün
+        "PUT": "\033[93m",  # Gelb
+        "PATCH": "\033[96m",  # Cyan
+        "DELETE": "\033[91m",  # Hellrot
+        "OPTIONS": "\033[90m",  # Grau
     }
-    
+
     # Status-Code Farben
     STATUS_COLORS = {
-        '2xx': '\033[92m',        # Grün für Erfolg
-        '3xx': '\033[94m',        # Blau für Weiterleitung
-        '4xx': '\033[93m',        # Gelb für Client-Fehler
-        '5xx': '\033[91m',        # Rot für Server-Fehler
+        "2xx": "\033[92m",  # Grün für Erfolg
+        "3xx": "\033[94m",  # Blau für Weiterleitung
+        "4xx": "\033[93m",  # Gelb für Client-Fehler
+        "5xx": "\033[91m",  # Rot für Server-Fehler
     }
-    
+
     def format(self, record: logging.LogRecord) -> str:
         """Formatiert Log-Einträge mit Farben und Struktur"""
         # Farben nur verwenden wenn Terminal unterstützt
         use_colors = self._supports_color
-        
+
         # Basis-Formatierung
-        timestamp = datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
         level = record.levelname
-        level_color = self.COLORS.get(level, '') if use_colors else ''
-        reset = self.COLORS['RESET'] if use_colors else ''
-        bold = self.COLORS['BOLD'] if use_colors else ''
-        dim = self.COLORS['DIM'] if use_colors else ''
-        
+        level_color = self.COLORS.get(level, "") if use_colors else ""
+        reset = self.COLORS["RESET"] if use_colors else ""
+        bold = self.COLORS["BOLD"] if use_colors else ""
+        dim = self.COLORS["DIM"] if use_colors else ""
+
         # Message formatieren
         message = record.getMessage()
-        
+
         # Extra-Felder für strukturierte Ausgabe
         extras = {}
-        if hasattr(record, 'request_id'):
-            extras['request_id'] = record.request_id
-        if hasattr(record, 'method'):
-            extras['method'] = record.method
-        if hasattr(record, 'path'):
-            extras['path'] = record.path
-        if hasattr(record, 'status_code'):
-            extras['status_code'] = record.status_code
-        if hasattr(record, 'duration_ms'):
-            extras['duration_ms'] = record.duration_ms
-        if hasattr(record, 'client'):
-            extras['client'] = record.client
-        if hasattr(record, 'user_id'):
-            extras['user_id'] = record.user_id
-        if hasattr(record, 'user_name'):
-            extras['user_name'] = record.user_name
-        
+        if hasattr(record, "request_id"):
+            extras["request_id"] = record.request_id
+        if hasattr(record, "method"):
+            extras["method"] = record.method
+        if hasattr(record, "path"):
+            extras["path"] = record.path
+        if hasattr(record, "status_code"):
+            extras["status_code"] = record.status_code
+        if hasattr(record, "duration_ms"):
+            extras["duration_ms"] = record.duration_ms
+        if hasattr(record, "client"):
+            extras["client"] = record.client
+        if hasattr(record, "user_id"):
+            extras["user_id"] = record.user_id
+        if hasattr(record, "user_name"):
+            extras["user_name"] = record.user_name
+
         # Spezielle Formatierung für Request-Logs
-        if 'method' in extras and 'path' in extras:
-            method = extras['method']
-            path = extras['path']
-            method_color = (self.METHOD_COLORS.get(method, '') if use_colors else '')
-            
+        if "method" in extras and "path" in extras:
+            method = extras["method"]
+            path = extras["path"]
+            method_color = self.METHOD_COLORS.get(method, "") if use_colors else ""
+
             # Status-Code mit Farbe
             status_str = ""
-            if 'status_code' in extras:
-                status_code = extras['status_code']
+            if "status_code" in extras:
+                status_code = extras["status_code"]
                 if use_colors:
                     if 200 <= status_code < 300:
-                        status_color = self.STATUS_COLORS['2xx']
+                        status_color = self.STATUS_COLORS["2xx"]
                     elif 300 <= status_code < 400:
-                        status_color = self.STATUS_COLORS['3xx']
+                        status_color = self.STATUS_COLORS["3xx"]
                     elif 400 <= status_code < 500:
-                        status_color = self.STATUS_COLORS['4xx']
+                        status_color = self.STATUS_COLORS["4xx"]
                     else:
-                        status_color = self.STATUS_COLORS['5xx']
+                        status_color = self.STATUS_COLORS["5xx"]
                     status_str = f" {status_color}{status_code}{reset}"
                 else:
                     status_str = f" {status_code}"
-            
+
             # Duration
             duration_str = ""
-            if 'duration_ms' in extras:
-                duration = float(extras['duration_ms'])
+            if "duration_ms" in extras:
+                duration = float(extras["duration_ms"])
                 if use_colors:
                     if duration < 100:
-                        duration_color = '\033[92m'  # Grün für schnell
+                        duration_color = "\033[92m"  # Grün für schnell
                     elif duration < 500:
-                        duration_color = '\033[93m'   # Gelb für mittel
+                        duration_color = "\033[93m"  # Gelb für mittel
                     else:
-                        duration_color = '\033[91m'   # Rot für langsam
+                        duration_color = "\033[91m"  # Rot für langsam
                     duration_str = f" {duration_color}{duration:.0f}ms{reset}"
                 else:
                     duration_str = f" {duration:.0f}ms"
-            
+
             # User ID und vollständiger Name (nur wenn vorhanden)
             user_str = ""
-            if 'user_id' in extras and extras['user_id']:
-                if 'user_name' in extras and extras['user_name']:
+            if "user_id" in extras and extras["user_id"]:
+                if "user_name" in extras and extras["user_name"]:
                     user_str = f" {dim}{extras['user_name']}, User ID: {extras['user_id']}{reset}"
                 else:
                     user_str = f" {dim}User ID: {extras['user_id']}{reset}"
-            
+
             # Kompakte Formatierung
             formatted = (
                 f"{dim}{timestamp}{reset} "
@@ -172,33 +173,31 @@ class ColoredConsoleFormatter(logging.Formatter):
                 f"{duration_str}"
                 f"{user_str}"
             )
-            
+
             # Query-Parameter nur wenn vorhanden und kurz
-            if hasattr(record, 'query') and record.query:
+            if hasattr(record, "query") and record.query:
                 query_short = record.query[:30] + "..." if len(record.query) > 30 else record.query
                 formatted += f" {dim}?{query_short}{reset}"
-            
+
             return formatted
-        
+
         # Standard-Formatierung für andere Logs
         # Uvicorn-Logs haben oft "INFO: " am Anfang - entferne das für bessere Formatierung
         clean_message = message
         if message.startswith(f"{level}: "):
-            clean_message = message[len(f"{level}: "):]
+            clean_message = message[len(f"{level}: ") :]
         elif ":" in message and message.split(":")[0] == level:
             clean_message = ":".join(message.split(":")[1:]).strip()
-        
+
         formatted = (
-            f"{dim}{timestamp}{reset} "
-            f"{level_color}{level:7s}{reset} "
-            f"{clean_message}"
+            f"{dim}{timestamp}{reset} " f"{level_color}{level:7s}{reset} " f"{clean_message}"
         )
-        
+
         # Extra-Felder hinzufügen
         if extras:
             extra_str = " ".join([f"{k}={v}" for k, v in extras.items()])
             formatted += f" {dim}({extra_str}){reset}"
-        
+
         return formatted
 
 
@@ -209,7 +208,7 @@ def setup_logging():
         return root_logger
 
     root_logger.setLevel(LOG_LEVEL)
-    
+
     # Console Handler - IMMER farbig für bessere Lesbarkeit
     console_handler = logging.StreamHandler(sys.stdout)
     console_formatter = ColoredConsoleFormatter()
@@ -227,9 +226,9 @@ def setup_logging():
         encoding="utf-8",
         max_total_bytes=LOG_MAX_TOTAL_BYTES,
     )
-    
+
     # File-Handler bekommt immer JSON-Format (unabhängig von LOG_FORMAT)
-    file_formatter = JSONFormatter('%(timestamp)s %(level)s %(name)s %(message)s')
+    file_formatter = JSONFormatter("%(timestamp)s %(level)s %(name)s %(message)s")
     file_handler.setFormatter(file_formatter)
     root_logger.addHandler(file_handler)
 
@@ -238,14 +237,14 @@ def setup_logging():
     uvicorn_access.setLevel(logging.WARNING)  # Nur Warnings und Errors
     uvicorn_access.propagate = False  # Verhindert Weiterleitung an Root-Logger
     uvicorn_access.handlers = []  # Entferne alle Handler
-    
+
     # Uvicorn Standard-Logs - nur Warnings/Errors, keine Info-Logs
     # (Wir haben unsere eigenen Startup-Logs)
     uvicorn_logger = logging.getLogger("uvicorn")
     uvicorn_logger.setLevel(logging.WARNING)  # Nur Warnings und Errors
     uvicorn_logger.handlers = []  # Entferne alle Handler
     uvicorn_logger.propagate = True  # Lasse Warnings/Errors durch unser System laufen
-    
+
     # Uvicorn Error-Logs durch unser System
     uvicorn_error = logging.getLogger("uvicorn.error")
     uvicorn_error.handlers = []
@@ -368,27 +367,29 @@ class DatePrefixedTimedRotatingFileHandler(TimedRotatingFileHandler):
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Middleware für Sicherheits-Header"""
-    
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         response = await call_next(request)
-        
+
         # Security Headers
-        
+
         # X-Content-Type-Options: Verhindert MIME-Type Sniffing
         response.headers["X-Content-Type-Options"] = "nosniff"
-        
+
         # X-Frame-Options: Verhindert Clickjacking
         response.headers["X-Frame-Options"] = "DENY"
-        
+
         # X-XSS-Protection: Aktiviert XSS-Filter im Browser
         response.headers["X-XSS-Protection"] = "1; mode=block"
-        
+
         # Strict-Transport-Security: Erzwingt HTTPS-Verbindungen
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
-        
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains; preload"
+        )
+
         # Referrer-Policy: Kontrolliert, welche Referrer-Informationen gesendet werden
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        
+
         # Permissions-Policy: Deaktiviert Browser-Features für erhöhte Sicherheit
         # Erweitert um weitere Features, die standardmäßig deaktiviert werden sollten
         response.headers["Permissions-Policy"] = (
@@ -442,7 +443,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Middleware für Request/Response Logging - kompakt und übersichtlich"""
-    
+
     # Endpunkte die nicht geloggt werden sollen
     IGNORED_PATHS = {
         "/api/v1/health",
@@ -452,14 +453,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         "/api/openapi.json",
         "/favicon.ico",
     }
-    
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Ignoriere bestimmte Endpunkte
         if request.url.path in self.IGNORED_PATHS or request.method == "OPTIONS":
             return await call_next(request)
-        
+
         start_time = time.time()
-        
+
         # User-Informationen extrahieren (falls vorhanden)
         user_id = None
         user_name = None
@@ -472,7 +473,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                     user_id = payload.get("user_id") or payload.get("sub")
         except Exception:
             pass  # Nicht authentifiziert oder Token ungültig
-        
+
         # Request verarbeiten
         try:
             response = await call_next(request)
@@ -486,7 +487,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 lineno=0,
                 msg=str(exc)[:100],  # Erste 100 Zeichen
                 args=(),
-                exc_info=exc
+                exc_info=exc,
             )
             log_record.method = request.method
             log_record.path = request.url.path
@@ -510,23 +511,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                     pass
             logger.handle(log_record)
             raise
-        
+
         process_time = time.time() - start_time
-        
+
         # Nur Fehler oder langsame Requests loggen (oder wenn explizit gewünscht)
         status_code = response.status_code
         duration_ms = process_time * 1000
-        
+
         # Logge nur:
         # - Fehler (4xx, 5xx)
         # - Langsame Requests (>500ms)
         # - POST/PUT/PATCH/DELETE (wichtige Aktionen)
         should_log = (
-            status_code >= 400 or  # Fehler
-            duration_ms > 500 or   # Langsam
-            request.method in {"POST", "PUT", "PATCH", "DELETE"}  # Mutierende Requests
+            status_code >= 400  # Fehler
+            or duration_ms > 500  # Langsam
+            or request.method in {"POST", "PUT", "PATCH", "DELETE"}  # Mutierende Requests
         )
-        
+
         if should_log:
             # Vollständigen Namen aus DB holen, wenn user_id vorhanden ist
             if user_id:
@@ -543,7 +544,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                                 user_name = full_name
                 except Exception:
                     pass  # Fehler beim Holen des Users ignorieren
-            
+
             log_record = logging.LogRecord(
                 name=logger.name,
                 level=logging.WARNING if status_code >= 400 else logging.INFO,
@@ -551,7 +552,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 lineno=0,
                 msg="",  # Leer, da alles in den Extras steht
                 args=(),
-                exc_info=None
+                exc_info=None,
             )
             log_record.method = request.method
             log_record.path = request.url.path
@@ -563,10 +564,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             if request.url.query:
                 log_record.query = request.url.query
             logger.handle(log_record)
-        
+
         # Response-Header setzen
         response.headers["X-Process-Time"] = f"{process_time:.3f}"
-        
+
         return response
 
 
@@ -584,7 +585,9 @@ class ActivityLogMiddleware(BaseHTTPMiddleware):
         # Best-effort Logging, darf die Response nicht beeinflussen
         try:
             auth_header = request.headers.get("authorization") or ""
-            token = auth_header.split(" ", 1)[1] if auth_header.lower().startswith("bearer ") else None
+            token = (
+                auth_header.split(" ", 1)[1] if auth_header.lower().startswith("bearer ") else None
+            )
             user_id = None
             if token:
                 payload = verify_token(token, token_type="access")
@@ -634,7 +637,9 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 
         try:
             auth_header = request.headers.get("authorization") or ""
-            token = auth_header.split(" ", 1)[1] if auth_header.lower().startswith("bearer ") else None
+            token = (
+                auth_header.split(" ", 1)[1] if auth_header.lower().startswith("bearer ") else None
+            )
             user_id = None
             if token:
                 payload = verify_token(token, token_type="access")
@@ -704,55 +709,53 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 
 class RequestTimeoutMiddleware(BaseHTTPMiddleware):
     """Middleware für Request Timeout"""
-    
+
     def __init__(self, app, timeout: int = REQUEST_TIMEOUT):
         super().__init__(app)
         self.timeout = timeout
-    
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         try:
             response = await asyncio.wait_for(call_next(request), timeout=self.timeout)
             return response
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error(
                 "Request timeout",
                 extra={
                     "method": request.method,
                     "path": request.url.path,
                     "timeout_seconds": self.timeout,
-                }
+                },
             )
             return Response(
                 status_code=504,
                 content=json.dumps({"detail": "Request timeout"}),
-                media_type="application/json"
+                media_type="application/json",
             )
 
 
 class HostValidationMiddleware(BaseHTTPMiddleware):
     """Middleware für Host Validation"""
-    
+
     # Pfade die von externen Services aufgerufen werden (Webhooks)
     WEBHOOK_PATHS = ["/webhook/", "/public/"]
-    
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         host = request.headers.get("host", "").split(":")[0]
         path = request.url.path
-        
+
         # Webhooks und Public APIs von Host-Validierung ausnehmen
         is_webhook = any(wp in path for wp in self.WEBHOOK_PATHS)
-        
+
         if host and host not in ALLOWED_HOSTS and not is_webhook:
-            logger.warning(
-                "Invalid host",
-                extra={"host": host, "allowed": ALLOWED_HOSTS}
-            )
+            logger.warning("Invalid host", extra={"host": host, "allowed": ALLOWED_HOSTS})
             # Nicht blockieren, nur warnen
-        
+
         return await call_next(request)
 
 
 # ==================== HELPER FUNCTIONS ====================
+
 
 def log_startup():
     """Loggt Startup-Informationen - kompakt"""

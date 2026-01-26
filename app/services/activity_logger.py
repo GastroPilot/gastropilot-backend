@@ -1,10 +1,11 @@
 """
 Service für das Erstellen von Activity-Logs in der Datenbank.
 """
+
 import logging
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import Activity_Logs
 
@@ -14,8 +15,8 @@ logger = logging.getLogger(__name__)
 async def create_activity_log(
     session: AsyncSession,
     action: str,
-    user_id: Optional[int] = None,
-    ip_address: Optional[str] = None,
+    user_id: int | None = None,
+    ip_address: str | None = None,
     use_own_transaction: bool = True,
 ) -> None:
     """

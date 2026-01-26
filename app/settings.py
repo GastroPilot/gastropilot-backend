@@ -1,7 +1,8 @@
 import os
-from pathlib import Path
-from dotenv import load_dotenv
 import warnings
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 # Load .env file - try to find it in the current directory or parent directories
 ENV = os.getenv("ENV", "development")
@@ -24,18 +25,14 @@ def _getenv_str(name: str, default: str | None = None, required: bool = False) -
 
 # Database
 if ENV == "development":
-    DATABASE_URL = _getenv_str(
-        'DATABASE_URL',
-        default='sqlite+aiosqlite:///./reservation_dev.db'
-    )
-    if 'sqlite' in DATABASE_URL:
+    DATABASE_URL = _getenv_str("DATABASE_URL", default="sqlite+aiosqlite:///./reservation_dev.db")
+    if "sqlite" in DATABASE_URL:
         warnings.warn(
-            "⚠️  Using SQLite database in development. "
-            "Set DATABASE_URL in .env for PostgreSQL!",
-            UserWarning
+            "⚠️  Using SQLite database in development. " "Set DATABASE_URL in .env for PostgreSQL!",
+            UserWarning,
         )
 else:
-    DATABASE_URL = _getenv_str('DATABASE_URL', required=True)
+    DATABASE_URL = _getenv_str("DATABASE_URL", required=True)
 
 # DB_TYPE automatisch erkennen
 _db_type_env = os.getenv("DATABASE_TYPE", "").lower().strip()
@@ -52,14 +49,14 @@ else:
         warnings.warn(
             f"⚠️  Could not detect database type from URL, defaulting to SQLite. "
             f"URL: {DATABASE_URL[:50]}...",
-            UserWarning
+            UserWarning,
         )
     else:
         DB_TYPE = "neon"
         warnings.warn(
             f"⚠️  Could not detect database type from URL, defaulting to Neon/PostgreSQL. "
             f"URL: {DATABASE_URL[:50]}...",
-            UserWarning
+            UserWarning,
         )
 
 # JWT / Security
@@ -70,7 +67,7 @@ if ENV == "development":
         warnings.warn(
             "⚠️  WARNING: Using default JWT_SECRET in development. "
             "Set JWT_SECRET in .env for production!",
-            UserWarning
+            UserWarning,
         )
 else:
     JWT_SECRET = _getenv_str("JWT_SECRET", required=True)
@@ -87,7 +84,9 @@ REFRESH_TOKEN_PEPPER = os.getenv("REFRESH_TOKEN_PEPPER", "")
 
 # Cookie settings for HttpOnly tokens
 COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN", None)  # None = same domain only
-COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false" if ENV == "development" else "true").lower() == "true"
+COOKIE_SECURE = (
+    os.getenv("COOKIE_SECURE", "false" if ENV == "development" else "true").lower() == "true"
+)
 COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")  # "lax", "strict", or "none"
 COOKIE_PATH = os.getenv("COOKIE_PATH", "/")
 # Set to True to use HttpOnly cookies instead of response body tokens
@@ -121,7 +120,9 @@ _default_origins = (
     "http://localhost:8081,http://127.0.0.1:8081"
 )
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", _default_origins).split(",")
-CORS_ORIGINS = [origin.strip() for origin in CORS_ORIGINS if origin.strip()]  # Filter out empty strings
+CORS_ORIGINS = [
+    origin.strip() for origin in CORS_ORIGINS if origin.strip()
+]  # Filter out empty strings
 CORS_ALLOW_CREDENTIALS = os.getenv("CORS_ALLOW_CREDENTIALS", "True").lower() == "true"
 CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
 CORS_ALLOW_HEADERS = [
@@ -139,15 +140,25 @@ ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS]
 
 # License / Feature Management
 LICENSE_KEY = os.getenv("LICENSE_KEY", "")  # Lizenzschlüssel für Kommunikation mit Mutterschiff
-MOTHERSHIP_URL = os.getenv("MOTHERSHIP_URL", "https://mothership.servecta.com")  # URL des Hauptservers
-LICENSE_CHECK_INTERVAL = int(os.getenv("LICENSE_CHECK_INTERVAL", "3600"))  # Intervall für License-Checks in Sekunden (default: 1 Stunde)
-LICENSE_CHECK_TIMEOUT = int(os.getenv("LICENSE_CHECK_TIMEOUT", "5"))  # Timeout für License-Checks in Sekunden
+MOTHERSHIP_URL = os.getenv(
+    "MOTHERSHIP_URL", "https://mothership.servecta.com"
+)  # URL des Hauptservers
+LICENSE_CHECK_INTERVAL = int(
+    os.getenv("LICENSE_CHECK_INTERVAL", "3600")
+)  # Intervall für License-Checks in Sekunden (default: 1 Stunde)
+LICENSE_CHECK_TIMEOUT = int(
+    os.getenv("LICENSE_CHECK_TIMEOUT", "5")
+)  # Timeout für License-Checks in Sekunden
 
 # Sentry Error Tracking
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")  # Leave empty to disable Sentry
 SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", ENV)
-SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1"))  # 10% of transactions
-SENTRY_PROFILES_SAMPLE_RATE = float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.1"))  # 10% of sampled transactions
+SENTRY_TRACES_SAMPLE_RATE = float(
+    os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")
+)  # 10% of transactions
+SENTRY_PROFILES_SAMPLE_RATE = float(
+    os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.1")
+)  # 10% of sampled transactions
 
 # AI / OpenAI Configuration
 AI_ENABLED = os.getenv("AI_ENABLED", "false").lower() == "true"
@@ -173,11 +184,17 @@ SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "noreply@gastropilot.org")
 # Public Booking Configuration
 PUBLIC_BOOKING_ENABLED = os.getenv("PUBLIC_BOOKING_ENABLED", "false").lower() == "true"
 PUBLIC_BOOKING_DEFAULT_DURATION = int(os.getenv("PUBLIC_BOOKING_DEFAULT_DURATION", "120"))
-RESERVATION_WIDGET_URL = os.getenv("RESERVATION_WIDGET_URL", "http://localhost:3002")  # URL zum Reservation Widget
+RESERVATION_WIDGET_URL = os.getenv(
+    "RESERVATION_WIDGET_URL", "http://localhost:3002"
+)  # URL zum Reservation Widget
 
 # SumUp Configuration
 SUMUP_API_KEY = os.getenv("SUMUP_API_KEY", "")  # SumUp API Key (sk_test_... oder sk_live_...)
 SUMUP_MERCHANT_CODE = os.getenv("SUMUP_MERCHANT_CODE", "")  # SumUp Merchant Code (z.B. "MH4H92C7")
 SUMUP_WEBHOOK_SECRET = os.getenv("SUMUP_WEBHOOK_SECRET", "")  # Secret für Webhook-Verifizierung
-SUMUP_WEBHOOK_URL = os.getenv("SUMUP_WEBHOOK_URL", "")  # Öffentliche URL für Webhooks (z.B. https://api.example.com/webhooks/sumup)
-SUMUP_TEST_MODE = os.getenv("SUMUP_TEST_MODE", "true").lower() == "true"  # Testmodus: true = Checkout ohne Reader, false = Reader Checkout
+SUMUP_WEBHOOK_URL = os.getenv(
+    "SUMUP_WEBHOOK_URL", ""
+)  # Öffentliche URL für Webhooks (z.B. https://api.example.com/webhooks/sumup)
+SUMUP_TEST_MODE = (
+    os.getenv("SUMUP_TEST_MODE", "true").lower() == "true"
+)  # Testmodus: true = Checkout ohne Reader, false = Reader Checkout

@@ -1,21 +1,30 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body
-from sqlalchemy.ext.asyncio import AsyncSession
+import logging
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime
-from typing import Optional
-import logging
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import (
-    get_session,
-    get_current_user,
-    require_mitarbeiter_role,
-    require_schichtleiter_role,
-    require_restaurantinhaber_role,
-    require_reservations_module,
-    normalize_datetime_to_utc,
+from app.database.models import (
+    Guest,
+    Reservation,
+    ReservationTable,
+    ReservationUpsellPackage,
+    Restaurant,
+    Table,
+    UpsellPackage,
+    User,
 )
-from app.database.models import Reservation, ReservationTable, Restaurant, Table, Guest, User, ReservationUpsellPackage, UpsellPackage
+from app.dependencies import (
+    get_current_user,
+    get_session,
+    normalize_datetime_to_utc,
+    require_mitarbeiter_role,
+    require_reservations_module,
+    require_restaurantinhaber_role,
+    require_schichtleiter_role,
+)
 from app.schemas import ReservationCreate, ReservationRead, ReservationUpdate
 
 logger = logging.getLogger(__name__)
@@ -30,14 +39,21 @@ async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> R
     return restaurant
 
 
-async def _get_reservation_or_404(reservation_id: int, restaurant_id: int, session: AsyncSession) -> Reservation:
+async def _get_reservation_or_404(
+    reservation_id: int, restaurant_id: int, session: AsyncSession
+) -> Reservation:
     reservation = await session.get(Reservation, reservation_id)
     if not reservation or reservation.restaurant_id != restaurant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found")
     return reservation
 
 
-@router.post("/", response_model=ReservationRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_reservations_module)])
+@router.post(
+    "/",
+    response_model=ReservationRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_reservations_module)],
+)
 async def create_reservation(
     restaurant_id: int,
     reservation_data: ReservationCreate,
@@ -53,7 +69,9 @@ async def create_reservation(
         if not table or table.restaurant_id != restaurant_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
         if not table.is_active:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Table is not active")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Table is not active"
+            )
 
     if reservation_data.guest_id:
         guest = await session.get(Guest, reservation_data.guest_id)
@@ -64,7 +82,9 @@ async def create_reservation(
     end_at = normalize_datetime_to_utc(reservation_data.end_at)
 
     if start_at >= end_at:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End time must be after start time")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="End time must be after start time"
+        )
 
     reservation = Reservation(
         restaurant_id=restaurant_id,
@@ -87,18 +107,18 @@ async def create_reservation(
     try:
         session.add(reservation)
         await session.flush()
-        
+
         if reservation_data.table_id:
             table = await session.get(Table, reservation_data.table_id)
             if table and table.join_group_id is not None:
                 result = await session.execute(
                     select(Table).where(
                         Table.restaurant_id == restaurant_id,
-                        Table.join_group_id == table.join_group_id
+                        Table.join_group_id == table.join_group_id,
                     )
                 )
                 group_tables = result.scalars().all()
-                
+
                 for tbl in group_tables:
                     rt = ReservationTable(
                         reservation_id=reservation.id,
@@ -115,7 +135,7 @@ async def create_reservation(
                     end_at=end_at,
                 )
                 session.add(rt)
-        
+
         await session.commit()
         await session.refresh(reservation)
     except IntegrityError:
@@ -131,7 +151,7 @@ async def _load_reservation_with_upsell_packages(
 ) -> ReservationRead:
     """Lädt Reservierung mit zugehörigen Upsell-Paketen."""
     from app.schemas import ReservationRead, UpsellPackageRead
-    
+
     # Lade Upsell-Pakete
     upsell_result = await session.execute(
         select(UpsellPackage)
@@ -139,16 +159,26 @@ async def _load_reservation_with_upsell_packages(
         .where(ReservationUpsellPackage.reservation_id == reservation.id)
     )
     upsell_packages = list(upsell_result.scalars().all())
-    
+
     # Konvertiere zu ReservationRead
     reservation_dict = {
-        **{k: getattr(reservation, k) for k in ReservationRead.model_fields.keys() if hasattr(reservation, k)},
-        "upsell_packages": [UpsellPackageRead.model_validate(pkg) for pkg in upsell_packages] if upsell_packages else None,
+        **{
+            k: getattr(reservation, k)
+            for k in ReservationRead.model_fields.keys()
+            if hasattr(reservation, k)
+        },
+        "upsell_packages": (
+            [UpsellPackageRead.model_validate(pkg) for pkg in upsell_packages]
+            if upsell_packages
+            else None
+        ),
     }
     return ReservationRead(**reservation_dict)
 
 
-@router.get("/", response_model=list[ReservationRead], dependencies=[Depends(require_reservations_module)])
+@router.get(
+    "/", response_model=list[ReservationRead], dependencies=[Depends(require_reservations_module)]
+)
 async def list_reservations(
     restaurant_id: int,
     date: str | None = None,
@@ -162,7 +192,7 @@ async def list_reservations(
     current_user: User = Depends(get_current_user),
 ):
     """Listet Reservierungen eines Restaurants mit optionalen Filtern.
-    
+
     Filter:
     - date: Einzelnes Datum (YYYY-MM-DD) - filtert auf diesen Tag
     - from_date/to_date: Datumsbereich für start_at
@@ -170,62 +200,62 @@ async def list_reservations(
     - table_id: Filtert nach Tisch
     - limit: Maximale Anzahl Ergebnisse
     """
-    from datetime import datetime, timezone, timedelta
+    from datetime import timedelta
+
     from sqlalchemy import and_
-    
+
     await _get_restaurant_or_404(restaurant_id, session)
 
     query = select(Reservation).where(Reservation.restaurant_id == restaurant_id)
-    
+
     # Datumsfilter
     if date:
         try:
-            day = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            day = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
             day_end = day + timedelta(days=1)
-            query = query.where(and_(
-                Reservation.start_at >= day,
-                Reservation.start_at < day_end
-            ))
+            query = query.where(and_(Reservation.start_at >= day, Reservation.start_at < day_end))
         except ValueError:
             pass  # Ignoriere ungültiges Datum
     elif from_date or to_date:
         if from_date:
             try:
-                from_dt = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                from_dt = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=UTC)
                 query = query.where(Reservation.start_at >= from_dt)
             except ValueError:
                 pass
         if to_date:
             try:
-                to_dt = datetime.strptime(to_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+                to_dt = datetime.strptime(to_date, "%Y-%m-%d").replace(tzinfo=UTC) + timedelta(
+                    days=1
+                )
                 query = query.where(Reservation.start_at < to_dt)
             except ValueError:
                 pass
-    
+
     # Statusfilter
     if status:
         query = query.where(Reservation.status == status)
-    
+
     # Tischfilter
     if table_id:
         query = query.where(Reservation.table_id == table_id)
-    
+
     # Sortierung
     query = query.order_by(Reservation.start_at)
-    
+
     # Limit
     if limit and limit > 0:
         query = query.limit(limit)
-    
+
     result = await session.execute(query)
     reservations = result.scalars().all()
-    
+
     # Lade Upsell-Pakete für alle Reservierungen
     reservation_reads = []
     for reservation in reservations:
         reservation_read = await _load_reservation_with_upsell_packages(reservation, session)
         reservation_reads.append(reservation_read)
-    
+
     return reservation_reads
 
 
@@ -313,10 +343,10 @@ async def update_reservation(
 
     old_table_id = reservation.table_id
     new_table_id = update_data.get("table_id", old_table_id)
-    
+
     for field, value in update_data.items():
         setattr(reservation, field, value)
-    
+
     if "table_id" in update_data and new_table_id != old_table_id:
         if old_table_id:
             old_table = await session.get(Table, old_table_id)
@@ -324,7 +354,7 @@ async def update_reservation(
                 result = await session.execute(
                     select(Table).where(
                         Table.restaurant_id == restaurant_id,
-                        Table.join_group_id == old_table.join_group_id
+                        Table.join_group_id == old_table.join_group_id,
                     )
                 )
                 old_group_tables = result.scalars().all()
@@ -336,17 +366,19 @@ async def update_reservation(
                 rt = await session.get(ReservationTable, (reservation.id, old_table_id))
                 if rt:
                     await session.delete(rt)
-        
+
         if new_table_id:
             new_table = await session.get(Table, new_table_id)
-            start_at = update_data.get("start_at") if "start_at" in update_data else reservation.start_at
+            start_at = (
+                update_data.get("start_at") if "start_at" in update_data else reservation.start_at
+            )
             end_at = update_data.get("end_at") if "end_at" in update_data else reservation.end_at
-            
+
             if new_table and new_table.join_group_id is not None:
                 result = await session.execute(
                     select(Table).where(
                         Table.restaurant_id == restaurant_id,
-                        Table.join_group_id == new_table.join_group_id
+                        Table.join_group_id == new_table.join_group_id,
                     )
                 )
                 new_group_tables = result.scalars().all()
@@ -385,54 +417,56 @@ async def update_reservation(
 async def cancel_reservation(
     restaurant_id: int,
     reservation_id: int,
-    canceled_reason: Optional[str] = Body(None, embed=True),
+    canceled_reason: str | None = Body(None, embed=True),
     session: AsyncSession = Depends(get_session),
     _license: User = Depends(require_reservations_module),
     current_user: User = Depends(require_schichtleiter_role),
 ):
     """Storniert eine Reservierung (Schichtleiter oder höher) und sendet E-Mail-Benachrichtigung."""
-    from datetime import datetime, timezone
-    from app.services.notification_service import notification_service, ReservationNotification
+
+    from app.services.notification_service import ReservationNotification, notification_service
     from app.settings import RESERVATION_WIDGET_URL
-    
+
     await _get_restaurant_or_404(restaurant_id, session)
     reservation = await _get_reservation_or_404(reservation_id, restaurant_id, session)
     restaurant = await session.get(Restaurant, restaurant_id)
-    
+
     if not restaurant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found")
-    
+
     # Prüfe ob bereits storniert
     if reservation.status == "canceled":
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Reservierung ist bereits storniert"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Reservierung ist bereits storniert"
         )
-    
+
     # Aktualisiere Reservierung
     reservation.status = "canceled"
-    reservation.canceled_at = datetime.now(timezone.utc)
+    reservation.canceled_at = datetime.now(UTC)
     if canceled_reason:
         reservation.canceled_reason = canceled_reason
-    
+
     try:
         await session.commit()
         await session.refresh(reservation)
     except Exception:
         await session.rollback()
         raise
-    
+
     # Sende Stornierungs-Benachrichtigung per E-Mail
     if reservation.guest_email:
         try:
-            from datetime import date
             # Formatiere Datum und Zeit
             start_dt = reservation.start_at
             date_str = start_dt.strftime("%d.%m.%Y")
             time_str = start_dt.strftime("%H:%M")
-            
-            manage_url = f"{RESERVATION_WIDGET_URL}/{restaurant.slug}/manage/{reservation.confirmation_code}" if reservation.confirmation_code and restaurant.slug else None
-            
+
+            manage_url = (
+                f"{RESERVATION_WIDGET_URL}/{restaurant.slug}/manage/{reservation.confirmation_code}"
+                if reservation.confirmation_code and restaurant.slug
+                else None
+            )
+
             notification = ReservationNotification(
                 guest_name=reservation.guest_name or "Gast",
                 guest_email=reservation.guest_email,
@@ -449,23 +483,27 @@ async def cancel_reservation(
                 special_requests=None,
                 manage_url=manage_url,
             )
-            
+
             # Sende Stornierungs-Benachrichtigung
             results = await notification_service.send_reservation_cancellation(
                 notification=notification,
                 channels=["email"],  # Nur E-Mail für Stornierung
             )
-            
+
             # Logge Ergebnisse
             for result in results:
                 if result.success:
-                    logger.info(f"Stornierungs-E-Mail gesendet via {result.channel}: {result.message}")
+                    logger.info(
+                        f"Stornierungs-E-Mail gesendet via {result.channel}: {result.message}"
+                    )
                 else:
-                    logger.warning(f"Stornierungs-E-Mail fehlgeschlagen via {result.channel}: {result.error}")
+                    logger.warning(
+                        f"Stornierungs-E-Mail fehlgeschlagen via {result.channel}: {result.error}"
+                    )
         except Exception as notify_error:
             # Benachrichtigungsfehler sollten die Stornierung nicht abbrechen
             logger.error(f"Failed to send cancellation notification: {notify_error}")
-    
+
     return await _load_reservation_with_upsell_packages(reservation, session)
 
 

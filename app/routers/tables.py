@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_session, get_current_user, require_schichtleiter_role, require_servecta_role, normalize_datetime_to_utc
 from app.database.models import (
     Area,
     BlockAssignment,
@@ -13,6 +12,12 @@ from app.database.models import (
     Table,
     TableDayConfig,
     User,
+)
+from app.dependencies import (
+    get_current_user,
+    get_session,
+    require_schichtleiter_role,
+    require_servecta_role,
 )
 from app.schemas import TableCreate, TableRead, TableUpdate
 
@@ -47,29 +52,22 @@ async def create_table(
     restaurant_id: int,
     table_data: TableCreate,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(require_schichtleiter_role)
+    current_user: User = Depends(require_schichtleiter_role),
 ):
     """Erstellt einen neuen Tisch (Schichtleiter oder höher)."""
     await _get_restaurant_or_404(restaurant_id, session)
     await _validate_area(table_data.area_id, restaurant_id, session)
-    
+
     result = await session.execute(
-        select(Table).where(
-            Table.restaurant_id == restaurant_id,
-            Table.number == table_data.number
-        )
+        select(Table).where(Table.restaurant_id == restaurant_id, Table.number == table_data.number)
     )
     existing_table = result.scalar_one_or_none()
     if existing_table:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Table number already exists"
+            status_code=status.HTTP_409_CONFLICT, detail="Table number already exists"
         )
-    
-    table = Table(
-        restaurant_id=restaurant_id,
-        **table_data.model_dump()
-    )
+
+    table = Table(restaurant_id=restaurant_id, **table_data.model_dump())
     try:
         session.add(table)
         await session.commit()
@@ -84,7 +82,7 @@ async def create_table(
 async def list_tables(
     restaurant_id: int,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Listet alle Tische eines Restaurants."""
     await _get_restaurant_or_404(restaurant_id, session)
@@ -99,7 +97,7 @@ async def get_table(
     restaurant_id: int,
     table_id: int,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Holt einen einzelnen Tisch."""
     await _get_restaurant_or_404(restaurant_id, session)
@@ -112,52 +110,51 @@ async def update_table(
     table_id: int,
     table_data: TableUpdate,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(require_schichtleiter_role)
+    current_user: User = Depends(require_schichtleiter_role),
 ):
     """Aktualisiert einen Tisch (Schichtleiter oder höher). Synchronisiert Status und Farbe mit Tischen in derselben Gruppe."""
     await _get_restaurant_or_404(restaurant_id, session)
     table = await _get_table_or_404(table_id, restaurant_id, session)
-    
+
     update_data = table_data.model_dump(exclude_unset=True)
-    
+
     if "number" in update_data:
         result = await session.execute(
             select(Table).where(
                 Table.restaurant_id == restaurant_id,
                 Table.number == update_data["number"],
-                Table.id != table_id
+                Table.id != table_id,
             )
         )
         existing_table = result.scalar_one_or_none()
         if existing_table:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Table number already exists"
+                status_code=status.HTTP_409_CONFLICT, detail="Table number already exists"
             )
 
     if "area_id" in update_data:
         await _validate_area(update_data.get("area_id"), restaurant_id, session)
-    
+
     sync_fields = {"is_active"}
     fields_to_sync = {field: value for field, value in update_data.items() if field in sync_fields}
-    
+
     for field, value in update_data.items():
         setattr(table, field, value)
-    
+
     if fields_to_sync and table.join_group_id is not None:
         result = await session.execute(
             select(Table).where(
                 Table.restaurant_id == restaurant_id,
                 Table.join_group_id == table.join_group_id,
-                Table.id != table_id
+                Table.id != table_id,
             )
         )
         group_tables = result.scalars().all()
-        
+
         for group_table in group_tables:
             for field, value in fields_to_sync.items():
                 setattr(group_table, field, value)
-    
+
     try:
         await session.commit()
         await session.refresh(table)
@@ -197,9 +194,7 @@ async def delete_orphan_tables(
                     ReservationTableDayConfig.table_day_config_id.in_(table_day_config_ids)
                 )
             )
-        await session.execute(
-            delete(TableDayConfig).where(TableDayConfig.table_id.in_(table_ids))
-        )
+        await session.execute(delete(TableDayConfig).where(TableDayConfig.table_id.in_(table_ids)))
         await session.execute(
             delete(ReservationTable).where(ReservationTable.table_id.in_(table_ids))
         )
@@ -223,12 +218,12 @@ async def delete_table(
     restaurant_id: int,
     table_id: int,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(require_schichtleiter_role)
+    current_user: User = Depends(require_schichtleiter_role),
 ):
     """Löscht einen Tisch (Schichtleiter oder höher)."""
     await _get_restaurant_or_404(restaurant_id, session)
     table = await _get_table_or_404(table_id, restaurant_id, session)
-    
+
     try:
         await session.delete(table)
         await session.commit()

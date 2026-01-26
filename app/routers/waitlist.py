@@ -1,10 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_session, require_mitarbeiter_role, normalize_datetime_to_utc, require_reservations_module
-from app.database.models import Waitlist, Restaurant, Guest, User
+from app.database.models import Guest, Restaurant, User, Waitlist
+from app.dependencies import (
+    get_session,
+    normalize_datetime_to_utc,
+    require_mitarbeiter_role,
+    require_reservations_module,
+)
 from app.schemas import WaitlistCreate, WaitlistRead, WaitlistUpdate
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/waitlist", tags=["waitlist"])
@@ -20,7 +25,9 @@ async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> R
 async def _get_wait_or_404(wait_id: int, restaurant_id: int, session: AsyncSession) -> Waitlist:
     entry = await session.get(Waitlist, wait_id)
     if not entry or entry.restaurant_id != restaurant_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Waitlist entry not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Waitlist entry not found"
+        )
     return entry
 
 

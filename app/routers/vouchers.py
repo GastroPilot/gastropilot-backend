@@ -1,22 +1,22 @@
 """
 Voucher API - Gutschein-Verwaltung.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
-from datetime import date, datetime, timezone
-from typing import List
 
-from app.dependencies import get_session, require_schichtleiter_role
-from app.database.models import Voucher, VoucherUsage, Restaurant, Reservation
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database.models import Restaurant, Voucher
+from app.dependencies import User, get_session, require_schichtleiter_role
 from app.schemas import (
     VoucherCreate,
-    VoucherUpdate,
     VoucherRead,
+    VoucherUpdate,
     VoucherValidateRequest,
     VoucherValidateResponse,
 )
-from app.dependencies import User
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/vouchers", tags=["vouchers"])
 
@@ -30,13 +30,12 @@ async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> R
     return restaurant
 
 
-async def _get_voucher_or_404(voucher_id: int, restaurant_id: int, session: AsyncSession) -> Voucher:
+async def _get_voucher_or_404(
+    voucher_id: int, restaurant_id: int, session: AsyncSession
+) -> Voucher:
     """Lädt Voucher oder wirft 404."""
     result = await session.execute(
-        select(Voucher).where(
-            Voucher.id == voucher_id,
-            Voucher.restaurant_id == restaurant_id
-        )
+        select(Voucher).where(Voucher.id == voucher_id, Voucher.restaurant_id == restaurant_id)
     )
     voucher = result.scalar_one_or_none()
     if not voucher:
@@ -65,18 +64,16 @@ async def create_voucher(
 ):
     """Erstellt einen neuen Gutschein."""
     restaurant = await _get_restaurant_or_404(restaurant_id, session)
-    
+
     # Prüfe ob Code bereits existiert
-    result = await session.execute(
-        select(Voucher).where(Voucher.code == voucher_data.code.upper())
-    )
+    result = await session.execute(select(Voucher).where(Voucher.code == voucher_data.code.upper()))
     existing = result.scalar_one_or_none()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ein Gutschein mit diesem Code existiert bereits"
+            detail="Ein Gutschein mit diesem Code existiert bereits",
         )
-    
+
     voucher = Voucher(
         restaurant_id=restaurant_id,
         code=voucher_data.code.upper(),  # Immer Großbuchstaben
@@ -91,15 +88,15 @@ async def create_voucher(
         is_active=voucher_data.is_active,
         created_by_user_id=current_user.id,
     )
-    
+
     session.add(voucher)
     await session.commit()
     await session.refresh(voucher)
-    
+
     return voucher
 
 
-@router.get("/", response_model=List[VoucherRead])
+@router.get("/", response_model=list[VoucherRead])
 async def list_vouchers(
     restaurant_id: int,
     include_inactive: bool = False,
@@ -108,16 +105,16 @@ async def list_vouchers(
 ):
     """Listet alle Gutscheine eines Restaurants."""
     await _get_restaurant_or_404(restaurant_id, session)
-    
+
     query = select(Voucher).where(Voucher.restaurant_id == restaurant_id)
     if not include_inactive:
         query = query.where(Voucher.is_active == True)
-    
+
     query = query.order_by(Voucher.created_at_utc.desc())
-    
+
     result = await session.execute(query)
     vouchers = result.scalars().all()
-    
+
     return vouchers
 
 
@@ -142,14 +139,14 @@ async def update_voucher(
 ):
     """Aktualisiert einen Gutschein."""
     voucher = await _get_voucher_or_404(voucher_id, restaurant_id, session)
-    
+
     update_data = voucher_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(voucher, field, value)
-    
+
     await session.commit()
     await session.refresh(voucher)
-    
+
     return voucher
 
 
@@ -162,10 +159,10 @@ async def delete_voucher(
 ):
     """Löscht einen Gutschein."""
     voucher = await _get_voucher_or_404(voucher_id, restaurant_id, session)
-    
+
     await session.delete(voucher)
     await session.commit()
-    
+
     return None
 
 
@@ -177,65 +174,57 @@ async def validate_voucher(
 ):
     """Validiert einen Gutschein-Code (öffentlicher Endpoint)."""
     await _get_restaurant_or_404(restaurant_id, session)
-    
+
     # Suche Gutschein
     result = await session.execute(
         select(Voucher).where(
-            Voucher.code == validation_data.code.upper(),
-            Voucher.restaurant_id == restaurant_id
+            Voucher.code == validation_data.code.upper(), Voucher.restaurant_id == restaurant_id
         )
     )
     voucher = result.scalar_one_or_none()
-    
+
     if not voucher:
-        return VoucherValidateResponse(
-            valid=False,
-            message="Gutschein-Code nicht gefunden"
-        )
-    
+        return VoucherValidateResponse(valid=False, message="Gutschein-Code nicht gefunden")
+
     # Prüfe Aktivität
     if not voucher.is_active:
-        return VoucherValidateResponse(
-            valid=False,
-            message="Dieser Gutschein ist nicht mehr aktiv"
-        )
-    
+        return VoucherValidateResponse(valid=False, message="Dieser Gutschein ist nicht mehr aktiv")
+
     # Prüfe Gültigkeitszeitraum
     today = date.today()
     if voucher.valid_from and today < voucher.valid_from:
         return VoucherValidateResponse(
             valid=False,
-            message=f"Dieser Gutschein ist erst ab {voucher.valid_from.strftime('%d.%m.%Y')} gültig"
+            message=f"Dieser Gutschein ist erst ab {voucher.valid_from.strftime('%d.%m.%Y')} gültig",
         )
-    
+
     if voucher.valid_until and today > voucher.valid_until:
         return VoucherValidateResponse(
             valid=False,
-            message=f"Dieser Gutschein ist abgelaufen (gültig bis {voucher.valid_until.strftime('%d.%m.%Y')})"
+            message=f"Dieser Gutschein ist abgelaufen (gültig bis {voucher.valid_until.strftime('%d.%m.%Y')})",
         )
-    
+
     # Prüfe maximale Nutzungen
     if voucher.max_uses and voucher.used_count >= voucher.max_uses:
         return VoucherValidateResponse(
-            valid=False,
-            message="Dieser Gutschein wurde bereits zu oft verwendet"
+            valid=False, message="Dieser Gutschein wurde bereits zu oft verwendet"
         )
-    
+
     # Prüfe Mindestbestellwert
     if voucher.min_order_value and validation_data.reservation_amount:
         if validation_data.reservation_amount < voucher.min_order_value:
             return VoucherValidateResponse(
                 valid=False,
-                message=f"Mindestbestellwert von {voucher.min_order_value:.2f} € nicht erreicht"
+                message=f"Mindestbestellwert von {voucher.min_order_value:.2f} € nicht erreicht",
             )
-    
+
     # Berechne Rabattbetrag
     reservation_amount = validation_data.reservation_amount or 0.0
     discount_amount = _calculate_discount(voucher, reservation_amount)
-    
+
     return VoucherValidateResponse(
         valid=True,
         voucher=VoucherRead.model_validate(voucher),
         discount_amount=discount_amount,
-        message="Gutschein ist gültig"
+        message="Gutschein ist gültig",
     )

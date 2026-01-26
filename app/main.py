@@ -1,40 +1,70 @@
+import logging
+from contextlib import asynccontextmanager
+from datetime import UTC
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import logging
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.database.instance import init_db
-from app.sentry import init_sentry
-from app.settings import (
-    CORS_ORIGINS,
-    CORS_ALLOW_CREDENTIALS,
-    CORS_ALLOW_METHODS,
-    CORS_ALLOW_HEADERS,
-    ENV,
-    REQUEST_TIMEOUT,
-    ACTIVITY_LOGGING_ENABLED,
-    DB_TYPE,
-    DATABASE_URL,
-    LOG_LEVEL,
-)
-from app.routers import auth, restaurants, tables, guests, reservations, license
-from app.routers import areas, obstacles, blocks, block_assignments, waitlist, messages, reservation_tables, table_day_configs, reservation_table_day_configs
-from app.routers import audit_logs, user_settings, orders, menu_items, order_statistics, invoices
-from app.routers import websocket, dashboard, ai, public_reservations, webhook_whatsapp, sumup, webhook_sumup
-from app.routers import vouchers, upsell_packages, prepayments
 from app.middleware import (
-    SecurityHeadersMiddleware,
-    RequestLoggingMiddleware,
-    RequestTimeoutMiddleware,
-    HostValidationMiddleware,
     ActivityLogMiddleware,
     AuditLogMiddleware,
-    setup_logging,
-    log_startup,
+    HostValidationMiddleware,
+    RequestLoggingMiddleware,
+    RequestTimeoutMiddleware,
+    SecurityHeadersMiddleware,
     log_shutdown,
+    log_startup,
+    setup_logging,
 )
 from app.rate_limiter import setup_rate_limiting
-from slowapi.middleware import SlowAPIMiddleware
+from app.routers import (
+    ai,
+    areas,
+    audit_logs,
+    auth,
+    block_assignments,
+    blocks,
+    dashboard,
+    guests,
+    invoices,
+    license,
+    menu_items,
+    messages,
+    obstacles,
+    order_statistics,
+    orders,
+    prepayments,
+    public_reservations,
+    reservation_table_day_configs,
+    reservation_tables,
+    reservations,
+    restaurants,
+    sumup,
+    table_day_configs,
+    tables,
+    upsell_packages,
+    user_settings,
+    vouchers,
+    waitlist,
+    webhook_sumup,
+    webhook_whatsapp,
+    websocket,
+)
+from app.sentry import init_sentry
+from app.settings import (
+    ACTIVITY_LOGGING_ENABLED,
+    CORS_ALLOW_CREDENTIALS,
+    CORS_ALLOW_HEADERS,
+    CORS_ALLOW_METHODS,
+    CORS_ORIGINS,
+    DATABASE_URL,
+    DB_TYPE,
+    ENV,
+    LOG_LEVEL,
+    REQUEST_TIMEOUT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,21 +78,21 @@ if ENV == "development":
 async def lifespan(app: FastAPI):
     """Lifecycle management für Startup und Shutdown"""
     from app.services.license_service import license_service
-    
+
     # Initialize Sentry early for error tracking
     sentry_initialized = init_sentry()
     if sentry_initialized:
         logger.info("Sentry error tracking initialized")
-    
+
     log_startup()
     await init_db()
-    
+
     # Initialisiere License Service
     await license_service.check_license(force=True)
     logger.info(f"License features: {license_service.get_features()}")
 
     yield
-    
+
     log_shutdown()
 
 
@@ -73,7 +103,7 @@ app = FastAPI(
     docs_url="/v1/docs" if ENV == "development" else None,
     redoc_url="/v1/redoc" if ENV == "development" else None,
     openapi_url="/v1/openapi.json" if ENV == "development" else None,
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 setup_logging()
@@ -161,8 +191,8 @@ app.include_router(webhook_sumup.router, prefix="/api/v1")
 @app.get("/v1/")
 async def root():
     """Root-Endpoint mit allgemeinen Informationen über die API"""
-    from datetime import datetime, timezone
-    
+    from datetime import datetime
+
     return {
         "message": "Welcome to GastroPilot App API",
         "version": "1.0.0",
@@ -170,7 +200,7 @@ async def root():
         "description": "API für das GastroPilot App Backend",
         "docs": "/v1/docs" if ENV == "development" else None,
         "health": "/v1/health",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "endpoints": {
             "authentication": "/v1/auth",
             "license": "/v1/license",
@@ -193,9 +223,8 @@ async def root():
             "menu_items": "/v1/menu-items",
             "order_statistics": "/v1/order-statistics",
             "invoices": "/v1/invoices",
-            "license": "/v1/license",
             "ai": "/v1/ai",
-        }
+        },
     }
 
 
@@ -207,16 +236,18 @@ def _is_production_environment() -> bool:
 @app.get("/v1/health")
 async def health():
     """Health Check Endpoint mit API- und Environment-Informationen
-    
+
     Für Production/Demo: Minimale Informationen (keine DB Connection Strings)
     Für Staging/Test/Dev: Detaillierte Informationen (inkl. maskierter DB URLs)
     """
-    from datetime import datetime, timezone
-    from app.database.instance import async_session
+    from datetime import datetime
+
     from sqlalchemy import text
-    
+
+    from app.database.instance import async_session
+
     is_prod_env = _is_production_environment()
-    
+
     # Datenbank-Verbindung testen
     db_status = "unknown"
     try:
@@ -226,12 +257,12 @@ async def health():
     except Exception as e:
         logger.error(f"Database health check failed: {str(e)}")
         db_status = "disconnected"
-    
+
     # Basis-Response
     response = {
         "status": "healthy" if db_status == "connected" else "degraded",
         "version": "1.0.0",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "api": {
             "name": "GastroPilot App API",
             "version": "1.0.0",
@@ -239,7 +270,7 @@ async def health():
             "description": "API für das GastroPilot App Backend",
         },
     }
-    
+
     # Für produktionsreife Environments: Minimale Informationen
     if is_prod_env:
         response["environment"] = {
@@ -266,7 +297,7 @@ async def health():
                 "url_masked": _mask_database_url(DATABASE_URL) if DATABASE_URL else None,
             },
         }
-    
+
     return response
 
 

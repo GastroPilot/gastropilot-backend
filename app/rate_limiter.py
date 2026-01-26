@@ -2,13 +2,16 @@
 Rate Limiting mit slowapi (an Referenz angelehnt).
 In Development deaktiviert; in Production optional mit Redis (REDIS_URL) oder in-memory.
 """
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+
+import logging
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-import logging
-from app.settings import REDIS_URL, ENV
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+from app.settings import ENV, REDIS_URL
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +21,7 @@ if ENV == "development":
         key_func=get_remote_address,
         default_limits=[],  # Keine Limits in Development
         storage_uri=None,
-        swallow_errors=True
+        swallow_errors=True,
     )
     logger.info("Rate limiting DISABLED in development mode")
 else:
@@ -33,7 +36,7 @@ else:
         key_func=get_remote_address,
         default_limits=["200 per day", "50 per minute"],
         storage_uri=storage_uri,
-        swallow_errors=True  # Don't crash if Redis is unavailable
+        swallow_errors=True,  # Don't crash if Redis is unavailable
     )
 
 
@@ -41,6 +44,7 @@ def setup_rate_limiting(app: FastAPI):
     """
     Konfiguriert Rate Limiting für die App und hängt einen globalen Handler an.
     """
+
     @app.exception_handler(RateLimitExceeded)
     async def rate_limit_exceeded_handler(request, exc):
         logger.warning(
@@ -50,8 +54,8 @@ def setup_rate_limiting(app: FastAPI):
             status_code=429,
             content={
                 "detail": "Rate limit exceeded",
-                "retry_after": exc.detail.split("after ")[-1] if "after" in exc.detail else "60"
-            }
+                "retry_after": exc.detail.split("after ")[-1] if "after" in exc.detail else "60",
+            },
         )
 
     return limiter
@@ -59,12 +63,14 @@ def setup_rate_limiting(app: FastAPI):
 
 # ==================== RATE LIMIT DECORATORS ====================
 
+
 def _no_op_decorator(func):
     """No-Op Decorator für Development - macht nichts"""
     return func
 
 
 if ENV == "development":
+
     def rate_limit_strict():
         return _no_op_decorator
 
@@ -76,7 +82,9 @@ if ENV == "development":
 
     def rate_limit_public():
         return _no_op_decorator
+
 else:
+
     def rate_limit_strict():
         return limiter.limit("15/minute")
 

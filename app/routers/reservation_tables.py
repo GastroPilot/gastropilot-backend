@@ -1,14 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_session, require_mitarbeiter_role, require_reservations_module, normalize_datetime_to_utc
-from app.database.models import ReservationTable, Reservation, Table, Restaurant, User
+from app.database.models import Reservation, ReservationTable, Restaurant, Table, User
+from app.dependencies import (
+    get_session,
+    normalize_datetime_to_utc,
+    require_mitarbeiter_role,
+    require_reservations_module,
+)
 from app.schemas import ReservationTableCreate, ReservationTableRead
 
-router = APIRouter(prefix="/restaurants/{restaurant_id}/reservation-tables", tags=["reservation_tables"])
+router = APIRouter(
+    prefix="/restaurants/{restaurant_id}/reservation-tables", tags=["reservation_tables"]
+)
 
 
 async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> Restaurant:
@@ -38,7 +44,9 @@ async def add_reservation_table(
     start_at = normalize_datetime_to_utc(body.start_at)
     end_at = normalize_datetime_to_utc(body.end_at)
     if start_at >= end_at:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End time must be after start time")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="End time must be after start time"
+        )
 
     tables_to_assign = [table]
     if table.join_group_id is not None:
@@ -46,7 +54,7 @@ async def add_reservation_table(
             select(Table).where(
                 Table.restaurant_id == restaurant_id,
                 Table.join_group_id == table.join_group_id,
-                Table.id != table.id
+                Table.id != table.id,
             )
         )
         group_tables = result.scalars().all()
@@ -56,8 +64,8 @@ async def add_reservation_table(
     for tbl in tables_to_assign:
         existing = await session.get(ReservationTable, (reservation.id, tbl.id))
         if existing:
-            continue 
-        
+            continue
+
         rt = ReservationTable(
             reservation_id=reservation.id,
             table_id=tbl.id,
@@ -77,10 +85,15 @@ async def add_reservation_table(
             existing_rt = await session.get(ReservationTable, (reservation.id, table.id))
             if existing_rt:
                 return existing_rt
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create reservation table")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create reservation table",
+            )
     except IntegrityError:
         await session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reservation-table conflict")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Reservation-table conflict"
+        )
 
 
 @router.get("/", response_model=list[ReservationTableRead])
@@ -113,28 +126,30 @@ async def remove_reservation_table(
     table = await session.get(Table, table_id)
     if not table or table.restaurant_id != restaurant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
-    
+
     rt = await session.get(ReservationTable, (reservation_id, table_id))
     if not rt:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation-table mapping not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Reservation-table mapping not found"
+        )
+
     tables_to_remove = [table]
     if table.join_group_id is not None:
         result = await session.execute(
             select(Table).where(
                 Table.restaurant_id == restaurant_id,
                 Table.join_group_id == table.join_group_id,
-                Table.id != table.id
+                Table.id != table.id,
             )
         )
         group_tables = result.scalars().all()
         tables_to_remove.extend(group_tables)
-    
+
     for tbl in tables_to_remove:
         rt_to_delete = await session.get(ReservationTable, (reservation_id, tbl.id))
         if rt_to_delete:
             await session.delete(rt_to_delete)
-    
+
     try:
         await session.commit()
     except Exception:

@@ -1,11 +1,12 @@
+from datetime import date, datetime
+from typing import Any
+
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Any
-from datetime import datetime, date
 
 
 class Timestamped(BaseModel):
-    created_at_utc: Optional[datetime] = None
-    updated_at_utc: Optional[datetime] = None
+    created_at_utc: datetime | None = None
+    updated_at_utc: datetime | None = None
 
 
 # Auth Schemas
@@ -32,12 +33,12 @@ class RefreshRequest(BaseModel):
 class UserRead(Timestamped):
     id: int
     operator_number: str
-    nfc_tag_id: Optional[str] = None
+    nfc_tag_id: str | None = None
     first_name: str
     last_name: str
     role: str
     is_active: bool
-    last_login_at_utc: Optional[datetime] = None
+    last_login_at_utc: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -46,20 +47,24 @@ class UserRead(Timestamped):
 class UserCreate(BaseModel):
     operator_number: str = Field(min_length=4, max_length=4, pattern="^[0-9]{4}$")
     pin: str = Field(min_length=6, max_length=8, pattern="^[0-9]{6,8}$")
-    nfc_tag_id: Optional[str] = Field(None, min_length=1, max_length=64)
+    nfc_tag_id: str | None = Field(None, min_length=1, max_length=64)
     first_name: str = Field(min_length=2, max_length=120)
     last_name: str = Field(min_length=2, max_length=120)
-    role: str = Field(default="mitarbeiter", pattern="^(servecta|restaurantinhaber|schichtleiter|mitarbeiter)$")
+    role: str = Field(
+        default="mitarbeiter", pattern="^(servecta|restaurantinhaber|schichtleiter|mitarbeiter)$"
+    )
 
 
 class UserUpdate(BaseModel):
-    operator_number: Optional[str] = Field(None, min_length=4, max_length=4, pattern="^[0-9]{4}$")
-    pin: Optional[str] = Field(None, min_length=6, max_length=8, pattern="^[0-9]{6,8}$")
-    nfc_tag_id: Optional[str] = Field(None, min_length=1, max_length=64)
-    first_name: Optional[str] = Field(None, min_length=2, max_length=120)
-    last_name: Optional[str] = Field(None, min_length=2, max_length=120)
-    role: Optional[str] = Field(None, pattern="^(servecta|restaurantinhaber|schichtleiter|mitarbeiter)$")
-    is_active: Optional[bool] = None
+    operator_number: str | None = Field(None, min_length=4, max_length=4, pattern="^[0-9]{4}$")
+    pin: str | None = Field(None, min_length=6, max_length=8, pattern="^[0-9]{6,8}$")
+    nfc_tag_id: str | None = Field(None, min_length=1, max_length=64)
+    first_name: str | None = Field(None, min_length=2, max_length=120)
+    last_name: str | None = Field(None, min_length=2, max_length=120)
+    role: str | None = Field(
+        None, pattern="^(servecta|restaurantinhaber|schichtleiter|mitarbeiter)$"
+    )
+    is_active: bool | None = None
 
 
 class UserSettingsRead(Timestamped):
@@ -78,53 +83,53 @@ class UserSettingsUpdate(BaseModel):
 # Restaurant Schemas
 class RestaurantCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    slug: Optional[str] = Field(None, min_length=1, max_length=100, pattern="^[a-z0-9-]+$")
-    address: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[EmailStr] = None
-    description: Optional[str] = None
+    slug: str | None = Field(None, min_length=1, max_length=100, pattern="^[a-z0-9-]+$")
+    address: str | None = None
+    phone: str | None = None
+    email: EmailStr | None = None
+    description: str | None = None
     public_booking_enabled: bool = False
     booking_lead_time_hours: int = Field(default=2, ge=0)
     booking_max_party_size: int = Field(default=12, ge=1)
     booking_default_duration: int = Field(default=120, ge=30)
-    opening_hours: Optional[dict] = None
+    opening_hours: dict | None = None
 
 
 class RestaurantUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    slug: Optional[str] = Field(None, min_length=1, max_length=100, pattern="^[a-z0-9-]+$")
-    address: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[EmailStr] = None
-    description: Optional[str] = None
-    public_booking_enabled: Optional[bool] = None
-    booking_lead_time_hours: Optional[int] = Field(None, ge=0)
-    booking_max_party_size: Optional[int] = Field(None, ge=1)
-    booking_default_duration: Optional[int] = Field(None, ge=30)
-    opening_hours: Optional[dict] = None
+    name: str | None = Field(None, min_length=1, max_length=200)
+    slug: str | None = Field(None, min_length=1, max_length=100, pattern="^[a-z0-9-]+$")
+    address: str | None = None
+    phone: str | None = None
+    email: EmailStr | None = None
+    description: str | None = None
+    public_booking_enabled: bool | None = None
+    booking_lead_time_hours: int | None = Field(None, ge=0)
+    booking_max_party_size: int | None = Field(None, ge=1)
+    booking_default_duration: int | None = Field(None, ge=30)
+    opening_hours: dict | None = None
     # SumUp Integration
     # API Key und Merchant Code werden serverseitig verwaltet (nicht überschreibbar)
-    sumup_enabled: Optional[bool] = None
-    sumup_default_reader_id: Optional[str] = Field(None, max_length=64)
+    sumup_enabled: bool | None = None
+    sumup_default_reader_id: str | None = Field(None, max_length=64)
 
 
 class RestaurantRead(Timestamped):
     id: int
     name: str
-    slug: Optional[str] = None
-    address: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    description: Optional[str] = None
+    slug: str | None = None
+    address: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    description: str | None = None
     public_booking_enabled: bool = False
     booking_lead_time_hours: int = 2
     booking_max_party_size: int = 12
     booking_default_duration: int = 120
-    opening_hours: Optional[dict] = None
+    opening_hours: dict | None = None
     # SumUp Integration
     sumup_enabled: bool = False
-    sumup_merchant_code: Optional[str] = None
-    sumup_default_reader_id: Optional[str] = None
+    sumup_merchant_code: str | None = None
+    sumup_default_reader_id: str | None = None
 
     class Config:
         from_attributes = True
@@ -134,56 +139,56 @@ class RestaurantRead(Timestamped):
 class TableCreate(BaseModel):
     number: str = Field(min_length=1, max_length=50)
     capacity: int = Field(gt=0)
-    area_id: Optional[int] = None
-    shape: Optional[str] = "rectangle"
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
-    width: Optional[float] = 120.0
-    height: Optional[float] = 120.0
+    area_id: int | None = None
+    shape: str | None = "rectangle"
+    position_x: float | None = None
+    position_y: float | None = None
+    width: float | None = 120.0
+    height: float | None = 120.0
     is_active: bool = True
-    notes: Optional[str] = None
+    notes: str | None = None
     # Erweiterte Felder
     is_joinable: bool = False
-    join_group_id: Optional[int] = None
+    join_group_id: int | None = None
     is_outdoor: bool = False
-    rotation: Optional[int] = None
+    rotation: int | None = None
 
 
 class TableUpdate(BaseModel):
-    number: Optional[str] = Field(None, min_length=1, max_length=50)
-    capacity: Optional[int] = Field(None, gt=0)
-    area_id: Optional[int] = None
-    shape: Optional[str] = None
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
-    width: Optional[float] = None
-    height: Optional[float] = None
-    is_active: Optional[bool] = None
-    notes: Optional[str] = None
+    number: str | None = Field(None, min_length=1, max_length=50)
+    capacity: int | None = Field(None, gt=0)
+    area_id: int | None = None
+    shape: str | None = None
+    position_x: float | None = None
+    position_y: float | None = None
+    width: float | None = None
+    height: float | None = None
+    is_active: bool | None = None
+    notes: str | None = None
     # Erweiterte Felder
-    is_joinable: Optional[bool] = None
-    join_group_id: Optional[int] = None
-    is_outdoor: Optional[bool] = None
-    rotation: Optional[int] = None
+    is_joinable: bool | None = None
+    join_group_id: int | None = None
+    is_outdoor: bool | None = None
+    rotation: int | None = None
 
 
 class TableRead(Timestamped):
     id: int
     restaurant_id: int
-    area_id: Optional[int] = None
+    area_id: int | None = None
     number: str
     capacity: int
-    shape: Optional[str] = None
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
-    width: Optional[float] = None
-    height: Optional[float] = None
+    shape: str | None = None
+    position_x: float | None = None
+    position_y: float | None = None
+    width: float | None = None
+    height: float | None = None
     is_active: bool
-    notes: Optional[str] = None
+    notes: str | None = None
     is_joinable: bool
-    join_group_id: Optional[int] = None
+    join_group_id: int | None = None
     is_outdoor: bool
-    rotation: Optional[int] = None
+    rotation: int | None = None
 
     class Config:
         from_attributes = True
@@ -191,64 +196,64 @@ class TableRead(Timestamped):
 
 # TableDayConfig Schemas
 class TableDayConfigCreate(BaseModel):
-    table_id: Optional[int] = None  # None für temporäre Tische
+    table_id: int | None = None  # None für temporäre Tische
     date: date
-    is_hidden: Optional[bool] = None
-    is_temporary: Optional[bool] = None
+    is_hidden: bool | None = None
+    is_temporary: bool | None = None
     # Für temporäre Tische erforderlich:
-    number: Optional[str] = Field(None, max_length=50)
-    capacity: Optional[int] = Field(None, gt=0)
-    shape: Optional[str] = None
-    notes: Optional[str] = None
+    number: str | None = Field(None, max_length=50)
+    capacity: int | None = Field(None, gt=0)
+    shape: str | None = None
+    notes: str | None = None
     # Felder die überschrieben werden können:
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
-    width: Optional[float] = None
-    height: Optional[float] = None
-    is_active: Optional[bool] = None
-    color: Optional[str] = Field(None, max_length=16)
-    join_group_id: Optional[int] = None
-    is_joinable: Optional[bool] = None
-    rotation: Optional[int] = None
+    position_x: float | None = None
+    position_y: float | None = None
+    width: float | None = None
+    height: float | None = None
+    is_active: bool | None = None
+    color: str | None = Field(None, max_length=16)
+    join_group_id: int | None = None
+    is_joinable: bool | None = None
+    rotation: int | None = None
 
 
 class TableDayConfigUpdate(BaseModel):
-    is_hidden: Optional[bool] = None
-    number: Optional[str] = Field(None, max_length=50)
-    capacity: Optional[int] = Field(None, gt=0)
-    shape: Optional[str] = None
-    notes: Optional[str] = None
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
-    width: Optional[float] = None
-    height: Optional[float] = None
-    is_active: Optional[bool] = None
-    color: Optional[str] = Field(None, max_length=16)
-    join_group_id: Optional[int] = None
-    is_joinable: Optional[bool] = None
-    rotation: Optional[int] = None
+    is_hidden: bool | None = None
+    number: str | None = Field(None, max_length=50)
+    capacity: int | None = Field(None, gt=0)
+    shape: str | None = None
+    notes: str | None = None
+    position_x: float | None = None
+    position_y: float | None = None
+    width: float | None = None
+    height: float | None = None
+    is_active: bool | None = None
+    color: str | None = Field(None, max_length=16)
+    join_group_id: int | None = None
+    is_joinable: bool | None = None
+    rotation: int | None = None
 
 
 class TableDayConfigRead(Timestamped):
     id: int
     restaurant_id: int
-    table_id: Optional[int] = None
+    table_id: int | None = None
     date: date
     is_hidden: bool
     is_temporary: bool
-    number: Optional[str] = None
-    capacity: Optional[int] = None
-    shape: Optional[str] = None
-    notes: Optional[str] = None
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
-    width: Optional[float] = None
-    height: Optional[float] = None
-    is_active: Optional[bool] = None
-    color: Optional[str] = None
-    join_group_id: Optional[int] = None
-    is_joinable: Optional[bool] = None
-    rotation: Optional[int] = None
+    number: str | None = None
+    capacity: int | None = None
+    shape: str | None = None
+    notes: str | None = None
+    position_x: float | None = None
+    position_y: float | None = None
+    width: float | None = None
+    height: float | None = None
+    is_active: bool | None = None
+    color: str | None = None
+    join_group_id: int | None = None
+    is_joinable: bool | None = None
+    rotation: int | None = None
 
     class Config:
         from_attributes = True
@@ -258,25 +263,25 @@ class TableDayConfigRead(Timestamped):
 class GuestCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=120)
     last_name: str = Field(min_length=1, max_length=120)
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    language: Optional[str] = Field(None, max_length=10)
-    birthday: Optional[datetime] = None
-    company: Optional[str] = Field(None, max_length=200)
-    type: Optional[str] = Field(None, max_length=50)
-    notes: Optional[str] = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    language: str | None = Field(None, max_length=10)
+    birthday: datetime | None = None
+    company: str | None = Field(None, max_length=200)
+    type: str | None = Field(None, max_length=50)
+    notes: str | None = None
 
 
 class GuestUpdate(BaseModel):
-    first_name: Optional[str] = Field(None, min_length=1, max_length=120)
-    last_name: Optional[str] = Field(None, min_length=1, max_length=120)
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    language: Optional[str] = Field(None, max_length=10)
-    birthday: Optional[datetime] = None
-    company: Optional[str] = Field(None, max_length=200)
-    type: Optional[str] = Field(None, max_length=50)
-    notes: Optional[str] = None
+    first_name: str | None = Field(None, min_length=1, max_length=120)
+    last_name: str | None = Field(None, min_length=1, max_length=120)
+    email: EmailStr | None = None
+    phone: str | None = None
+    language: str | None = Field(None, max_length=10)
+    birthday: datetime | None = None
+    company: str | None = Field(None, max_length=200)
+    type: str | None = Field(None, max_length=50)
+    notes: str | None = None
 
 
 class GuestRead(Timestamped):
@@ -284,13 +289,13 @@ class GuestRead(Timestamped):
     restaurant_id: int
     first_name: str
     last_name: str
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    language: Optional[str] = None
-    birthday: Optional[datetime] = None
-    company: Optional[str] = None
-    type: Optional[str] = None
-    notes: Optional[str] = None
+    email: str | None = None
+    phone: str | None = None
+    language: str | None = None
+    birthday: datetime | None = None
+    company: str | None = None
+    type: str | None = None
+    notes: str | None = None
 
     class Config:
         from_attributes = True
@@ -298,68 +303,68 @@ class GuestRead(Timestamped):
 
 # Reservation Schemas
 class ReservationCreate(BaseModel):
-    table_id: Optional[int] = None
-    guest_id: Optional[int] = None
+    table_id: int | None = None
+    guest_id: int | None = None
     start_at: datetime
     end_at: datetime
     party_size: int = Field(gt=0)
     status: str = "pending"
     channel: str = "manual"
-    guest_name: Optional[str] = None
-    guest_email: Optional[EmailStr] = None
-    guest_phone: Optional[str] = None
-    confirmation_code: Optional[str] = None
-    special_requests: Optional[str] = None
-    notes: Optional[str] = None
-    tags: Optional[List[str]] = None
+    guest_name: str | None = None
+    guest_email: EmailStr | None = None
+    guest_phone: str | None = None
+    confirmation_code: str | None = None
+    special_requests: str | None = None
+    notes: str | None = None
+    tags: list[str] | None = None
 
 
 class ReservationUpdate(BaseModel):
-    table_id: Optional[int] = None
-    guest_id: Optional[int] = None
-    start_at: Optional[datetime] = None
-    end_at: Optional[datetime] = None
-    party_size: Optional[int] = Field(None, gt=0)
-    status: Optional[str] = None
-    guest_name: Optional[str] = None
-    guest_email: Optional[EmailStr] = None
-    guest_phone: Optional[str] = None
-    confirmation_code: Optional[str] = None
-    special_requests: Optional[str] = None
-    notes: Optional[str] = None
-    tags: Optional[List[str]] = None
-    canceled_reason: Optional[str] = None
-    no_show_at: Optional[datetime] = None
+    table_id: int | None = None
+    guest_id: int | None = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    party_size: int | None = Field(None, gt=0)
+    status: str | None = None
+    guest_name: str | None = None
+    guest_email: EmailStr | None = None
+    guest_phone: str | None = None
+    confirmation_code: str | None = None
+    special_requests: str | None = None
+    notes: str | None = None
+    tags: list[str] | None = None
+    canceled_reason: str | None = None
+    no_show_at: datetime | None = None
 
 
 class ReservationRead(Timestamped):
     id: int
     restaurant_id: int
-    table_id: Optional[int] = None
-    guest_id: Optional[int] = None
+    table_id: int | None = None
+    guest_id: int | None = None
     start_at: datetime
     end_at: datetime
     party_size: int
     status: str
     channel: str
-    guest_name: Optional[str] = None
-    guest_email: Optional[str] = None
-    guest_phone: Optional[str] = None
-    confirmation_code: Optional[str] = None
-    special_requests: Optional[str] = None
-    notes: Optional[str] = None
-    tags: Optional[List[str]] = None
-    confirmed_at: Optional[datetime] = None
-    seated_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    canceled_at: Optional[datetime] = None
-    canceled_reason: Optional[str] = None
-    no_show_at: Optional[datetime] = None
-    voucher_id: Optional[int] = None
-    voucher_discount_amount: Optional[float] = None
+    guest_name: str | None = None
+    guest_email: str | None = None
+    guest_phone: str | None = None
+    confirmation_code: str | None = None
+    special_requests: str | None = None
+    notes: str | None = None
+    tags: list[str] | None = None
+    confirmed_at: datetime | None = None
+    seated_at: datetime | None = None
+    completed_at: datetime | None = None
+    canceled_at: datetime | None = None
+    canceled_reason: str | None = None
+    no_show_at: datetime | None = None
+    voucher_id: int | None = None
+    voucher_discount_amount: float | None = None
     prepayment_required: bool = False
-    prepayment_amount: Optional[float] = None
-    upsell_packages: Optional[List["UpsellPackageRead"]] = None  # Wird manuell gesetzt
+    prepayment_amount: float | None = None
+    upsell_packages: list["UpsellPackageRead"] | None = None  # Wird manuell gesetzt
 
     class Config:
         from_attributes = True
@@ -371,7 +376,7 @@ class AreaCreate(BaseModel):
 
 
 class AreaUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    name: str | None = Field(None, min_length=1, max_length=120)
 
 
 class AreaRead(BaseModel):
@@ -385,47 +390,47 @@ class AreaRead(BaseModel):
 
 # Obstacles
 class ObstacleCreate(BaseModel):
-    area_id: Optional[int] = None
+    area_id: int | None = None
     type: str = Field(min_length=1, max_length=32)
-    name: Optional[str] = Field(None, max_length=120)
+    name: str | None = Field(None, max_length=120)
     x: int
     y: int
     width: int
     height: int
-    rotation: Optional[int] = None
+    rotation: int | None = None
     blocking: bool = True
-    color: Optional[str] = Field(None, max_length=16)
-    notes: Optional[str] = None
+    color: str | None = Field(None, max_length=16)
+    notes: str | None = None
 
 
 class ObstacleUpdate(BaseModel):
-    area_id: Optional[int] = None
-    type: Optional[str] = Field(None, min_length=1, max_length=32)
-    name: Optional[str] = Field(None, max_length=120)
-    x: Optional[int] = None
-    y: Optional[int] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    rotation: Optional[int] = None
-    blocking: Optional[bool] = None
-    color: Optional[str] = Field(None, max_length=16)
-    notes: Optional[str] = None
+    area_id: int | None = None
+    type: str | None = Field(None, min_length=1, max_length=32)
+    name: str | None = Field(None, max_length=120)
+    x: int | None = None
+    y: int | None = None
+    width: int | None = None
+    height: int | None = None
+    rotation: int | None = None
+    blocking: bool | None = None
+    color: str | None = Field(None, max_length=16)
+    notes: str | None = None
 
 
 class ObstacleRead(BaseModel):
     id: int
     restaurant_id: int
-    area_id: Optional[int] = None
+    area_id: int | None = None
     type: str
-    name: Optional[str] = None
+    name: str | None = None
     x: int
     y: int
     width: int
     height: int
-    rotation: Optional[int] = None
+    rotation: int | None = None
     blocking: bool
-    color: Optional[str] = None
-    notes: Optional[str] = None
+    color: str | None = None
+    notes: str | None = None
 
     class Config:
         from_attributes = True
@@ -486,13 +491,13 @@ class BlockAssignmentRead(BaseModel):
 class BlockCreate(BaseModel):
     start_at: datetime
     end_at: datetime
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class BlockUpdate(BaseModel):
-    start_at: Optional[datetime] = None
-    end_at: Optional[datetime] = None
-    reason: Optional[str] = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    reason: str | None = None
 
 
 class BlockRead(BaseModel):
@@ -500,8 +505,8 @@ class BlockRead(BaseModel):
     restaurant_id: int
     start_at: datetime
     end_at: datetime
-    reason: Optional[str] = None
-    created_by_user_id: Optional[int] = None
+    reason: str | None = None
+    created_by_user_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -509,39 +514,39 @@ class BlockRead(BaseModel):
 
 # Waitlist
 class WaitlistCreate(BaseModel):
-    guest_id: Optional[int] = None
+    guest_id: int | None = None
     party_size: int = Field(gt=0)
-    desired_from: Optional[datetime] = None
-    desired_to: Optional[datetime] = None
+    desired_from: datetime | None = None
+    desired_to: datetime | None = None
     status: str = "waiting"
-    priority: Optional[int] = None
-    notes: Optional[str] = None
+    priority: int | None = None
+    notes: str | None = None
 
 
 class WaitlistUpdate(BaseModel):
-    guest_id: Optional[int] = None
-    party_size: Optional[int] = Field(None, gt=0)
-    desired_from: Optional[datetime] = None
-    desired_to: Optional[datetime] = None
-    status: Optional[str] = None
-    priority: Optional[int] = None
-    notes: Optional[str] = None
-    notified_at: Optional[datetime] = None
-    confirmed_at: Optional[datetime] = None
+    guest_id: int | None = None
+    party_size: int | None = Field(None, gt=0)
+    desired_from: datetime | None = None
+    desired_to: datetime | None = None
+    status: str | None = None
+    priority: int | None = None
+    notes: str | None = None
+    notified_at: datetime | None = None
+    confirmed_at: datetime | None = None
 
 
 class WaitlistRead(BaseModel):
     id: int
     restaurant_id: int
-    guest_id: Optional[int] = None
+    guest_id: int | None = None
     party_size: int
-    desired_from: Optional[datetime] = None
-    desired_to: Optional[datetime] = None
+    desired_from: datetime | None = None
+    desired_to: datetime | None = None
     status: str
-    priority: Optional[int] = None
-    notified_at: Optional[datetime] = None
-    confirmed_at: Optional[datetime] = None
-    notes: Optional[str] = None
+    priority: int | None = None
+    notified_at: datetime | None = None
+    confirmed_at: datetime | None = None
+    notes: str | None = None
     created_at_utc: datetime
 
     class Config:
@@ -550,8 +555,8 @@ class WaitlistRead(BaseModel):
 
 # Messages
 class MessageCreate(BaseModel):
-    reservation_id: Optional[int] = None
-    guest_id: Optional[int] = None
+    reservation_id: int | None = None
+    guest_id: int | None = None
     direction: str
     channel: str
     address: str
@@ -560,17 +565,17 @@ class MessageCreate(BaseModel):
 
 
 class MessageUpdate(BaseModel):
-    status: Optional[str] = None
-    body: Optional[str] = None
-    channel: Optional[str] = None
-    address: Optional[str] = None
+    status: str | None = None
+    body: str | None = None
+    channel: str | None = None
+    address: str | None = None
 
 
 class MessageRead(BaseModel):
     id: int
     restaurant_id: int
-    reservation_id: Optional[int] = None
-    guest_id: Optional[int] = None
+    reservation_id: int | None = None
+    guest_id: int | None = None
     direction: str
     channel: str
     address: str
@@ -585,22 +590,22 @@ class MessageRead(BaseModel):
 # Audit Logs
 class AuditLogCreate(BaseModel):
     entity_type: str = Field(min_length=1, max_length=50)
-    entity_id: Optional[int] = None
+    entity_id: int | None = None
     action: str = Field(min_length=1, max_length=32)
-    description: Optional[str] = None
-    details: Optional[dict[str, Any]] = None
+    description: str | None = None
+    details: dict[str, Any] | None = None
 
 
 class AuditLogRead(BaseModel):
     id: int
     restaurant_id: int
-    user_id: Optional[int] = None
+    user_id: int | None = None
     entity_type: str
-    entity_id: Optional[int] = None
+    entity_id: int | None = None
     action: str
-    description: Optional[str] = None
-    details: Optional[dict[str, Any]] = None
-    ip_address: Optional[str] = None
+    description: str | None = None
+    details: dict[str, Any] | None = None
+    ip_address: str | None = None
     created_at_utc: datetime
 
     class Config:
@@ -610,41 +615,41 @@ class AuditLogRead(BaseModel):
 # Order Schemas
 class OrderItemCreate(BaseModel):
     item_name: str = Field(min_length=1, max_length=200)
-    item_description: Optional[str] = None
-    category: Optional[str] = Field(None, max_length=100)
+    item_description: str | None = None
+    category: str | None = Field(None, max_length=100)
     quantity: int = Field(gt=0, default=1)
     unit_price: float = Field(ge=0)  # Preis inkl. MwSt.
-    tax_rate: Optional[float] = Field(None, ge=0, le=1)  # MwSt-Satz
-    notes: Optional[str] = None
-    sort_order: Optional[int] = 0
+    tax_rate: float | None = Field(None, ge=0, le=1)  # MwSt-Satz
+    notes: str | None = None
+    sort_order: int | None = 0
 
 
 class OrderItemUpdate(BaseModel):
-    item_name: Optional[str] = Field(None, min_length=1, max_length=200)
-    item_description: Optional[str] = None
-    category: Optional[str] = Field(None, max_length=100)
-    quantity: Optional[int] = Field(None, gt=0)
-    unit_price: Optional[float] = Field(None, ge=0)  # Preis inkl. MwSt.
-    tax_rate: Optional[float] = Field(None, ge=0, le=1)  # MwSt-Satz
-    status: Optional[str] = None
-    notes: Optional[str] = None
-    sort_order: Optional[int] = None
+    item_name: str | None = Field(None, min_length=1, max_length=200)
+    item_description: str | None = None
+    category: str | None = Field(None, max_length=100)
+    quantity: int | None = Field(None, gt=0)
+    unit_price: float | None = Field(None, ge=0)  # Preis inkl. MwSt.
+    tax_rate: float | None = Field(None, ge=0, le=1)  # MwSt-Satz
+    status: str | None = None
+    notes: str | None = None
+    sort_order: int | None = None
 
 
 class OrderItemRead(Timestamped):
     id: int
     order_id: int
-    menu_item_id: Optional[int] = None
+    menu_item_id: int | None = None
     item_name: str
-    item_description: Optional[str] = None
-    category: Optional[str] = None
+    item_description: str | None = None
+    category: str | None = None
     quantity: int
     unit_price: float  # Preis inkl. MwSt.
     total_price: float  # Gesamtpreis inkl. MwSt.
     tax_rate: float  # MwSt-Satz
     status: str
-    notes: Optional[str] = None
-    sort_order: Optional[int] = None
+    notes: str | None = None
+    sort_order: int | None = None
 
     class Config:
         from_attributes = True
@@ -653,101 +658,101 @@ class OrderItemRead(Timestamped):
 class SplitPayment(BaseModel):
     method: str
     amount: float
-    tip_amount: Optional[float] = None
-    is_paid: Optional[bool] = False
-    item_ids: Optional[List[int]] = None
+    tip_amount: float | None = None
+    is_paid: bool | None = False
+    item_ids: list[int] | None = None
 
 
 class OrderCreate(BaseModel):
-    table_id: Optional[int] = None
-    guest_id: Optional[int] = None
-    reservation_id: Optional[int] = None
-    party_size: Optional[int] = Field(None, gt=0)
-    notes: Optional[str] = None
-    special_requests: Optional[str] = None
-    split_payments: Optional[List[SplitPayment]] = None
-    items: Optional[List[OrderItemCreate]] = None
+    table_id: int | None = None
+    guest_id: int | None = None
+    reservation_id: int | None = None
+    party_size: int | None = Field(None, gt=0)
+    notes: str | None = None
+    special_requests: str | None = None
+    split_payments: list[SplitPayment] | None = None
+    items: list[OrderItemCreate] | None = None
 
 
 class OrderUpdate(BaseModel):
-    table_id: Optional[int] = None
-    guest_id: Optional[int] = None
-    reservation_id: Optional[int] = None
-    status: Optional[str] = None
-    party_size: Optional[int] = Field(None, gt=0)
-    subtotal: Optional[float] = Field(None, ge=0)
-    tax_amount_7: Optional[float] = Field(None, ge=0)
-    tax_amount_19: Optional[float] = Field(None, ge=0)
-    tax_amount: Optional[float] = Field(None, ge=0)  # Gesamt-MwSt. (für Kompatibilität)
-    discount_amount: Optional[float] = Field(None, ge=0)
-    discount_percentage: Optional[float] = Field(None, ge=0, le=100)
-    tip_amount: Optional[float] = Field(None, ge=0)
-    total: Optional[float] = Field(None, ge=0)
-    payment_method: Optional[str] = Field(None, max_length=32)
-    payment_status: Optional[str] = None
-    split_payments: Optional[List[SplitPayment]] = None
-    notes: Optional[str] = None
-    special_requests: Optional[str] = None
-    closed_at: Optional[datetime] = None
-    paid_at: Optional[datetime] = None
+    table_id: int | None = None
+    guest_id: int | None = None
+    reservation_id: int | None = None
+    status: str | None = None
+    party_size: int | None = Field(None, gt=0)
+    subtotal: float | None = Field(None, ge=0)
+    tax_amount_7: float | None = Field(None, ge=0)
+    tax_amount_19: float | None = Field(None, ge=0)
+    tax_amount: float | None = Field(None, ge=0)  # Gesamt-MwSt. (für Kompatibilität)
+    discount_amount: float | None = Field(None, ge=0)
+    discount_percentage: float | None = Field(None, ge=0, le=100)
+    tip_amount: float | None = Field(None, ge=0)
+    total: float | None = Field(None, ge=0)
+    payment_method: str | None = Field(None, max_length=32)
+    payment_status: str | None = None
+    split_payments: list[SplitPayment] | None = None
+    notes: str | None = None
+    special_requests: str | None = None
+    closed_at: datetime | None = None
+    paid_at: datetime | None = None
 
 
 class OrderRead(Timestamped):
     id: int
     restaurant_id: int
-    table_id: Optional[int] = None
-    guest_id: Optional[int] = None
-    reservation_id: Optional[int] = None
-    order_number: Optional[str] = None
+    table_id: int | None = None
+    guest_id: int | None = None
+    reservation_id: int | None = None
+    order_number: str | None = None
     status: str
-    party_size: Optional[int] = None
+    party_size: int | None = None
     subtotal: float  # Zwischensumme inkl. MwSt.
     tax_amount_7: float  # MwSt. bei 7%
     tax_amount_19: float  # MwSt. bei 19%
     tax_amount: float  # Gesamt-MwSt. (für Kompatibilität)
     discount_amount: float
-    discount_percentage: Optional[float] = None
-    tip_amount: Optional[float] = None
+    discount_percentage: float | None = None
+    tip_amount: float | None = None
     total: float
-    payment_method: Optional[str] = None
+    payment_method: str | None = None
     payment_status: str
-    split_payments: Optional[List[SplitPayment]] = None
-    notes: Optional[str] = None
-    special_requests: Optional[str] = None
+    split_payments: list[SplitPayment] | None = None
+    notes: str | None = None
+    special_requests: str | None = None
     opened_at: datetime
-    closed_at: Optional[datetime] = None
-    paid_at: Optional[datetime] = None
-    created_by_user_id: Optional[int] = None
+    closed_at: datetime | None = None
+    paid_at: datetime | None = None
+    created_by_user_id: int | None = None
 
     class Config:
         from_attributes = True
 
 
 class OrderWithItems(OrderRead):
-    items: List[OrderItemRead] = []
+    items: list[OrderItemRead] = []
 
 
 # Menu Schemas
 class MenuCategoryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    description: Optional[str] = None
-    sort_order: Optional[int] = 0
+    description: str | None = None
+    sort_order: int | None = 0
     is_active: bool = True
 
 
 class MenuCategoryUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = None
-    sort_order: Optional[int] = None
-    is_active: Optional[bool] = None
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
 
 
 class MenuCategoryRead(Timestamped):
     id: int
     restaurant_id: int
     name: str
-    description: Optional[str] = None
-    sort_order: Optional[int] = None
+    description: str | None = None
+    sort_order: int | None = None
     is_active: bool
 
     class Config:
@@ -755,41 +760,41 @@ class MenuCategoryRead(Timestamped):
 
 
 class MenuItemCreate(BaseModel):
-    category_id: Optional[int] = None
+    category_id: int | None = None
     name: str = Field(min_length=1, max_length=200)
-    description: Optional[str] = None
+    description: str | None = None
     price: float = Field(ge=0)  # Preis inkl. MwSt.
     tax_rate: float = Field(default=0.19, ge=0, le=1)  # MwSt-Satz (0.19 = 19%, 0.07 = 7%)
     is_available: bool = True
-    sort_order: Optional[int] = 0
-    allergens: Optional[List[str]] = None
-    modifiers: Optional[List[dict]] = None
+    sort_order: int | None = 0
+    allergens: list[str] | None = None
+    modifiers: list[dict] | None = None
 
 
 class MenuItemUpdate(BaseModel):
-    category_id: Optional[int] = None
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = None
-    price: Optional[float] = Field(None, ge=0)  # Preis inkl. MwSt.
-    tax_rate: Optional[float] = Field(None, ge=0, le=1)  # MwSt-Satz
-    is_available: Optional[bool] = None
-    sort_order: Optional[int] = None
-    allergens: Optional[List[str]] = None
-    modifiers: Optional[List[dict]] = None
+    category_id: int | None = None
+    name: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = None
+    price: float | None = Field(None, ge=0)  # Preis inkl. MwSt.
+    tax_rate: float | None = Field(None, ge=0, le=1)  # MwSt-Satz
+    is_available: bool | None = None
+    sort_order: int | None = None
+    allergens: list[str] | None = None
+    modifiers: list[dict] | None = None
 
 
 class MenuItemRead(Timestamped):
     id: int
     restaurant_id: int
-    category_id: Optional[int] = None
+    category_id: int | None = None
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     price: float  # Preis inkl. MwSt.
     tax_rate: float  # MwSt-Satz (0.19 = 19%, 0.07 = 7%)
     is_available: bool
-    sort_order: Optional[int] = None
-    allergens: Optional[List[str]] = None
-    modifiers: Optional[List[dict]] = None
+    sort_order: int | None = None
+    allergens: list[str] | None = None
+    modifiers: list[dict] | None = None
 
     class Config:
         from_attributes = True
@@ -799,45 +804,46 @@ class MenuItemRead(Timestamped):
 # Voucher Schemas
 # ============================================================================
 
+
 class VoucherCreate(BaseModel):
     restaurant_id: int
     code: str = Field(min_length=3, max_length=64)
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
     type: str = Field(pattern="^(fixed|percentage)$")  # fixed oder percentage
     value: float = Field(gt=0)
-    valid_from: Optional[date] = None
-    valid_until: Optional[date] = None
-    max_uses: Optional[int] = Field(None, gt=0)
-    min_order_value: Optional[float] = Field(None, ge=0)
+    valid_from: date | None = None
+    valid_until: date | None = None
+    max_uses: int | None = Field(None, gt=0)
+    min_order_value: float | None = Field(None, ge=0)
     is_active: bool = True
 
 
 class VoucherUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    type: Optional[str] = Field(None, pattern="^(fixed|percentage)$")
-    value: Optional[float] = Field(None, gt=0)
-    valid_from: Optional[date] = None
-    valid_until: Optional[date] = None
-    max_uses: Optional[int] = Field(None, gt=0)
-    min_order_value: Optional[float] = Field(None, ge=0)
-    is_active: Optional[bool] = None
+    name: str | None = None
+    description: str | None = None
+    type: str | None = Field(None, pattern="^(fixed|percentage)$")
+    value: float | None = Field(None, gt=0)
+    valid_from: date | None = None
+    valid_until: date | None = None
+    max_uses: int | None = Field(None, gt=0)
+    min_order_value: float | None = Field(None, ge=0)
+    is_active: bool | None = None
 
 
 class VoucherRead(Timestamped):
     id: int
     restaurant_id: int
     code: str
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
     type: str
     value: float
-    valid_from: Optional[date] = None
-    valid_until: Optional[date] = None
-    max_uses: Optional[int] = None
+    valid_from: date | None = None
+    valid_until: date | None = None
+    max_uses: int | None = None
     used_count: int
-    min_order_value: Optional[float] = None
+    min_order_value: float | None = None
     is_active: bool
 
     class Config:
@@ -847,13 +853,13 @@ class VoucherRead(Timestamped):
 class VoucherValidateRequest(BaseModel):
     code: str
     restaurant_id: int
-    reservation_amount: Optional[float] = Field(None, ge=0)  # Betrag der Reservierung für Validierung
+    reservation_amount: float | None = Field(None, ge=0)  # Betrag der Reservierung für Validierung
 
 
 class VoucherValidateResponse(BaseModel):
     valid: bool
-    voucher: Optional[VoucherRead] = None
-    discount_amount: Optional[float] = None  # Berechneter Rabattbetrag
+    voucher: VoucherRead | None = None
+    discount_amount: float | None = None  # Berechneter Rabattbetrag
     message: str
 
 
@@ -861,51 +867,52 @@ class VoucherValidateResponse(BaseModel):
 # Upsell Package Schemas
 # ============================================================================
 
+
 class UpsellPackageCreate(BaseModel):
     restaurant_id: int
     name: str = Field(min_length=1, max_length=240)
-    description: Optional[str] = None
+    description: str | None = None
     price: float = Field(gt=0)
     is_active: bool = True
-    available_from_date: Optional[date] = None
-    available_until_date: Optional[date] = None
-    min_party_size: Optional[int] = Field(None, gt=0)
-    max_party_size: Optional[int] = Field(None, gt=0)
-    available_times: Optional[dict] = None  # {"monday": ["18:00", "19:00"], ...}
-    available_weekdays: Optional[List[int]] = None  # [0,1,2,3,4,5,6] für Mo-So
-    image_url: Optional[str] = None
+    available_from_date: date | None = None
+    available_until_date: date | None = None
+    min_party_size: int | None = Field(None, gt=0)
+    max_party_size: int | None = Field(None, gt=0)
+    available_times: dict | None = None  # {"monday": ["18:00", "19:00"], ...}
+    available_weekdays: list[int] | None = None  # [0,1,2,3,4,5,6] für Mo-So
+    image_url: str | None = None
     display_order: int = 0
 
 
 class UpsellPackageUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=240)
-    description: Optional[str] = None
-    price: Optional[float] = Field(None, gt=0)
-    is_active: Optional[bool] = None
-    available_from_date: Optional[date] = None
-    available_until_date: Optional[date] = None
-    min_party_size: Optional[int] = Field(None, gt=0)
-    max_party_size: Optional[int] = Field(None, gt=0)
-    available_times: Optional[dict] = None
-    available_weekdays: Optional[List[int]] = None
-    image_url: Optional[str] = None
-    display_order: Optional[int] = None
+    name: str | None = Field(None, min_length=1, max_length=240)
+    description: str | None = None
+    price: float | None = Field(None, gt=0)
+    is_active: bool | None = None
+    available_from_date: date | None = None
+    available_until_date: date | None = None
+    min_party_size: int | None = Field(None, gt=0)
+    max_party_size: int | None = Field(None, gt=0)
+    available_times: dict | None = None
+    available_weekdays: list[int] | None = None
+    image_url: str | None = None
+    display_order: int | None = None
 
 
 class UpsellPackageRead(Timestamped):
     id: int
     restaurant_id: int
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     price: float
     is_active: bool
-    available_from_date: Optional[date] = None
-    available_until_date: Optional[date] = None
-    min_party_size: Optional[int] = None
-    max_party_size: Optional[int] = None
-    available_times: Optional[dict] = None
-    available_weekdays: Optional[List[int]] = None
-    image_url: Optional[str] = None
+    available_from_date: date | None = None
+    available_until_date: date | None = None
+    min_party_size: int | None = None
+    max_party_size: int | None = None
+    available_times: dict | None = None
+    available_weekdays: list[int] | None = None
+    image_url: str | None = None
     display_order: int
 
     class Config:
@@ -920,12 +927,13 @@ class UpsellPackageAvailabilityRequest(BaseModel):
 
 
 class UpsellPackageAvailabilityResponse(BaseModel):
-    packages: List[UpsellPackageRead]
+    packages: list[UpsellPackageRead]
 
 
 # ============================================================================
 # Prepayment Schemas
 # ============================================================================
+
 
 class PrepaymentCreate(BaseModel):
     reservation_id: int
@@ -941,11 +949,11 @@ class PrepaymentRead(Timestamped):
     amount: float
     currency: str
     payment_provider: str
-    payment_id: Optional[str] = None
-    transaction_id: Optional[str] = None
+    payment_id: str | None = None
+    transaction_id: str | None = None
     status: str
-    payment_data: Optional[dict] = None
-    completed_at_utc: Optional[datetime] = None
+    payment_data: dict | None = None
+    completed_at_utc: datetime | None = None
 
     class Config:
         from_attributes = True

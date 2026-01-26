@@ -1,18 +1,19 @@
-from jose import jwt
-import bcrypt
 import hashlib
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict
+from datetime import UTC, datetime, timedelta
+
+import bcrypt
+from jose import jwt
+
 from app.settings import (
-    JWT_SECRET,
-    JWT_ALGORITHM,
-    JWT_ISSUER,
-    JWT_AUDIENCE,
-    JWT_LEEWAY_SECONDS,
     ACCESS_TOKEN_EXPIRE_MINUTES,
-    REFRESH_TOKEN_EXPIRE_DAYS,
     BCRYPT_ROUNDS,
+    JWT_ALGORITHM,
+    JWT_AUDIENCE,
+    JWT_ISSUER,
+    JWT_LEEWAY_SECONDS,
+    JWT_SECRET,
+    REFRESH_TOKEN_EXPIRE_DAYS,
     REFRESH_TOKEN_PEPPER,
 )
 
@@ -25,10 +26,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Das Frontend sendet das Passwort als Klartext, das Backend hasht es.
     """
     try:
-        return bcrypt.checkpw(
-            plain_password.encode('utf-8'),
-            hashed_password.encode('utf-8')
-        )
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
     except Exception:
         return False
 
@@ -39,25 +37,21 @@ def hash_password(plain_password: str) -> str:
     Wird verwendet, wenn ein neues Passwort gesetzt wird.
     """
     salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
-    hashed = bcrypt.hashpw(plain_password.encode('utf-8'), salt)
-    return hashed.decode('utf-8')
+    hashed = bcrypt.hashpw(plain_password.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 
-def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """
     Erstellt ein JWT Access Token.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     to_encode = data.copy()
     expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
 
-    to_encode.update({
-        "exp": expire,
-        "iat": now,
-        "iss": JWT_ISSUER,
-        "aud": JWT_AUDIENCE,
-        "type": "access"
-    })
+    to_encode.update(
+        {"exp": expire, "iat": now, "iss": JWT_ISSUER, "aud": JWT_AUDIENCE, "type": "access"}
+    )
 
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return encoded_jwt
@@ -67,7 +61,7 @@ def create_refresh_token(user_id: int) -> str:
     """
     Erstellt ein JWT Refresh Token.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
     to_encode = {
@@ -76,14 +70,14 @@ def create_refresh_token(user_id: int) -> str:
         "iat": now,
         "iss": JWT_ISSUER,
         "aud": JWT_AUDIENCE,
-        "type": "refresh"
+        "type": "refresh",
     }
 
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 
 
-def verify_token(token: str, token_type: str = "access") -> Optional[Dict]:
+def verify_token(token: str, token_type: str = "access") -> dict | None:
     """
     Verifiziert ein JWT Token und gibt die Payload zurück.
     """
@@ -120,4 +114,4 @@ def hash_refresh_token(token: str) -> str:
     """
     Erstellt einen SHA256 Hash eines Refresh Tokens für die Speicherung in der DB.
     """
-    return hashlib.sha256((token + REFRESH_TOKEN_PEPPER).encode('utf-8')).hexdigest()
+    return hashlib.sha256((token + REFRESH_TOKEN_PEPPER).encode("utf-8")).hexdigest()

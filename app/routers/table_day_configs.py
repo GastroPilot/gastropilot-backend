@@ -1,14 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from datetime import date as date_type
 
-from app.dependencies import get_session, get_current_user, require_schichtleiter_role
-from app.database.models import TableDayConfig, Table, Restaurant, User, ReservationTableDayConfig
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database.models import ReservationTableDayConfig, Restaurant, Table, TableDayConfig, User
+from app.dependencies import get_current_user, get_session, require_schichtleiter_role
 from app.schemas import TableDayConfigCreate, TableDayConfigRead, TableDayConfigUpdate
 
-router = APIRouter(prefix="/restaurants/{restaurant_id}/table-day-configs", tags=["table_day_configs"])
+router = APIRouter(
+    prefix="/restaurants/{restaurant_id}/table-day-configs", tags=["table_day_configs"]
+)
 
 
 async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> Restaurant:
@@ -34,11 +37,10 @@ async def get_table_day_configs_by_date(
 ):
     """Holt alle tages-spezifischen Tabellenkonfigurationen für ein bestimmtes Datum."""
     await _get_restaurant_or_404(restaurant_id, session)
-    
+
     result = await session.execute(
         select(TableDayConfig).where(
-            TableDayConfig.restaurant_id == restaurant_id,
-            TableDayConfig.date == date
+            TableDayConfig.restaurant_id == restaurant_id, TableDayConfig.date == date
         )
     )
     return result.scalars().all()
@@ -53,10 +55,12 @@ async def get_table_day_config(
 ):
     """Holt eine einzelne tages-spezifische Tabellenkonfiguration."""
     await _get_restaurant_or_404(restaurant_id, session)
-    
+
     config = await session.get(TableDayConfig, config_id)
     if not config or config.restaurant_id != restaurant_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found"
+        )
     return config
 
 
@@ -70,21 +74,21 @@ async def create_or_update_table_day_config(
     """Erstellt oder aktualisiert eine tages-spezifische Tabellenkonfiguration (Schichtleiter oder höher).
     Unterstützt temporäre Tische (table_id=None) und versteckte Tische (is_hidden=True)."""
     await _get_restaurant_or_404(restaurant_id, session)
-    
+
     if config_data.table_id is not None:
         table = await _get_table_or_404(config_data.table_id, restaurant_id, session)
     elif config_data.is_temporary:
         if not config_data.number or not config_data.capacity:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Temporäre Tische benötigen 'number' und 'capacity'"
+                detail="Temporäre Tische benötigen 'number' und 'capacity'",
             )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="table_id oder is_temporary muss gesetzt sein"
+            detail="table_id oder is_temporary muss gesetzt sein",
         )
-    
+
     if config_data.is_temporary and config_data.table_id is None:
         result = await session.execute(
             select(TableDayConfig).where(
@@ -92,7 +96,7 @@ async def create_or_update_table_day_config(
                 TableDayConfig.table_id.is_(None),
                 TableDayConfig.date == config_data.date,
                 TableDayConfig.is_temporary == True,
-                TableDayConfig.number == config_data.number
+                TableDayConfig.number == config_data.number,
             )
         )
     else:
@@ -100,11 +104,11 @@ async def create_or_update_table_day_config(
             select(TableDayConfig).where(
                 TableDayConfig.restaurant_id == restaurant_id,
                 TableDayConfig.table_id == config_data.table_id,
-                TableDayConfig.date == config_data.date
+                TableDayConfig.date == config_data.date,
             )
         )
     existing_config = result.scalar_one_or_none()
-    
+
     if existing_config:
         update_data = config_data.model_dump(exclude={"table_id", "date"}, exclude_unset=False)
         for field, value in update_data.items():
@@ -113,7 +117,7 @@ async def create_or_update_table_day_config(
         config = existing_config
     else:
         config_data_dict = config_data.model_dump(exclude={"table_id", "date"}, exclude_unset=True)
-        
+
         if config_data.table_id is not None:
             table = await session.get(Table, config_data.table_id)
             if table:
@@ -131,21 +135,23 @@ async def create_or_update_table_day_config(
                     config_data_dict["rotation"] = table.rotation
                 if "is_joinable" not in config_data_dict:
                     config_data_dict["is_joinable"] = table.is_joinable
-        
+
         config = TableDayConfig(
             restaurant_id=restaurant_id,
             table_id=config_data.table_id,
             date=config_data.date,
-            **config_data_dict
+            **config_data_dict,
         )
         session.add(config)
-    
+
     try:
         await session.commit()
         await session.refresh(config)
     except IntegrityError:
         await session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Table day config conflict")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Table day config conflict"
+        )
     return config
 
 
@@ -159,21 +165,25 @@ async def update_table_day_config(
 ):
     """Aktualisiert eine tages-spezifische Tabellenkonfiguration (Schichtleiter oder höher)."""
     await _get_restaurant_or_404(restaurant_id, session)
-    
+
     config = await session.get(TableDayConfig, config_id)
     if not config or config.restaurant_id != restaurant_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found"
+        )
+
     update_data = config_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(config, field, value)
-    
+
     try:
         await session.commit()
         await session.refresh(config)
     except IntegrityError:
         await session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Table day config conflict")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Table day config conflict"
+        )
     return config
 
 
@@ -185,22 +195,24 @@ async def delete_table_day_config(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(require_schichtleiter_role),
 ):
-    """Löscht eine tages-spezifische Tabellenkonfiguration (Schichtleiter oder höher). 
+    """Löscht eine tages-spezifische Tabellenkonfiguration (Schichtleiter oder höher).
     Dadurch wird die Standardkonfiguration wieder verwendet."""
     await _get_restaurant_or_404(restaurant_id, session)
-    
+
     result = await session.execute(
         select(TableDayConfig).where(
             TableDayConfig.restaurant_id == restaurant_id,
             TableDayConfig.table_id == table_id,
-            TableDayConfig.date == date
+            TableDayConfig.date == date,
         )
     )
     config = result.scalar_one_or_none()
-    
+
     if not config:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found"
+        )
+
     try:
         await session.delete(config)
         await session.commit()
@@ -218,11 +230,13 @@ async def delete_table_day_config_by_id(
 ):
     """Löscht eine tages-spezifische Tabellenkonfiguration per ID (Schichtleiter oder höher)."""
     await _get_restaurant_or_404(restaurant_id, session)
-    
+
     config = await session.get(TableDayConfig, config_id)
     if not config or config.restaurant_id != restaurant_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found"
+        )
+
     try:
         await session.delete(config)
         await session.commit()
@@ -242,18 +256,17 @@ async def delete_all_table_day_configs_for_date(
     Dies setzt die Tischanordnung für diesen Tag auf die Standard-Anordnung zurück.
     Löscht auch alle temporären Tische und deren Reservierungszuordnungen."""
     await _get_restaurant_or_404(restaurant_id, session)
-    
+
     result = await session.execute(
         select(TableDayConfig).where(
-            TableDayConfig.restaurant_id == restaurant_id,
-            TableDayConfig.date == date
+            TableDayConfig.restaurant_id == restaurant_id, TableDayConfig.date == date
         )
     )
     configs = result.scalars().all()
-    
+
     if not configs:
         return
-    
+
     try:
         for config in configs:
             rt_result = await session.execute(
@@ -262,14 +275,13 @@ async def delete_all_table_day_configs_for_date(
                 )
             )
             rt_configs = rt_result.scalars().all()
-            
+
             for rt_config in rt_configs:
                 await session.delete(rt_config)
-            
+
             await session.delete(config)
-        
+
         await session.commit()
     except Exception:
         await session.rollback()
         raise
-

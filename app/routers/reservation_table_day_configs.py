@@ -1,14 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_session, require_mitarbeiter_role, require_reservations_module, normalize_datetime_to_utc
-from app.database.models import ReservationTableDayConfig, Reservation, TableDayConfig, Restaurant, User
+from app.database.models import (
+    Reservation,
+    ReservationTableDayConfig,
+    Restaurant,
+    TableDayConfig,
+    User,
+)
+from app.dependencies import (
+    get_session,
+    normalize_datetime_to_utc,
+    require_mitarbeiter_role,
+    require_reservations_module,
+)
 from app.schemas import ReservationTableDayConfigCreate, ReservationTableDayConfigRead
 
-router = APIRouter(prefix="/restaurants/{restaurant_id}/reservation-table-day-configs", tags=["reservation_table_day_configs"])
+router = APIRouter(
+    prefix="/restaurants/{restaurant_id}/reservation-table-day-configs",
+    tags=["reservation_table_day_configs"],
+)
 
 
 async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> Restaurant:
@@ -33,14 +46,20 @@ async def add_reservation_table_day_config(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found")
     table_day_config = await session.get(TableDayConfig, body.table_day_config_id)
     if not table_day_config or table_day_config.restaurant_id != restaurant_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found"
+        )
     if not table_day_config.is_temporary:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Table day config must be temporary")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Table day config must be temporary"
+        )
 
     start_at = normalize_datetime_to_utc(body.start_at)
     end_at = normalize_datetime_to_utc(body.end_at)
     if start_at >= end_at:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End time must be after start time")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="End time must be after start time"
+        )
 
     # Prüfe, ob die Reservierung bereits diesem temporären Tisch zugewiesen ist
     existing = await session.get(ReservationTableDayConfig, (reservation.id, table_day_config.id))
@@ -54,8 +73,10 @@ async def add_reservation_table_day_config(
             return existing
         except IntegrityError:
             await session.rollback()
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reservation-table day config conflict")
-    
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Reservation-table day config conflict"
+            )
+
     rt = ReservationTableDayConfig(
         reservation_id=reservation.id,
         table_day_config_id=table_day_config.id,
@@ -70,7 +91,9 @@ async def add_reservation_table_day_config(
         return rt
     except IntegrityError:
         await session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reservation-table day config conflict")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Reservation-table day config conflict"
+        )
 
 
 @router.get("/", response_model=list[ReservationTableDayConfigRead])
@@ -102,14 +125,19 @@ async def remove_reservation_table_day_config(
     await _get_restaurant_or_404(restaurant_id, session)
     table_day_config = await session.get(TableDayConfig, table_day_config_id)
     if not table_day_config or table_day_config.restaurant_id != restaurant_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found"
+        )
+
     rt = await session.get(ReservationTableDayConfig, (reservation_id, table_day_config_id))
     if not rt:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation-table day config mapping not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reservation-table day config mapping not found",
+        )
+
     await session.delete(rt)
-    
+
     try:
         await session.commit()
     except Exception:
@@ -134,15 +162,18 @@ async def get_reservation_table_day_configs_by_reservation(
     reservation = await session.get(Reservation, reservation_id)
     if not reservation or reservation.restaurant_id != restaurant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found")
-    
+
     result = await session.execute(
-        select(ReservationTableDayConfig)
-        .where(ReservationTableDayConfig.reservation_id == reservation_id)
+        select(ReservationTableDayConfig).where(
+            ReservationTableDayConfig.reservation_id == reservation_id
+        )
     )
     return result.scalars().all()
 
 
-@router.get("/by-table-day-config/{table_day_config_id}", response_model=list[ReservationTableDayConfigRead])
+@router.get(
+    "/by-table-day-config/{table_day_config_id}", response_model=list[ReservationTableDayConfigRead]
+)
 async def get_reservation_table_day_configs_by_table_day_config(
     restaurant_id: int,
     table_day_config_id: int,
@@ -154,11 +185,13 @@ async def get_reservation_table_day_configs_by_table_day_config(
     await _get_restaurant_or_404(restaurant_id, session)
     table_day_config = await session.get(TableDayConfig, table_day_config_id)
     if not table_day_config or table_day_config.restaurant_id != restaurant_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Table day config not found"
+        )
+
     result = await session.execute(
-        select(ReservationTableDayConfig)
-        .where(ReservationTableDayConfig.table_day_config_id == table_day_config_id)
+        select(ReservationTableDayConfig).where(
+            ReservationTableDayConfig.table_day_config_id == table_day_config_id
+        )
     )
     return result.scalars().all()
-

@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database.models import Guest, Message, Reservation, Restaurant, User
 from app.dependencies import get_session, require_mitarbeiter_role, require_reservations_module
-from app.database.models import Message, Restaurant, Reservation, Guest, User
 from app.schemas import MessageCreate, MessageRead, MessageUpdate
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/messages", tags=["messages"])
@@ -17,7 +17,9 @@ async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> R
     return restaurant
 
 
-async def _get_message_or_404(message_id: int, restaurant_id: int, session: AsyncSession) -> Message:
+async def _get_message_or_404(
+    message_id: int, restaurant_id: int, session: AsyncSession
+) -> Message:
     msg = await session.get(Message, message_id)
     if not msg or msg.restaurant_id != restaurant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
@@ -36,7 +38,9 @@ async def create_message(
     if body.reservation_id:
         res = await session.get(Reservation, body.reservation_id)
         if not res or res.restaurant_id != restaurant_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found"
+            )
     if body.guest_id:
         guest = await session.get(Guest, body.guest_id)
         if not guest or guest.restaurant_id != restaurant_id:

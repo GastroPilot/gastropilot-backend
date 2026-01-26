@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_session, require_mitarbeiter_role
 from app.database.models import (
     Area,
     BlockAssignment,
@@ -14,6 +13,7 @@ from app.database.models import (
     TableDayConfig,
     User,
 )
+from app.dependencies import get_session, require_mitarbeiter_role
 from app.schemas import AreaCreate, AreaRead, AreaUpdate
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/areas", tags=["areas"])

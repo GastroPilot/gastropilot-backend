@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database.models import Block, BlockAssignment, Restaurant, Table, User
 from app.dependencies import get_session, require_mitarbeiter_role
-from app.database.models import BlockAssignment, Block, Table, Restaurant, User
 from app.schemas import BlockAssignmentCreate, BlockAssignmentRead
 
-router = APIRouter(prefix="/restaurants/{restaurant_id}/block-assignments", tags=["block_assignments"])
+router = APIRouter(
+    prefix="/restaurants/{restaurant_id}/block-assignments", tags=["block_assignments"]
+)
 
 
 async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> Restaurant:
@@ -50,7 +52,9 @@ async def create_block_assignment(
         return assignment
     except IntegrityError:
         await session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Block assignment conflict")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Block assignment conflict"
+        )
 
 
 @router.get("/", response_model=list[BlockAssignmentRead])
@@ -116,11 +120,15 @@ async def delete_block_assignment(
     await _get_restaurant_or_404(restaurant_id, session)
     assignment = await session.get(BlockAssignment, assignment_id)
     if not assignment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Block assignment not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Block assignment not found"
+        )
 
     blk = await session.get(Block, assignment.block_id)
     if not blk or blk.restaurant_id != restaurant_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Block assignment not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Block assignment not found"
+        )
 
     await session.delete(assignment)
     try:

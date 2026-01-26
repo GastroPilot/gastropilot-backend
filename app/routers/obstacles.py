@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_session, require_mitarbeiter_role, get_current_user
-from app.database.models import Obstacle, Restaurant, User, Area
+from app.database.models import Area, Obstacle, Restaurant, User
+from app.dependencies import get_current_user, get_session, require_mitarbeiter_role
 from app.schemas import ObstacleCreate, ObstacleRead, ObstacleUpdate
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/obstacles", tags=["obstacles"])
@@ -17,7 +17,9 @@ async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> R
     return restaurant
 
 
-async def _get_obstacle_or_404(obstacle_id: int, restaurant_id: int, session: AsyncSession) -> Obstacle:
+async def _get_obstacle_or_404(
+    obstacle_id: int, restaurant_id: int, session: AsyncSession
+) -> Obstacle:
     ob = await session.get(Obstacle, obstacle_id)
     if not ob or ob.restaurant_id != restaurant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Obstacle not found")

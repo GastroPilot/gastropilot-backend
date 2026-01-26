@@ -1,10 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_session, require_mitarbeiter_role, require_reservations_module, normalize_datetime_to_utc
-from app.database.models import Block, Restaurant, Table, User
+from app.database.models import Block, Restaurant, User
+from app.dependencies import (
+    get_session,
+    normalize_datetime_to_utc,
+    require_mitarbeiter_role,
+    require_reservations_module,
+)
 from app.schemas import BlockCreate, BlockRead, BlockUpdate
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/blocks", tags=["blocks"])
@@ -37,7 +42,9 @@ async def create_block(
     start_at = normalize_datetime_to_utc(body.start_at)
     end_at = normalize_datetime_to_utc(body.end_at)
     if start_at >= end_at:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End time must be after start time")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="End time must be after start time"
+        )
 
     blk = Block(
         restaurant_id=restaurant_id,
@@ -86,7 +93,9 @@ async def update_block(
     if "end_at" in data:
         data["end_at"] = normalize_datetime_to_utc(data["end_at"])
     if "start_at" in data and "end_at" in data and data["start_at"] >= data["end_at"]:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End time must be after start time")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="End time must be after start time"
+        )
 
     for field, value in data.items():
         setattr(blk, field, value)

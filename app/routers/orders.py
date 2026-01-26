@@ -1,27 +1,35 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime
-from fastapi import Query
-from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import (
-    get_session,
-    get_current_user,
-    require_mitarbeiter_role,
-    require_schichtleiter_role,
-    require_orders_module,
-    normalize_datetime_to_utc,
+from app.database.models import (
+    Guest,
+    MenuItem,
+    Order,
+    OrderItem,
+    Reservation,
+    Restaurant,
+    Table,
+    User,
 )
-from app.database.models import Order, OrderItem, Restaurant, Table, Guest, User, MenuItem, Reservation
+from app.dependencies import (
+    get_current_user,
+    get_session,
+    normalize_datetime_to_utc,
+    require_mitarbeiter_role,
+    require_orders_module,
+    require_schichtleiter_role,
+)
 from app.schemas import (
     OrderCreate,
-    OrderRead,
-    OrderUpdate,
     OrderItemCreate,
     OrderItemRead,
     OrderItemUpdate,
+    OrderRead,
+    OrderUpdate,
     OrderWithItems,
 )
 
@@ -45,19 +53,18 @@ async def _get_order_or_404(order_id: int, restaurant_id: int, session: AsyncSes
 async def _generate_order_number(restaurant_id: int, session: AsyncSession) -> str:
     """Generiert eine eindeutige Bestellnummer."""
     from datetime import date
-    
+
     today = date.today()
     prefix = f"ORD-{today.strftime('%Y%m%d')}-"
-    
+
     result = await session.execute(
-        select(Order).where(
-            Order.restaurant_id == restaurant_id,
-            Order.order_number.like(f"{prefix}%")
-        ).order_by(Order.order_number.desc())
+        select(Order)
+        .where(Order.restaurant_id == restaurant_id, Order.order_number.like(f"{prefix}%"))
+        .order_by(Order.order_number.desc())
         .limit(1)
     )
     last_order = result.scalar_one_or_none()
-    
+
     if last_order and last_order.order_number:
         try:
             last_num = int(last_order.order_number.split("-")[-1])
@@ -66,44 +73,44 @@ async def _generate_order_number(restaurant_id: int, session: AsyncSession) -> s
             new_num = 1
     else:
         new_num = 1
-    
+
     return f"{prefix}{new_num:04d}"
 
 
 def _calculate_totals(
-    items: list[OrderItem], 
-    discount_amount: float = 0.0, 
+    items: list[OrderItem],
+    discount_amount: float = 0.0,
     discount_percentage: float | None = None,
-    tip_amount: float = 0.0
+    tip_amount: float = 0.0,
 ) -> dict[str, float]:
     """Berechnet die Summen einer Bestellung. Preise sind inkl. MwSt."""
     subtotal = sum(item.total_price for item in items)
-    
+
     # Rabatt berechnen (entweder Fixbetrag oder Prozent)
     if discount_percentage is not None and discount_percentage > 0:
         calculated_discount = subtotal * (discount_percentage / 100)
     else:
         calculated_discount = discount_amount
-    
+
     subtotal_after_discount = subtotal - calculated_discount
-    
+
     # MwSt. aus inkl. Preisen extrahieren (getrennt nach Steuersätzen)
     # Formel: MwSt. = Preis_inkl * (Steuersatz / (1 + Steuersatz))
     tax_amount_7 = 0.0
     tax_amount_19 = 0.0
-    
+
     for item in items:
         # MwSt. für dieses Item berechnen
         # Da Preise inkl. MwSt. sind: MwSt. = Preis * (tax_rate / (1 + tax_rate))
         item_tax = item.total_price * (item.tax_rate / (1 + item.tax_rate))
-        
+
         # Rabatt proportional auf MwSt. anwenden
         if subtotal > 0:
             discount_factor = calculated_discount / subtotal
             item_tax_after_discount = item_tax * (1 - discount_factor)
         else:
             item_tax_after_discount = item_tax
-        
+
         # Nach Steuersatz aufteilen
         if abs(item.tax_rate - 0.07) < 0.001:  # 7% Steuersatz
             tax_amount_7 += item_tax_after_discount
@@ -112,10 +119,10 @@ def _calculate_totals(
         else:
             # Fallback: Standardmäßig zu 19% zuordnen
             tax_amount_19 += item_tax_after_discount
-    
+
     tax_amount = tax_amount_7 + tax_amount_19
     total = subtotal_after_discount + tip_amount  # MwSt. ist bereits im Preis enthalten
-    
+
     return {
         "subtotal": round(subtotal, 2),
         "tax_amount_7": round(tax_amount_7, 2),
@@ -135,7 +142,12 @@ def _serialize_split_payments(data):
 
 
 @router.post("/", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
-@router.post("/", response_model=OrderRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_orders_module)])
+@router.post(
+    "/",
+    response_model=OrderRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_orders_module)],
+)
 async def create_order(
     restaurant_id: int,
     order_data: OrderCreate,
@@ -159,7 +171,9 @@ async def create_order(
     if order_data.reservation_id:
         reservation = await session.get(Reservation, order_data.reservation_id)
         if not reservation or reservation.restaurant_id != restaurant_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found"
+            )
 
     order_number = await _generate_order_number(restaurant_id, session)
 
@@ -188,19 +202,23 @@ async def create_order(
                 total_price = item_data.quantity * item_data.unit_price
                 # Versuche menu_item_id zu finden falls item_name übereinstimmt
                 menu_item_id = None
-                tax_rate = item_data.tax_rate if item_data.tax_rate is not None else 0.19  # Default 19%
+                tax_rate = (
+                    item_data.tax_rate if item_data.tax_rate is not None else 0.19
+                )  # Default 19%
                 if item_data.item_name:
                     result = await session.execute(
-                        select(MenuItem).where(
+                        select(MenuItem)
+                        .where(
                             MenuItem.restaurant_id == restaurant_id,
-                            MenuItem.name == item_data.item_name
-                        ).limit(1)
+                            MenuItem.name == item_data.item_name,
+                        )
+                        .limit(1)
                     )
                     menu_item = result.scalar_one_or_none()
                     if menu_item:
                         menu_item_id = menu_item.id
                         tax_rate = menu_item.tax_rate  # Verwende tax_rate vom MenuItem
-                
+
                 order_item = OrderItem(
                     order_id=order.id,
                     menu_item_id=menu_item_id,
@@ -219,19 +237,17 @@ async def create_order(
                 sort_order += 1
 
             await session.flush()
-            
+
             # Lade Items neu und berechne Totals
-            result = await session.execute(
-                select(OrderItem).where(OrderItem.order_id == order.id)
-            )
+            result = await session.execute(select(OrderItem).where(OrderItem.order_id == order.id))
             items = result.scalars().all()
             totals = _calculate_totals(
                 items,
                 discount_amount=order.discount_amount,
                 discount_percentage=order.discount_percentage,
-                tip_amount=order.tip_amount
+                tip_amount=order.tip_amount,
             )
-            
+
             order.subtotal = totals["subtotal"]
             order.tax_amount_7 = totals["tax_amount_7"]
             order.tax_amount_19 = totals["tax_amount_19"]
@@ -252,12 +268,12 @@ async def create_order(
 @router.get("/", response_model=list[OrderRead])
 async def list_orders(
     restaurant_id: int,
-    status_filter: Optional[str] = Query(None),
-    table_id: Optional[int] = Query(None),
-    guest_id: Optional[int] = Query(None),
-    reservation_id: Optional[int] = Query(None),
-    start_date: Optional[datetime] = Query(None),
-    end_date: Optional[datetime] = Query(None),
+    status_filter: str | None = Query(None),
+    table_id: int | None = Query(None),
+    guest_id: int | None = Query(None),
+    reservation_id: int | None = Query(None),
+    start_date: datetime | None = Query(None),
+    end_date: datetime | None = Query(None),
     session: AsyncSession = Depends(get_session),
     _license: User = Depends(require_orders_module),
     current_user: User = Depends(get_current_user),
@@ -299,7 +315,9 @@ async def get_order(
     order = await _get_order_or_404(order_id, restaurant_id, session)
 
     result = await session.execute(
-        select(OrderItem).where(OrderItem.order_id == order_id).order_by(OrderItem.sort_order, OrderItem.id)
+        select(OrderItem)
+        .where(OrderItem.order_id == order_id)
+        .order_by(OrderItem.sort_order, OrderItem.id)
     )
     items = result.scalars().all()
 
@@ -338,7 +356,9 @@ async def update_order(
     if "reservation_id" in update_data and update_data["reservation_id"]:
         reservation = await session.get(Reservation, update_data["reservation_id"])
         if not reservation or reservation.restaurant_id != restaurant_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found"
+            )
 
     if "split_payments" in update_data:
         update_data["split_payments"] = _serialize_split_payments(update_data["split_payments"])
@@ -350,8 +370,7 @@ async def update_order(
 
     # Berechne Totals neu wenn relevante Felder geändert wurden
     recalculate_totals = any(
-        key in update_data
-        for key in ["discount_amount", "discount_percentage", "tip_amount"]
+        key in update_data for key in ["discount_amount", "discount_percentage", "tip_amount"]
     )
 
     for field, value in update_data.items():
@@ -359,15 +378,13 @@ async def update_order(
 
     # Totals neu berechnen wenn nötig
     if recalculate_totals:
-        result = await session.execute(
-            select(OrderItem).where(OrderItem.order_id == order_id)
-        )
+        result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
         items = result.scalars().all()
         totals = _calculate_totals(
             items,
             discount_amount=order.discount_amount,
             discount_percentage=order.discount_percentage,
-            tip_amount=order.tip_amount
+            tip_amount=order.tip_amount,
         )
         order.subtotal = totals["subtotal"]
         order.tax_amount = totals["tax_amount"]
@@ -410,6 +427,7 @@ async def delete_order(
 
 # OrderItem Endpoints
 
+
 @router.post("/{order_id}/items", response_model=OrderItemRead, status_code=status.HTTP_201_CREATED)
 async def create_order_item(
     restaurant_id: int,
@@ -436,10 +454,9 @@ async def create_order_item(
     tax_rate = item_data.tax_rate if item_data.tax_rate is not None else 0.19  # Default 19%
     if item_data.item_name:
         result_menu = await session.execute(
-            select(MenuItem).where(
-                MenuItem.restaurant_id == restaurant_id,
-                MenuItem.name == item_data.item_name
-            ).limit(1)
+            select(MenuItem)
+            .where(MenuItem.restaurant_id == restaurant_id, MenuItem.name == item_data.item_name)
+            .limit(1)
         )
         menu_item = result_menu.scalar_one_or_none()
         if menu_item:
@@ -447,9 +464,7 @@ async def create_order_item(
             tax_rate = menu_item.tax_rate  # Verwende tax_rate vom MenuItem
 
     # Bestimme nächsten sort_order
-    result = await session.execute(
-        select(OrderItem).where(OrderItem.order_id == order_id)
-    )
+    result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
     existing_items = result.scalars().all()
     max_sort = max([item.sort_order or 0 for item in existing_items], default=-1)
     sort_order = item_data.sort_order if item_data.sort_order is not None else (max_sort + 1)
@@ -474,15 +489,13 @@ async def create_order_item(
         await session.flush()
 
         # Aktualisiere Totals der Bestellung
-        result = await session.execute(
-            select(OrderItem).where(OrderItem.order_id == order_id)
-        )
+        result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
         items = result.scalars().all()
         totals = _calculate_totals(
             items,
             discount_amount=order.discount_amount,
             discount_percentage=order.discount_percentage,
-            tip_amount=order.tip_amount
+            tip_amount=order.tip_amount,
         )
 
         order.subtotal = totals["subtotal"]
@@ -533,7 +546,7 @@ async def update_order_item(
     quantity = update_data.get("quantity", order_item.quantity)
     unit_price = update_data.get("unit_price", order_item.unit_price)
     update_data["total_price"] = quantity * unit_price
-    
+
     # Wenn tax_rate nicht angegeben ist, behalte den bestehenden Wert
     if "tax_rate" not in update_data:
         update_data["tax_rate"] = order_item.tax_rate
@@ -545,15 +558,13 @@ async def update_order_item(
         await session.flush()
 
         # Aktualisiere Totals der Bestellung
-        result = await session.execute(
-            select(OrderItem).where(OrderItem.order_id == order_id)
-        )
+        result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
         items = result.scalars().all()
         totals = _calculate_totals(
             items,
             discount_amount=order.discount_amount,
             discount_percentage=order.discount_percentage,
-            tip_amount=order.tip_amount
+            tip_amount=order.tip_amount,
         )
 
         order.subtotal = totals["subtotal"]
@@ -602,15 +613,13 @@ async def delete_order_item(
         await session.flush()
 
         # Aktualisiere Totals der Bestellung
-        result = await session.execute(
-            select(OrderItem).where(OrderItem.order_id == order_id)
-        )
+        result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
         items = result.scalars().all()
         totals = _calculate_totals(
             items,
             discount_amount=order.discount_amount,
             discount_percentage=order.discount_percentage,
-            tip_amount=order.tip_amount
+            tip_amount=order.tip_amount,
         )
 
         order.subtotal = totals["subtotal"]
@@ -626,4 +635,3 @@ async def delete_order_item(
         except Exception:
             pass
         raise
-

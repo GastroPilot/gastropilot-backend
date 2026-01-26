@@ -1,23 +1,25 @@
 """
 Order Statistics Router
 """
-from datetime import datetime, timedelta
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, and_
-from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_session, get_current_user, require_schichtleiter_role, require_orders_module, User
-from app.database.models import Order, OrderItem, MenuItem, Restaurant
-from app.schemas import OrderRead
+from app.database.models import Order, OrderItem, Restaurant
+from app.dependencies import User, get_session, require_orders_module, require_schichtleiter_role
 
-router = APIRouter(prefix="/restaurants/{restaurant_id}/order-statistics", tags=["order-statistics"])
+router = APIRouter(
+    prefix="/restaurants/{restaurant_id}/order-statistics", tags=["order-statistics"]
+)
 
 
 async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> Restaurant:
     """Holt ein Restaurant oder wirft 404."""
     from app.database.models import Restaurant
+
     restaurant = await session.get(Restaurant, restaurant_id)
     if not restaurant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found")
@@ -27,8 +29,8 @@ async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> R
 @router.get("/revenue")
 async def get_revenue_statistics(
     restaurant_id: int,
-    start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
-    end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
+    start_date: datetime | None = Query(None, description="Start date (ISO format)"),
+    end_date: datetime | None = Query(None, description="End date (ISO format)"),
     session: AsyncSession = Depends(get_session),
     _license: User = Depends(require_orders_module),
     current_user: User = Depends(require_schichtleiter_role),
@@ -77,8 +79,8 @@ async def get_revenue_statistics(
 @router.get("/top-items")
 async def get_top_items(
     restaurant_id: int,
-    start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
-    end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
+    start_date: datetime | None = Query(None, description="Start date (ISO format)"),
+    end_date: datetime | None = Query(None, description="End date (ISO format)"),
     limit: int = Query(10, ge=1, le=50, description="Number of top items to return"),
     session: AsyncSession = Depends(get_session),
     _license: User = Depends(require_orders_module),
@@ -122,11 +124,7 @@ async def get_top_items(
         item_stats[name]["revenue"] += item.total_price
 
     # Sortiere nach Anzahl oder Umsatz
-    top_items = sorted(
-        item_stats.items(),
-        key=lambda x: x[1]["quantity"],
-        reverse=True
-    )[:limit]
+    top_items = sorted(item_stats.items(), key=lambda x: x[1]["quantity"], reverse=True)[:limit]
 
     return [
         {
@@ -141,8 +139,8 @@ async def get_top_items(
 @router.get("/category-statistics")
 async def get_category_statistics(
     restaurant_id: int,
-    start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
-    end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
+    start_date: datetime | None = Query(None, description="Start date (ISO format)"),
+    end_date: datetime | None = Query(None, description="End date (ISO format)"),
     session: AsyncSession = Depends(get_session),
     _license: User = Depends(require_orders_module),
     current_user: User = Depends(require_schichtleiter_role),
@@ -194,8 +192,8 @@ async def get_category_statistics(
 @router.get("/hourly-statistics")
 async def get_hourly_statistics(
     restaurant_id: int,
-    start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
-    end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
+    start_date: datetime | None = Query(None, description="Start date (ISO format)"),
+    end_date: datetime | None = Query(None, description="End date (ISO format)"),
     session: AsyncSession = Depends(get_session),
     _license: User = Depends(require_orders_module),
     current_user: User = Depends(require_schichtleiter_role),
@@ -233,4 +231,3 @@ async def get_hourly_statistics(
         }
         for hour, stats in hourly_stats.items()
     }
-

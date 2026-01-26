@@ -1,10 +1,12 @@
 """
 License Router - Endpoint zum Abrufen der aktuellen Feature-Flags
 """
+
 from fastapi import APIRouter, Depends
-from app.dependencies import get_current_user
-from app.services.license_service import license_service, ALL_MODULES
+
 from app.database.models import User
+from app.dependencies import get_current_user
+from app.services.license_service import ALL_MODULES, license_service
 
 router = APIRouter(prefix="/license", tags=["license"])
 
@@ -15,7 +17,7 @@ async def get_features(
 ):
     """
     Gibt die aktuellen Feature-Flags zurück.
-    
+
     Verfügbare Module:
     - reservations_module: Reservierungsmodul (Tischplan, Kalender, Warteliste, Gäste-Verwaltung)
     - orders_module: Bestellungs-/Menümodul (Bestellsystem, Menüverwaltung, Statistiken)

@@ -2,17 +2,15 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_session, require_mitarbeiter_role
 from app.database.models import User, UserSettings
+from app.dependencies import get_session, require_mitarbeiter_role
 from app.schemas import UserSettingsRead, UserSettingsUpdate
 
 router = APIRouter(prefix="/users/me/settings", tags=["user-settings"])
 
 
 async def _get_user_settings(session: AsyncSession, user_id: int) -> UserSettings | None:
-    result = await session.execute(
-        select(UserSettings).where(UserSettings.user_id == user_id)
-    )
+    result = await session.execute(select(UserSettings).where(UserSettings.user_id == user_id))
     return result.scalar_one_or_none()
 
 

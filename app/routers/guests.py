@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_session, require_mitarbeiter_role, normalize_datetime_to_utc
 from app.database.models import Guest, Restaurant, User
+from app.dependencies import get_session, normalize_datetime_to_utc, require_mitarbeiter_role
 from app.schemas import GuestCreate, GuestRead, GuestUpdate
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/guests", tags=["guests"])

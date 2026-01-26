@@ -6,86 +6,90 @@ Unterstützt:
 - SMS (via Twilio)
 - WhatsApp (via Twilio WhatsApp API)
 """
+
+import asyncio
 import logging
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
 from email import encoders
-from typing import Optional, List
-from datetime import datetime
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 from pydantic import BaseModel, EmailStr
-import asyncio
 
 logger = logging.getLogger(__name__)
 
 
 class UpsellPackageInfo(BaseModel):
     """Informationen über ein Upsell-Paket."""
+
     name: str
     price: float
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class ReservationNotification(BaseModel):
     """Daten für Reservierungsbenachrichtigung."""
+
     guest_name: str
     guest_email: EmailStr
     guest_phone: str
     restaurant_name: str
-    restaurant_slug: Optional[str] = None
-    restaurant_address: Optional[str] = None
-    restaurant_phone: Optional[str] = None
+    restaurant_slug: str | None = None
+    restaurant_address: str | None = None
+    restaurant_phone: str | None = None
     confirmation_code: str
     date: str
     time: str
     party_size: int
-    table_number: Optional[str] = None
-    special_requests: Optional[str] = None
-    manage_url: Optional[str] = None  # URL zum Verwalten der Reservierung
-    upsell_packages: Optional[List[UpsellPackageInfo]] = None  # Bestellte Upsell-Pakete
-    ics_content: Optional[str] = None  # ICS-Datei-Inhalt für Kalender-Anhang
+    table_number: str | None = None
+    special_requests: str | None = None
+    manage_url: str | None = None  # URL zum Verwalten der Reservierung
+    upsell_packages: list[UpsellPackageInfo] | None = None  # Bestellte Upsell-Pakete
+    ics_content: str | None = None  # ICS-Datei-Inhalt für Kalender-Anhang
 
 
 class NotificationResult(BaseModel):
     """Ergebnis einer Benachrichtigung."""
+
     channel: str
     success: bool
-    message: Optional[str] = None
-    error: Optional[str] = None
+    message: str | None = None
+    error: str | None = None
 
 
 class NotificationService:
     """
     Service für das Senden von Benachrichtigungen über mehrere Kanäle.
     """
-    
+
     def __init__(self):
         self._twilio_client = None
         self._smtp_configured = False
         self._initialized = False
-    
+
     def _initialize(self):
         """Lazy initialization der externen Clients."""
         if self._initialized:
             return
-        
+
         from app.settings import (
+            SMTP_FROM_EMAIL,
+            SMTP_HOST,
+            SMTP_PASSWORD,
+            SMTP_PORT,
+            SMTP_USER,
             TWILIO_ACCOUNT_SID,
             TWILIO_AUTH_TOKEN,
             TWILIO_PHONE_NUMBER,
             TWILIO_WHATSAPP_NUMBER,
-            SMTP_HOST,
-            SMTP_PORT,
-            SMTP_USER,
-            SMTP_PASSWORD,
-            SMTP_FROM_EMAIL,
         )
-        
+
         # Twilio Client
         if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
             try:
                 from twilio.rest import Client
+
                 self._twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
                 self._twilio_phone = TWILIO_PHONE_NUMBER
                 self._twilio_whatsapp = TWILIO_WHATSAPP_NUMBER
@@ -96,7 +100,7 @@ class NotificationService:
                 logger.error(f"Failed to initialize Twilio: {e}")
         else:
             logger.info("Twilio not configured. SMS/WhatsApp disabled.")
-        
+
         # SMTP Configuration
         if SMTP_HOST and SMTP_USER and SMTP_PASSWORD:
             self._smtp_host = SMTP_HOST
@@ -106,9 +110,9 @@ class NotificationService:
             self._smtp_from = SMTP_FROM_EMAIL
             self._smtp_configured = True
             logger.info("SMTP configured for email notifications")
-        
+
         self._initialized = True
-    
+
     async def send_reservation_confirmation(
         self,
         notification: ReservationNotification,
@@ -116,38 +120,38 @@ class NotificationService:
     ) -> list[NotificationResult]:
         """
         Sendet Reservierungsbestätigung über alle konfigurierten Kanäle.
-        
+
         Args:
             notification: Reservierungsdaten
             channels: Liste der Kanäle ("email", "sms", "whatsapp") oder None für alle
-        
+
         Returns:
             Liste der Ergebnisse pro Kanal
         """
         self._initialize()
-        
+
         if channels is None:
             channels = ["email", "sms", "whatsapp"]
-        
+
         results = []
-        
+
         # E-Mail
         if "email" in channels:
             result = await self._send_email_confirmation(notification)
             results.append(result)
-        
+
         # SMS
         if "sms" in channels:
             result = await self._send_sms_confirmation(notification)
             results.append(result)
-        
+
         # WhatsApp
         if "whatsapp" in channels:
             result = await self._send_whatsapp_confirmation(notification)
             results.append(result)
-        
+
         return results
-    
+
     async def send_reservation_cancellation(
         self,
         notification: ReservationNotification,
@@ -155,30 +159,30 @@ class NotificationService:
     ) -> list[NotificationResult]:
         """Sendet Stornierungsbestätigung."""
         self._initialize()
-        
+
         if channels is None:
             channels = ["email", "sms", "whatsapp"]
-        
+
         results = []
-        
+
         if "email" in channels:
             result = await self._send_email_cancellation(notification)
             results.append(result)
-        
+
         if "sms" in channels:
             result = await self._send_sms_cancellation(notification)
             results.append(result)
-        
+
         if "whatsapp" in channels:
             result = await self._send_whatsapp_cancellation(notification)
             results.append(result)
-        
+
         return results
-    
+
     # =========================================================================
     # E-Mail Methods
     # =========================================================================
-    
+
     async def _send_email_confirmation(
         self,
         notification: ReservationNotification,
@@ -192,7 +196,7 @@ class NotificationService:
                 success=False,
                 error="Email not configured",
             )
-    
+
     async def _send_email_cancellation(
         self,
         notification: ReservationNotification,
@@ -206,7 +210,7 @@ class NotificationService:
                 success=False,
                 error="Email not configured",
             )
-    
+
     async def _send_email_via_smtp(
         self,
         notification: ReservationNotification,
@@ -220,23 +224,28 @@ class NotificationService:
             else:
                 subject = f"Stornierungsbestätigung - {notification.restaurant_name}"
                 body = self._build_cancellation_email_body(notification)
-            
+
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
             msg["From"] = self._smtp_from
             msg["To"] = notification.guest_email
-            
+
             msg.attach(MIMEText(body, "html"))
-            
+
             # Füge ICS-Datei als Anhang hinzu, falls vorhanden
             if notification.ics_content:
                 ics_attachment = MIMEBase("text", "calendar")
                 ics_attachment.set_payload(notification.ics_content.encode("utf-8"))
-                ics_attachment.add_header("Content-Disposition", f'attachment; filename="reservation-{notification.confirmation_code}.ics"')
-                ics_attachment.add_header("Content-Type", "text/calendar; charset=utf-8; method=REQUEST")
+                ics_attachment.add_header(
+                    "Content-Disposition",
+                    f'attachment; filename="reservation-{notification.confirmation_code}.ics"',
+                )
+                ics_attachment.add_header(
+                    "Content-Type", "text/calendar; charset=utf-8; method=REQUEST"
+                )
                 encoders.encode_base64(ics_attachment)
                 msg.attach(ics_attachment)
-            
+
             # Send in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
@@ -244,14 +253,14 @@ class NotificationService:
                 self._smtp_send,
                 msg,
             )
-            
+
             logger.info(f"Email sent to {notification.guest_email}")
             return NotificationResult(
                 channel="email",
                 success=True,
                 message=f"Email sent to {notification.guest_email}",
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to send email: {e}")
             return NotificationResult(
@@ -259,19 +268,20 @@ class NotificationService:
                 success=False,
                 error=str(e),
             )
-    
+
     def _smtp_send(self, msg):
         """Synchrone SMTP-Sendung."""
         with smtplib.SMTP(self._smtp_host, self._smtp_port) as server:
             server.starttls()
             server.login(self._smtp_user, self._smtp_password)
             server.send_message(msg)
-    
+
     def _build_confirmation_email_body(self, n: ReservationNotification) -> str:
         """Baut HTML E-Mail Body für Bestätigung."""
-        
+
         # Optionale Sections
-        table_section = f"""
+        table_section = (
+            f"""
                         <tr>
                             <td style="padding: 16px 20px; border-bottom: 1px solid #f0f0f0;">
                                 <table cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -286,9 +296,13 @@ class NotificationService:
                                     </tr>
                                 </table>
                             </td>
-                        </tr>""" if n.table_number else ""
-        
-        special_requests_section = f"""
+                        </tr>"""
+            if n.table_number
+            else ""
+        )
+
+        special_requests_section = (
+            f"""
                     <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 24px;">
                         <tr>
                             <td style="background: #fef3c7; border-radius: 12px; padding: 16px 20px; border-left: 4px solid #f59e0b;">
@@ -296,8 +310,11 @@ class NotificationService:
                                 <div style="font-size: 14px; color: #78350f; margin-top: 8px; line-height: 1.5;">{n.special_requests}</div>
                             </td>
                         </tr>
-                    </table>""" if n.special_requests else ""
-        
+                    </table>"""
+            if n.special_requests
+            else ""
+        )
+
         # Upsell-Pakete Section
         upsell_packages_section = ""
         if n.upsell_packages and len(n.upsell_packages) > 0:
@@ -305,7 +322,11 @@ class NotificationService:
             total_price = 0.0
             for pkg in n.upsell_packages:
                 total_price += pkg.price
-                description_html = f'<div style="font-size: 13px; color: #6b7280; margin-top: 4px;">{pkg.description or ""}</div>' if pkg.description else ""
+                description_html = (
+                    f'<div style="font-size: 13px; color: #6b7280; margin-top: 4px;">{pkg.description or ""}</div>'
+                    if pkg.description
+                    else ""
+                )
                 packages_html += f"""
                     <tr>
                         <td style="padding: 12px 0; border-bottom: 1px solid #e5e7eb;">
@@ -318,7 +339,7 @@ class NotificationService:
                             </div>
                         </td>
                     </tr>"""
-            
+
             upsell_packages_section = f"""
                     <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 24px;">
                         <tr>
@@ -338,9 +359,13 @@ class NotificationService:
                             </td>
                         </tr>
                     </table>"""
-        
-        phone_line = f'<div style="margin-top: 4px;">📞 {n.restaurant_phone}</div>' if n.restaurant_phone else ""
-        
+
+        phone_line = (
+            f'<div style="margin-top: 4px;">📞 {n.restaurant_phone}</div>'
+            if n.restaurant_phone
+            else ""
+        )
+
         return f"""
 <!DOCTYPE html>
 <html lang="de">
@@ -560,7 +585,7 @@ class NotificationService:
                     </tr>
                     
                     <!-- ICS Kalender-Hinweis -->
-                    {f'''
+                    {'''
                     <tr>
                         <td style="padding: 0 30px 24px;">
                             <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe;">
@@ -600,12 +625,16 @@ class NotificationService:
 </body>
 </html>
 """
-    
+
     def _build_cancellation_email_body(self, n: ReservationNotification) -> str:
         """Baut HTML E-Mail Body für Stornierung."""
-        
-        phone_line = f'<div style="margin-top: 4px;">📞 {n.restaurant_phone}</div>' if n.restaurant_phone else ""
-        
+
+        phone_line = (
+            f'<div style="margin-top: 4px;">📞 {n.restaurant_phone}</div>'
+            if n.restaurant_phone
+            else ""
+        )
+
         return f"""
 <!DOCTYPE html>
 <html lang="de">
@@ -718,11 +747,11 @@ class NotificationService:
 </body>
 </html>
 """
-    
+
     # =========================================================================
     # SMS Methods
     # =========================================================================
-    
+
     async def _send_sms_confirmation(
         self,
         notification: ReservationNotification,
@@ -734,7 +763,7 @@ class NotificationService:
                 success=False,
                 error="Twilio not configured",
             )
-        
+
         try:
             message_body = (
                 f"Reservierung bestätigt!\n"
@@ -743,7 +772,7 @@ class NotificationService:
                 f"{notification.party_size} Personen\n"
                 f"Code: {notification.confirmation_code}"
             )
-            
+
             # Run in thread pool
             loop = asyncio.get_event_loop()
             message = await loop.run_in_executor(
@@ -754,14 +783,14 @@ class NotificationService:
                     to=notification.guest_phone,
                 ),
             )
-            
+
             logger.info(f"SMS sent to {notification.guest_phone}: {message.sid}")
             return NotificationResult(
                 channel="sms",
                 success=True,
                 message=f"SMS sent, SID: {message.sid}",
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to send SMS: {e}")
             return NotificationResult(
@@ -769,7 +798,7 @@ class NotificationService:
                 success=False,
                 error=str(e),
             )
-    
+
     async def _send_sms_cancellation(
         self,
         notification: ReservationNotification,
@@ -781,7 +810,7 @@ class NotificationService:
                 success=False,
                 error="Twilio not configured",
             )
-        
+
         try:
             message_body = (
                 f"Reservierung storniert\n"
@@ -789,7 +818,7 @@ class NotificationService:
                 f"{notification.date} um {notification.time} Uhr\n"
                 f"Code: {notification.confirmation_code}"
             )
-            
+
             loop = asyncio.get_event_loop()
             message = await loop.run_in_executor(
                 None,
@@ -799,14 +828,14 @@ class NotificationService:
                     to=notification.guest_phone,
                 ),
             )
-            
+
             logger.info(f"Cancellation SMS sent to {notification.guest_phone}")
             return NotificationResult(
                 channel="sms",
                 success=True,
                 message=f"SMS sent, SID: {message.sid}",
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to send SMS: {e}")
             return NotificationResult(
@@ -814,11 +843,11 @@ class NotificationService:
                 success=False,
                 error=str(e),
             )
-    
+
     # =========================================================================
     # WhatsApp Methods
     # =========================================================================
-    
+
     async def _send_whatsapp_confirmation(
         self,
         notification: ReservationNotification,
@@ -830,7 +859,7 @@ class NotificationService:
                 success=False,
                 error="WhatsApp not configured",
             )
-        
+
         try:
             message_body = (
                 f"✅ *Reservierung bestätigt!*\n\n"
@@ -841,12 +870,12 @@ class NotificationService:
                 f"🔑 Code: *{notification.confirmation_code}*\n\n"
                 f"Wir freuen uns auf Ihren Besuch!"
             )
-            
+
             # Format phone for WhatsApp
             phone = notification.guest_phone
             if not phone.startswith("whatsapp:"):
                 phone = f"whatsapp:{phone}"
-            
+
             loop = asyncio.get_event_loop()
             message = await loop.run_in_executor(
                 None,
@@ -856,14 +885,14 @@ class NotificationService:
                     to=phone,
                 ),
             )
-            
+
             logger.info(f"WhatsApp sent to {notification.guest_phone}: {message.sid}")
             return NotificationResult(
                 channel="whatsapp",
                 success=True,
                 message=f"WhatsApp sent, SID: {message.sid}",
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to send WhatsApp: {e}")
             return NotificationResult(
@@ -871,7 +900,7 @@ class NotificationService:
                 success=False,
                 error=str(e),
             )
-    
+
     async def _send_whatsapp_cancellation(
         self,
         notification: ReservationNotification,
@@ -883,7 +912,7 @@ class NotificationService:
                 success=False,
                 error="WhatsApp not configured",
             )
-        
+
         try:
             message_body = (
                 f"❌ *Reservierung storniert*\n\n"
@@ -893,11 +922,11 @@ class NotificationService:
                 f"Code: {notification.confirmation_code}\n\n"
                 f"Wir hoffen, Sie bald wieder zu sehen!"
             )
-            
+
             phone = notification.guest_phone
             if not phone.startswith("whatsapp:"):
                 phone = f"whatsapp:{phone}"
-            
+
             loop = asyncio.get_event_loop()
             message = await loop.run_in_executor(
                 None,
@@ -907,14 +936,14 @@ class NotificationService:
                     to=phone,
                 ),
             )
-            
+
             logger.info(f"WhatsApp cancellation sent to {notification.guest_phone}")
             return NotificationResult(
                 channel="whatsapp",
                 success=True,
                 message=f"WhatsApp sent, SID: {message.sid}",
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to send WhatsApp: {e}")
             return NotificationResult(
@@ -922,7 +951,7 @@ class NotificationService:
                 success=False,
                 error=str(e),
             )
-    
+
     async def send_whatsapp_message(
         self,
         to_phone: str,
@@ -930,22 +959,22 @@ class NotificationService:
     ) -> NotificationResult:
         """
         Sendet eine einzelne WhatsApp-Nachricht.
-        
+
         Wird vom WhatsApp-Bot für Antworten verwendet.
         """
         if not self._twilio_client or not self._twilio_whatsapp:
             self._initialize()
-            
+
         if not self._twilio_client or not self._twilio_whatsapp:
             return NotificationResult(
                 channel="whatsapp",
                 success=False,
                 error="WhatsApp not configured",
             )
-        
+
         try:
             phone = to_phone if to_phone.startswith("whatsapp:") else f"whatsapp:{to_phone}"
-            
+
             loop = asyncio.get_event_loop()
             msg = await loop.run_in_executor(
                 None,
@@ -955,13 +984,13 @@ class NotificationService:
                     to=phone,
                 ),
             )
-            
+
             return NotificationResult(
                 channel="whatsapp",
                 success=True,
                 message=f"Message sent, SID: {msg.sid}",
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to send WhatsApp message: {e}")
             return NotificationResult(

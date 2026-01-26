@@ -1,23 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database.models import MenuCategory, MenuItem, Restaurant, User
 from app.dependencies import (
-    get_session,
     get_current_user,
-    require_mitarbeiter_role,
-    require_schichtleiter_role,
+    get_session,
     require_orders_module,
+    require_schichtleiter_role,
 )
-from app.database.models import MenuItem, MenuCategory, Restaurant, User
 from app.schemas import (
-    MenuItemCreate,
-    MenuItemRead,
-    MenuItemUpdate,
     MenuCategoryCreate,
     MenuCategoryRead,
     MenuCategoryUpdate,
+    MenuItemCreate,
+    MenuItemRead,
+    MenuItemUpdate,
 )
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/menu", tags=["menu"])
@@ -30,14 +29,18 @@ async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> R
     return restaurant
 
 
-async def _get_menu_item_or_404(menu_item_id: int, restaurant_id: int, session: AsyncSession) -> MenuItem:
+async def _get_menu_item_or_404(
+    menu_item_id: int, restaurant_id: int, session: AsyncSession
+) -> MenuItem:
     menu_item = await session.get(MenuItem, menu_item_id)
     if not menu_item or menu_item.restaurant_id != restaurant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
     return menu_item
 
 
-async def _get_menu_category_or_404(category_id: int, restaurant_id: int, session: AsyncSession) -> MenuCategory:
+async def _get_menu_category_or_404(
+    category_id: int, restaurant_id: int, session: AsyncSession
+) -> MenuCategory:
     category = await session.get(MenuCategory, category_id)
     if not category or category.restaurant_id != restaurant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu category not found")
@@ -46,7 +49,13 @@ async def _get_menu_category_or_404(category_id: int, restaurant_id: int, sessio
 
 # Menu Categories
 
-@router.post("/categories", response_model=MenuCategoryRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_orders_module)])
+
+@router.post(
+    "/categories",
+    response_model=MenuCategoryRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_orders_module)],
+)
 async def create_category(
     restaurant_id: int,
     category_data: MenuCategoryCreate,
@@ -57,10 +66,7 @@ async def create_category(
     """Erstellt eine neue Menü-Kategorie (Schichtleiter oder höher)."""
     await _get_restaurant_or_404(restaurant_id, session)
 
-    category = MenuCategory(
-        restaurant_id=restaurant_id,
-        **category_data.model_dump()
-    )
+    category = MenuCategory(restaurant_id=restaurant_id, **category_data.model_dump())
 
     try:
         session.add(category)
@@ -156,6 +162,7 @@ async def delete_category(
 
 # Menu Items
 
+
 @router.post("/items", response_model=MenuItemRead, status_code=status.HTTP_201_CREATED)
 async def create_menu_item(
     restaurant_id: int,
@@ -170,10 +177,7 @@ async def create_menu_item(
     if item_data.category_id:
         await _get_menu_category_or_404(item_data.category_id, restaurant_id, session)
 
-    menu_item = MenuItem(
-        restaurant_id=restaurant_id,
-        **item_data.model_dump()
-    )
+    menu_item = MenuItem(restaurant_id=restaurant_id, **item_data.model_dump())
 
     try:
         session.add(menu_item)
@@ -202,7 +206,7 @@ async def list_menu_items(
 
     if category_id:
         query = query.where(MenuItem.category_id == category_id)
-    
+
     if available_only:
         query = query.where(MenuItem.is_available == True)
 
@@ -277,4 +281,3 @@ async def delete_menu_item(
         except Exception:
             pass
         raise
-

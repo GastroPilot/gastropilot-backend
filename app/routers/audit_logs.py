@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_session, require_schichtleiter_role
 from app.database.models import AuditLog, Restaurant, User
+from app.dependencies import get_session, require_schichtleiter_role
 from app.schemas import AuditLogRead
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/audit-logs", tags=["audit-logs"])

@@ -1,22 +1,22 @@
 """
 Upsell Packages API - Upsell-Pakete für Reservierungen.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
-from datetime import date, datetime, timezone
-from typing import List
 
-from app.dependencies import get_session, require_schichtleiter_role
-from app.database.models import UpsellPackage, Restaurant
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database.models import Restaurant, UpsellPackage
+from app.dependencies import User, get_session, require_schichtleiter_role
 from app.schemas import (
-    UpsellPackageCreate,
-    UpsellPackageUpdate,
-    UpsellPackageRead,
     UpsellPackageAvailabilityRequest,
     UpsellPackageAvailabilityResponse,
+    UpsellPackageCreate,
+    UpsellPackageRead,
+    UpsellPackageUpdate,
 )
-from app.dependencies import User
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/upsell-packages", tags=["upsell-packages"])
 
@@ -30,52 +30,65 @@ async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> R
     return restaurant
 
 
-async def _get_package_or_404(package_id: int, restaurant_id: int, session: AsyncSession) -> UpsellPackage:
+async def _get_package_or_404(
+    package_id: int, restaurant_id: int, session: AsyncSession
+) -> UpsellPackage:
     """Lädt Upsell-Paket oder wirft 404."""
     result = await session.execute(
         select(UpsellPackage).where(
-            UpsellPackage.id == package_id,
-            UpsellPackage.restaurant_id == restaurant_id
+            UpsellPackage.id == package_id, UpsellPackage.restaurant_id == restaurant_id
         )
     )
     package = result.scalar_one_or_none()
     if not package:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upsell package not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Upsell package not found"
+        )
     return package
 
 
-def _is_package_available(package: UpsellPackage, request_date: date, request_time: str, party_size: int) -> bool:
+def _is_package_available(
+    package: UpsellPackage, request_date: date, request_time: str, party_size: int
+) -> bool:
     """Prüft ob ein Paket für die gegebene Reservierung verfügbar ist."""
     # Prüfe Aktivität
     if not package.is_active:
         return False
-    
+
     # Prüfe Datumsbereich
     today = date.today()
     if package.available_from_date and request_date < package.available_from_date:
         return False
     if package.available_until_date and request_date > package.available_until_date:
         return False
-    
+
     # Prüfe Gästeanzahl
     if package.min_party_size and party_size < package.min_party_size:
         return False
     if package.max_party_size and party_size > package.max_party_size:
         return False
-    
+
     # Prüfe Wochentag
     if package.available_weekdays:
         weekday = request_date.weekday()  # 0 = Montag, 6 = Sonntag
         if weekday not in package.available_weekdays:
             return False
-    
+
     # Prüfe Zeit
     if package.available_times:
-        weekday_name = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"][request_date.weekday()]
+        weekday_name = [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        ][request_date.weekday()]
         times_for_day = package.available_times.get(weekday_name, [])
         if times_for_day and request_time not in times_for_day:
             return False
-    
+
     return True
 
 
@@ -88,7 +101,7 @@ async def create_upsell_package(
 ):
     """Erstellt ein neues Upsell-Paket."""
     restaurant = await _get_restaurant_or_404(restaurant_id, session)
-    
+
     package = UpsellPackage(
         restaurant_id=restaurant_id,
         name=package_data.name,
@@ -104,15 +117,15 @@ async def create_upsell_package(
         image_url=package_data.image_url,
         display_order=package_data.display_order,
     )
-    
+
     session.add(package)
     await session.commit()
     await session.refresh(package)
-    
+
     return package
 
 
-@router.get("/", response_model=List[UpsellPackageRead])
+@router.get("/", response_model=list[UpsellPackageRead])
 async def list_upsell_packages(
     restaurant_id: int,
     include_inactive: bool = False,
@@ -121,16 +134,16 @@ async def list_upsell_packages(
 ):
     """Listet alle Upsell-Pakete eines Restaurants."""
     await _get_restaurant_or_404(restaurant_id, session)
-    
+
     query = select(UpsellPackage).where(UpsellPackage.restaurant_id == restaurant_id)
     if not include_inactive:
         query = query.where(UpsellPackage.is_active == True)
-    
+
     query = query.order_by(UpsellPackage.display_order.asc(), UpsellPackage.created_at_utc.desc())
-    
+
     result = await session.execute(query)
     packages = result.scalars().all()
-    
+
     return packages
 
 
@@ -155,14 +168,14 @@ async def update_upsell_package(
 ):
     """Aktualisiert ein Upsell-Paket."""
     package = await _get_package_or_404(package_id, restaurant_id, session)
-    
+
     update_data = package_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(package, field, value)
-    
+
     await session.commit()
     await session.refresh(package)
-    
+
     return package
 
 
@@ -175,10 +188,10 @@ async def delete_upsell_package(
 ):
     """Löscht ein Upsell-Paket."""
     package = await _get_package_or_404(package_id, restaurant_id, session)
-    
+
     await session.delete(package)
     await session.commit()
-    
+
     return None
 
 
@@ -190,27 +203,24 @@ async def get_available_packages(
 ):
     """Gibt verfügbare Upsell-Pakete für eine Reservierung zurück (öffentlicher Endpoint)."""
     await _get_restaurant_or_404(restaurant_id, session)
-    
+
     # Lade alle aktiven Pakete
     result = await session.execute(
-        select(UpsellPackage).where(
-            UpsellPackage.restaurant_id == restaurant_id,
-            UpsellPackage.is_active == True
-        ).order_by(UpsellPackage.display_order.asc())
+        select(UpsellPackage)
+        .where(UpsellPackage.restaurant_id == restaurant_id, UpsellPackage.is_active == True)
+        .order_by(UpsellPackage.display_order.asc())
     )
     all_packages = result.scalars().all()
-    
+
     # Filtere nach Verfügbarkeit
     available_packages = [
-        package for package in all_packages
+        package
+        for package in all_packages
         if _is_package_available(
-            package,
-            availability_data.date,
-            availability_data.time,
-            availability_data.party_size
+            package, availability_data.date, availability_data.time, availability_data.party_size
         )
     ]
-    
+
     return UpsellPackageAvailabilityResponse(
         packages=[UpsellPackageRead.model_validate(p) for p in available_packages]
     )
