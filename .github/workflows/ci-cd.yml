@@ -224,13 +224,13 @@ jobs:
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u duhrkah --password-stdin
 
             # Pull latest image
-            docker compose pull backend
+            docker-compose pull backend
 
             # Run database migrations (if alembic is configured)
-            docker compose run --rm backend alembic upgrade head || echo "No migrations to run"
+            docker-compose run --rm backend alembic upgrade head || echo "No migrations to run"
 
             # Restart with new image
-            docker compose up -d backend
+            docker-compose up -d backend
 
             # Wait for health check
             echo "Waiting for health check..."
@@ -247,7 +247,7 @@ jobs:
             done
 
             echo "Health check failed!"
-            docker compose logs --tail=50 backend
+            docker-compose logs --tail=50 backend
             exit 1
 
       - name: Notify success
