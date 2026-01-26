@@ -86,21 +86,25 @@ class AsyncDatabaseHandler:
             if not database_url.startswith("postgresql+asyncpg://"):
                 raise ValueError("Database URL must use postgresql+asyncpg:// driver")
 
-            # SSL-Konfiguration: Standardmäßig SSL-Verifizierung deaktivieren für selbst-signierte Zertifikate
-            # Nur wenn explizit 'verify-full' oder 'verify-ca' angefordert wird, wird Verifizierung aktiviert
-            ssl_ctx = ssl.create_default_context()
-            if sslmode_value in ["verify-full", "verify-ca"]:
-                # SSL-Verifizierung aktivieren (Standard-Verhalten)
+            # SSL-Konfiguration
+            if sslmode_value == "disable":
+                # SSL komplett deaktivieren
+                connect_args = {"ssl": False}
+                logger.info("SSL disabled (sslmode=disable)")
+            elif sslmode_value in ["verify-full", "verify-ca"]:
+                # SSL mit Verifizierung
+                ssl_ctx = ssl.create_default_context()
+                connect_args = {"ssl": ssl_ctx}
                 logger.info("SSL certificate verification enabled (sslmode: %s)", sslmode_value)
             else:
-                # SSL-Verifizierung deaktivieren für selbst-signierte Zertifikate
+                # SSL ohne Verifizierung (für selbst-signierte Zertifikate)
+                ssl_ctx = ssl.create_default_context()
                 ssl_ctx.check_hostname = False
                 ssl_ctx.verify_mode = ssl.CERT_NONE
+                connect_args = {"ssl": ssl_ctx}
                 logger.info(
                     "SSL certificate verification disabled (accepting self-signed certificates)"
                 )
-
-            connect_args = {"ssl": ssl_ctx}
         else:
             raise ValueError(
                 f"Invalid database type: {type}. "
