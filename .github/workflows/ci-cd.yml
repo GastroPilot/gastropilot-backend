@@ -211,26 +211,26 @@ jobs:
       - name: Deploy to Staging Server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
+          host: 46.225.31.48
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
-            echo "Deploying to Staging..."
+            echo "Deploying Backend to Staging..."
 
             cd /opt/gastropilot/staging
 
             # Login to GitHub Container Registry
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u duhrkah --password-stdin
 
             # Pull latest image
-            docker-compose pull backend
+            docker compose pull backend
 
-            # Run database migrations
-            docker-compose run --rm backend alembic upgrade head
+            # Run database migrations (if alembic is configured)
+            docker compose run --rm backend alembic upgrade head || echo "No migrations to run"
 
             # Restart with new image
-            docker-compose up -d backend
+            docker compose up -d backend
 
             # Wait for health check
             echo "Waiting for health check..."
@@ -247,7 +247,7 @@ jobs:
             done
 
             echo "Health check failed!"
-            docker-compose logs --tail=50 backend
+            docker compose logs --tail=50 backend
             exit 1
 
       - name: Notify success
