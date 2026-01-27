@@ -90,7 +90,7 @@ jobs:
 
       - name: Run tests with coverage
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gastropilot_test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gastropilot_test?sslmode=disable
           JWT_SECRET: test-secret-key
           SECRET_KEY: test-secret-key
           ENV: test
