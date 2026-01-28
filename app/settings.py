@@ -114,15 +114,27 @@ LOG_MAX_TOTAL_BYTES = int(os.getenv("LOG_MAX_TOTAL_BYTES", str(50 * 1024 * 1024)
 ACTIVITY_LOGGING_ENABLED = os.getenv("ACTIVITY_LOGGING_ENABLED", "true").lower() == "true"
 
 # CORS Configuration
-_default_origins = (
-    "http://localhost:3001,http://127.0.0.1:3001,"
-    "http://localhost:8001,http://127.0.0.1:8001,"
-    "http://localhost:8081,http://127.0.0.1:8081"
-)
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", _default_origins).split(",")
-CORS_ORIGINS = [
-    origin.strip() for origin in CORS_ORIGINS if origin.strip()
-]  # Filter out empty strings
+# Development origins (explicit list)
+_dev_origins = [
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+    "http://localhost:8001",
+    "http://127.0.0.1:8001",
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
+]
+
+# Allow custom origins via environment variable
+_env_origins = os.getenv("CORS_ORIGINS", "")
+if _env_origins:
+    CORS_ORIGINS = [origin.strip() for origin in _env_origins.split(",") if origin.strip()]
+else:
+    CORS_ORIGINS = _dev_origins
+
+# Regex pattern for dynamic origin matching (e.g., all *.gpilot.app subdomains)
+# This allows any subdomain without code changes when new customers are added
+# Pattern: https://(www.|test.|staging.|demo.|<kunde>.)gpilot.app
+CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX", r"https://([a-zA-Z0-9-]+\.)?gpilot\.app")
 CORS_ALLOW_CREDENTIALS = os.getenv("CORS_ALLOW_CREDENTIALS", "True").lower() == "true"
 CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
 CORS_ALLOW_HEADERS = [

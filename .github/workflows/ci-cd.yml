@@ -4,7 +4,10 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'feature/**'
+      - 'fix/**'
   workflow_dispatch:
     inputs:
       environment:
@@ -12,6 +15,7 @@ on:
         required: true
         type: choice
         options:
+          - test
           - staging
           - demo
           - production
@@ -196,8 +200,124 @@ jobs:
         run: echo "Image digest - ${{ steps.build.outputs.digest }}"
 
   # ============================================
+  # Docker Build for Feature/Fix Branches (Test Environment)
+  # ============================================
+
+  docker-build-test:
+    name: Docker Build & Push (Test)
+    runs-on: ubuntu-latest
+    needs: [lint, test-unit, build]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'test' || github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/fix/'))
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract branch name
+        id: branch
+        run: |
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          # Replace / with - for Docker tag compatibility
+          BRANCH_SLUG=$(echo "$BRANCH_NAME" | sed 's/\//-/g')
+          echo "name=$BRANCH_SLUG" >> $GITHUB_OUTPUT
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=test
+            type=raw,value=test-${{ steps.branch.outputs.name }}
+            type=sha,prefix=test-
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image digest
+        run: echo "Image digest - ${{ steps.build.outputs.digest }}"
+
+  # ============================================
   # Deployments
   # ============================================
+
+  deploy-test:
+    name: Deploy to Test
+    runs-on: ubuntu-latest
+    needs: [docker-build-test]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'test' || github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/fix/'))
+    environment:
+      name: test
+      url: https://api-test.gpilot.app
+    steps:
+      - name: Deploy to Test Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            echo "Deploying Backend to Test Environment..."
+
+            cd /opt/gastropilot/test
+
+            # Login to GitHub Container Registry
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u duhrkah --password-stdin
+
+            # Pull latest test image
+            docker compose pull backend
+
+            # Run database migrations
+            docker compose run --rm backend alembic upgrade head || echo "No migrations to run"
+
+            # Restart with new image
+            docker compose up -d backend
+
+            # Wait for health check
+            echo "Waiting for health check..."
+            sleep 10
+
+            # Verify deployment
+            for i in {1..10}; do
+              if curl -f -s http://localhost:8004/v1/health > /dev/null 2>&1; then
+                echo "Health check passed!"
+                exit 0
+              fi
+              echo "Attempt $i/10 - waiting..."
+              sleep 3
+            done
+
+            echo "Health check failed!"
+            docker compose logs --tail=50 backend
+            exit 1
+
+      - name: Notify success
+        if: success()
+        run: echo "Test deployment successful for branch ${{ github.ref_name }}!"
 
   deploy-staging:
     name: Deploy to Staging
@@ -211,7 +331,7 @@ jobs:
       - name: Deploy to Staging Server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 46.225.31.48
+          host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
@@ -238,7 +358,7 @@ jobs:
 
             # Verify deployment
             for i in {1..10}; do
-              if curl -f -s http://localhost:8003/health > /dev/null 2>&1; then
+              if curl -f -s http://localhost:8003/v1/health > /dev/null 2>&1; then
                 echo "Health check passed!"
                 exit 0
               fi
@@ -293,7 +413,7 @@ jobs:
 
             # Verify deployment
             for i in {1..10}; do
-              if curl -f -s http://localhost:8001/health > /dev/null 2>&1; then
+              if curl -f -s http://localhost:8001/v1/health > /dev/null 2>&1; then
                 echo "Health check passed!"
                 exit 0
               fi
@@ -344,7 +464,7 @@ jobs:
 
             # Verify deployment
             for i in {1..10}; do
-              if curl -f -s http://localhost:8000/health > /dev/null 2>&1; then
+              if curl -f -s http://localhost:8000/v1/health > /dev/null 2>&1; then
                 echo "Health check passed!"
                 exit 0
               fi
