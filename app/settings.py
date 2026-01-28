@@ -134,10 +134,7 @@ else:
 # Regex pattern for dynamic origin matching (e.g., all *.gpilot.app subdomains)
 # This allows any subdomain without code changes when new customers are added
 # Pattern: https://(www.|test.|staging.|demo.|<kunde>.)gpilot.app
-CORS_ORIGIN_REGEX = os.getenv(
-    "CORS_ORIGIN_REGEX",
-    r"https://([a-zA-Z0-9-]+\.)?gpilot\.app"
-)
+CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX", r"https://([a-zA-Z0-9-]+\.)?gpilot\.app")
 CORS_ALLOW_CREDENTIALS = os.getenv("CORS_ALLOW_CREDENTIALS", "True").lower() == "true"
 CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
 CORS_ALLOW_HEADERS = [
