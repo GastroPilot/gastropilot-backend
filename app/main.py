@@ -58,6 +58,7 @@ from app.settings import (
     CORS_ALLOW_CREDENTIALS,
     CORS_ALLOW_HEADERS,
     CORS_ALLOW_METHODS,
+    CORS_ORIGIN_REGEX,
     CORS_ORIGINS,
     DATABASE_URL,
     DB_TYPE,
@@ -112,15 +113,19 @@ setup_logging()
 logger.info("=" * 60)
 logger.info("CORS Configuration:")
 logger.info(f"  CORS_ORIGINS: {CORS_ORIGINS}")
+logger.info(f"  CORS_ORIGIN_REGEX: {CORS_ORIGIN_REGEX}")
 logger.info(f"  CORS_ALLOW_CREDENTIALS: {CORS_ALLOW_CREDENTIALS}")
 logger.info(f"  CORS_ALLOW_METHODS: {CORS_ALLOW_METHODS}")
 logger.info(f"  CORS_ALLOW_HEADERS: {CORS_ALLOW_HEADERS}")
 logger.info("=" * 60)
 
 # CORS Middleware (MUSS vor SecurityHeadersMiddleware sein!)
+# allow_origins: Explizite Liste (localhost für Development)
+# allow_origin_regex: Dynamisches Pattern für alle *.gpilot.app Subdomains
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=CORS_ALLOW_CREDENTIALS,
     allow_methods=CORS_ALLOW_METHODS,
     allow_headers=CORS_ALLOW_HEADERS,
