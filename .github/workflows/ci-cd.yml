@@ -291,8 +291,8 @@ jobs:
             # Pull latest test image
             docker compose pull backend
 
-            # Run database migrations
-            docker compose run --rm backend alembic upgrade head || echo "No migrations to run"
+            # Note: This project uses custom Python migration scripts, not alembic
+            # Migrations are applied manually or via specific scripts when needed
 
             # Restart with new image
             docker compose up -d backend
@@ -401,8 +401,8 @@ jobs:
             # Pull latest image
             docker compose pull backend
 
-            # Run database migrations
-            docker compose run --rm backend alembic upgrade head
+            # Note: This project uses custom Python migration scripts, not alembic
+            # Migrations are applied manually or via specific scripts when needed
 
             # Restart with new image
             docker compose up -d backend
@@ -452,8 +452,8 @@ jobs:
             # Pull latest image
             docker compose pull backend
 
-            # Run database migrations
-            docker compose run --rm backend alembic upgrade head
+            # Note: This project uses custom Python migration scripts, not alembic
+            # Migrations are applied manually or via specific scripts when needed
 
             # Restart with new image
             docker compose up -d backend
