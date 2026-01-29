@@ -58,6 +58,7 @@ from app.settings import (
     CORS_ALLOW_CREDENTIALS,
     CORS_ALLOW_HEADERS,
     CORS_ALLOW_METHODS,
+    CORS_ORIGIN_REGEX,
     CORS_ORIGINS,
     DATABASE_URL,
     DB_TYPE,
@@ -65,6 +66,7 @@ from app.settings import (
     LOG_LEVEL,
     REQUEST_TIMEOUT,
 )
+from app.version import VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +99,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Reservation Management API",
-    description="API für das Reservierungsmanagement",
-    version="1.0.0",
+    title="GastroPilot API",
+    description="API für das GastroPilot Backend",
+    version=VERSION,
     docs_url="/v1/docs" if ENV == "development" else None,
     redoc_url="/v1/redoc" if ENV == "development" else None,
     openapi_url="/v1/openapi.json" if ENV == "development" else None,
@@ -112,15 +114,19 @@ setup_logging()
 logger.info("=" * 60)
 logger.info("CORS Configuration:")
 logger.info(f"  CORS_ORIGINS: {CORS_ORIGINS}")
+logger.info(f"  CORS_ORIGIN_REGEX: {CORS_ORIGIN_REGEX}")
 logger.info(f"  CORS_ALLOW_CREDENTIALS: {CORS_ALLOW_CREDENTIALS}")
 logger.info(f"  CORS_ALLOW_METHODS: {CORS_ALLOW_METHODS}")
 logger.info(f"  CORS_ALLOW_HEADERS: {CORS_ALLOW_HEADERS}")
 logger.info("=" * 60)
 
 # CORS Middleware (MUSS vor SecurityHeadersMiddleware sein!)
+# allow_origins: Explizite Liste (localhost für Development)
+# allow_origin_regex: Dynamisches Pattern für alle *.gpilot.app Subdomains
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=CORS_ALLOW_CREDENTIALS,
     allow_methods=CORS_ALLOW_METHODS,
     allow_headers=CORS_ALLOW_HEADERS,
@@ -194,10 +200,10 @@ async def root():
     from datetime import datetime
 
     return {
-        "message": "Welcome to GastroPilot App API",
-        "version": "1.0.0",
-        "api_name": "GastroPilot App API",
-        "description": "API für das GastroPilot App Backend",
+        "message": "Welcome to GastroPilot API",
+        "version": VERSION,
+        "api_name": "GastroPilot API",
+        "description": "API für das GastroPilot Backend",
         "docs": "/v1/docs" if ENV == "development" else None,
         "health": "/v1/health",
         "timestamp": datetime.now(UTC).isoformat(),
@@ -261,13 +267,13 @@ async def health():
     # Basis-Response
     response = {
         "status": "healthy" if db_status == "connected" else "degraded",
-        "version": "1.0.0",
+        "version": VERSION,
         "timestamp": datetime.now(UTC).isoformat(),
         "api": {
-            "name": "GastroPilot App API",
-            "version": "1.0.0",
+            "name": "GastroPilot API",
+            "version": VERSION,
             "prefix": "/v1",
-            "description": "API für das GastroPilot App Backend",
+            "description": "API für das GastroPilot Backend",
         },
     }
 
