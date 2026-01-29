@@ -134,7 +134,7 @@ jobs:
     name: Docker Build & Push (Staging)
     runs-on: ubuntu-latest
     needs: [lint, test-unit, build]
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main')
     permissions:
       contents: read
       packages: write
