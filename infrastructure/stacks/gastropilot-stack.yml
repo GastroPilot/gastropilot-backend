@@ -16,7 +16,10 @@ services:
       - traefik-public
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=${API_URL}
+      # Client-seitige API-URL (wird im Browser verwendet)
+      - NEXT_PUBLIC_API_BASE_URL=${API_URL}
+      # Server-seitige API-URL für SSR (Container-internes Netzwerk)
+      - SSR_API_BASE_URL=http://backend:8000
     deploy:
       replicas: 2
       update_config:

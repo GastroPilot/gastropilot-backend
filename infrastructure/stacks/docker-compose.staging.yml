@@ -14,7 +14,10 @@ services:
       - "3003:3000"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=https://api-staging.gastropilot.app
+      # Client-seitige API-URL (wird im Browser verwendet)
+      - NEXT_PUBLIC_API_BASE_URL=https://api-staging.gastropilot.app
+      # Server-seitige API-URL für SSR (Container-internes Netzwerk)
+      - SSR_API_BASE_URL=http://backend:8000
     networks:
       - gastropilot-staging
     depends_on:
