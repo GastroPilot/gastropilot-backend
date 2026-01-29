@@ -137,15 +137,15 @@ jobs:
           python -c "from app.main import app; print('Application imports successfully')"
 
   # ============================================
-  # Docker Build & Push (main branch)
-  # Images are built here, deployments handled by main repo
+  # Docker Build & Push Test (push & pull_request)
+  # Builds and pushes with "test" tag
   # ============================================
 
-  docker-build:
-    name: Docker Build & Push
+  docker-build-test:
+    name: Docker Build & Push (Test)
     runs-on: ubuntu-latest
     needs: [lint, test-unit, build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     permissions:
       contents: read
       packages: write
@@ -166,14 +166,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract branch name
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            BRANCH_NAME=${{ github.head_ref }}
+          else
+            BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          fi
+          BRANCH_SLUG=$(echo "$BRANCH_NAME" | sed 's/\//-/g')
+          echo "name=$BRANCH_SLUG" >> $GITHUB_OUTPUT
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=main
-            type=sha,prefix=main-
+            type=raw,value=test
+            type=raw,value=test-${{ steps.branch.outputs.name }}
+            type=sha,prefix=test-
 
       - name: Build and push Docker image
         id: build
@@ -190,14 +202,15 @@ jobs:
         run: echo "Image digest - ${{ steps.build.outputs.digest }}"
 
   # ============================================
-  # Docker Build for Feature/Fix Branches (Test Environment)
+  # Docker Build & Push (workflow_dispatch only)
+  # Images are built here, deployments handled by main repo
   # ============================================
 
-  docker-build-test:
-    name: Docker Build & Push (Test)
+  docker-build:
+    name: Docker Build & Push
     runs-on: ubuntu-latest
     needs: [lint, test-unit, build]
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'test' || github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/fix/'))
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
@@ -231,9 +244,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=test
-            type=raw,value=test-${{ steps.branch.outputs.name }}
-            type=sha,prefix=test-
+            type=raw,value=${{ github.event.inputs.environment }}
+            type=raw,value=${{ github.event.inputs.environment }}-${{ steps.branch.outputs.name }}
+            type=sha,prefix=${{ github.event.inputs.environment }}-
 
       - name: Build and push Docker image
         id: build
@@ -250,14 +263,14 @@ jobs:
         run: echo "Image digest - ${{ steps.build.outputs.digest }}"
 
   # ============================================
-  # Test Environment Deployment
+  # Test Environment Deployment (workflow_dispatch only)
   # ============================================
 
   deploy-test:
     name: Deploy to Test
     runs-on: ubuntu-latest
-    needs: [docker-build-test]
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'test' || github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/fix/'))
+    needs: [docker-build]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'test'
     environment:
       name: test
       url: https://api-test.gpilot.app
