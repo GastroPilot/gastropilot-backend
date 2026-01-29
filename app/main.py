@@ -66,6 +66,7 @@ from app.settings import (
     LOG_LEVEL,
     REQUEST_TIMEOUT,
 )
+from app.version import VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +99,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Reservation Management API",
-    description="API für das Reservierungsmanagement",
-    version="1.0.0",
+    title="GastroPilot API",
+    description="API für das GastroPilot Backend",
+    version=VERSION,
     docs_url="/v1/docs" if ENV == "development" else None,
     redoc_url="/v1/redoc" if ENV == "development" else None,
     openapi_url="/v1/openapi.json" if ENV == "development" else None,
@@ -199,10 +200,10 @@ async def root():
     from datetime import datetime
 
     return {
-        "message": "Welcome to GastroPilot App API",
-        "version": "1.0.0",
-        "api_name": "GastroPilot App API",
-        "description": "API für das GastroPilot App Backend",
+        "message": "Welcome to GastroPilot API",
+        "version": VERSION,
+        "api_name": "GastroPilot API",
+        "description": "API für das GastroPilot Backend",
         "docs": "/v1/docs" if ENV == "development" else None,
         "health": "/v1/health",
         "timestamp": datetime.now(UTC).isoformat(),
@@ -266,13 +267,13 @@ async def health():
     # Basis-Response
     response = {
         "status": "healthy" if db_status == "connected" else "degraded",
-        "version": "1.0.0",
+        "version": VERSION,
         "timestamp": datetime.now(UTC).isoformat(),
         "api": {
-            "name": "GastroPilot App API",
-            "version": "1.0.0",
+            "name": "GastroPilot API",
+            "version": VERSION,
             "prefix": "/v1",
-            "description": "API für das GastroPilot App Backend",
+            "description": "API für das GastroPilot Backend",
         },
     }
 

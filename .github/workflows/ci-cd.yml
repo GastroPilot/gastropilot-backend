@@ -1,6 +1,5 @@
 name: CI/CD Pipeline
 
-# NOTE: Staging, Demo, and Production deployments are handled by the main GastroPilot repo.
 # This workflow handles CI checks and Test environment deployments for feature/fix branches.
 
 on:
