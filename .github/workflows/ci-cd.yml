@@ -1,5 +1,8 @@
 name: CI/CD Pipeline
 
+# NOTE: Staging, Demo, and Production deployments are handled by the main GastroPilot repo.
+# This workflow handles CI checks and Test environment deployments for feature/fix branches.
+
 on:
   pull_request:
     branches: [main]
@@ -16,9 +19,6 @@ on:
         type: choice
         options:
           - test
-          - staging
-          - demo
-          - production
 
 env:
   PYTHON_VERSION: '3.11'
@@ -27,7 +27,7 @@ env:
 
 jobs:
   # ============================================
-  # Quality Checks (PRs + main)
+  # Quality Checks (PRs + all branches)
   # ============================================
 
   lint:
@@ -60,7 +60,6 @@ jobs:
   test-unit:
     name: Unit Tests
     runs-on: ubuntu-latest
-    # Tests are optional until they are fully migrated and fixed
     continue-on-error: true
     services:
       postgres:
@@ -116,12 +115,6 @@ jobs:
           name: backend-coverage
           fail_ci_if_error: false
 
-      - name: Check coverage threshold
-        run: |
-          # Coverage threshold temporarily set to 0% during migration
-          # TODO: Increase to 80% once tests are fully migrated
-          echo "Coverage check skipped (migration in progress)"
-
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -142,18 +135,18 @@ jobs:
 
       - name: Verify application can start
         run: |
-          # Simple syntax check - ensure imports work
           python -c "from app.main import app; print('Application imports successfully')"
 
   # ============================================
-  # Docker Build & Push (nur main)
+  # Docker Build & Push (main branch)
+  # Images are built here, deployments handled by main repo
   # ============================================
 
   docker-build:
     name: Docker Build & Push
     runs-on: ubuntu-latest
     needs: [lint, test-unit, build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
       packages: write
@@ -182,8 +175,6 @@ jobs:
           tags: |
             type=raw,value=main
             type=sha,prefix=main-
-            type=semver,pattern=v{{version}}
-            type=semver,pattern=v{{major}}.{{minor}}
 
       - name: Build and push Docker image
         id: build
@@ -232,7 +223,6 @@ jobs:
         id: branch
         run: |
           BRANCH_NAME=${GITHUB_REF#refs/heads/}
-          # Replace / with - for Docker tag compatibility
           BRANCH_SLUG=$(echo "$BRANCH_NAME" | sed 's/\//-/g')
           echo "name=$BRANCH_SLUG" >> $GITHUB_OUTPUT
 
@@ -261,7 +251,7 @@ jobs:
         run: echo "Image digest - ${{ steps.build.outputs.digest }}"
 
   # ============================================
-  # Deployments
+  # Test Environment Deployment
   # ============================================
 
   deploy-test:
@@ -319,163 +309,6 @@ jobs:
         if: success()
         run: echo "Test deployment successful for branch ${{ github.ref_name }}!"
 
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    needs: [docker-build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    environment:
-      name: staging
-      url: https://api-staging.gpilot.app
-    steps:
-      - name: Deploy to Staging Server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -e
-            echo "Deploying Backend to Staging..."
-
-            cd /opt/gastropilot/staging
-
-            # Login to GitHub Container Registry
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u duhrkah --password-stdin
-
-            # Pull latest image
-            docker compose pull backend
-
-            # Run database migrations (if alembic is configured)
-            docker compose run --rm backend alembic upgrade head || echo "No migrations to run"
-
-            # Restart with new image
-            docker compose up -d backend
-
-            # Wait for health check
-            echo "Waiting for health check..."
-            sleep 10
-
-            # Verify deployment
-            for i in {1..10}; do
-              if curl -f -s http://localhost:8003/v1/health > /dev/null 2>&1; then
-                echo "Health check passed!"
-                exit 0
-              fi
-              echo "Attempt $i/10 - waiting..."
-              sleep 3
-            done
-
-            echo "Health check failed!"
-            docker compose logs --tail=50 backend
-            exit 1
-
-      - name: Notify success
-        if: success()
-        run: echo "Staging deployment successful!"
-
-  deploy-demo:
-    name: Deploy to Demo
-    runs-on: ubuntu-latest
-    needs: [docker-build]
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'demo'
-    environment:
-      name: demo
-      url: https://api-demo.gpilot.app
-    steps:
-      - name: Deploy to Demo Server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -e
-            echo "Deploying to Demo..."
-
-            cd /opt/gastropilot/demo
-
-            # Login to GitHub Container Registry
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-            # Pull latest image
-            docker compose pull backend
-
-            # Note: This project uses custom Python migration scripts, not alembic
-            # Migrations are applied manually or via specific scripts when needed
-
-            # Restart with new image
-            docker compose up -d backend
-
-            # Wait for health check
-            echo "Waiting for health check..."
-            sleep 10
-
-            # Verify deployment
-            for i in {1..10}; do
-              if curl -f -s http://localhost:8002/v1/health > /dev/null 2>&1; then
-                echo "Health check passed!"
-                exit 0
-              fi
-              echo "Attempt $i/10 - waiting..."
-              sleep 3
-            done
-
-            echo "Health check failed!"
-            docker compose logs --tail=50 backend
-            exit 1
-
-  deploy-production:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: [docker-build]
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
-    environment:
-      name: production
-      url: https://api.gpilot.app
-    steps:
-      - name: Deploy to Production Server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -e
-            echo "Deploying to Production..."
-
-            cd /opt/gastropilot/production
-
-            # Login to GitHub Container Registry
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-            # Pull latest image
-            docker compose pull backend
-
-            # Note: This project uses custom Python migration scripts, not alembic
-            # Migrations are applied manually or via specific scripts when needed
-
-            # Restart with new image
-            docker compose up -d backend
-
-            # Wait for health check
-            echo "Waiting for health check..."
-            sleep 10
-
-            # Verify deployment
-            for i in {1..10}; do
-              if curl -f -s http://localhost:8001/v1/health > /dev/null 2>&1; then
-                echo "Health check passed!"
-                exit 0
-              fi
-              echo "Attempt $i/10 - waiting..."
-              sleep 3
-            done
-
-            echo "Health check failed!"
-            docker compose logs --tail=50 backend
-            exit 1
-
   # ============================================
   # Notifications
   # ============================================
@@ -521,7 +354,7 @@ jobs:
                   \"type\": \"header\",
                   \"text\": {
                     \"type\": \"plain_text\",
-                    \"text\": \"${EMOJI} Backend CI/CD Pipeline\"
+                    \"text\": \"${EMOJI} Backend CI Pipeline\"
                   }
                 },
                 {
@@ -532,13 +365,6 @@ jobs:
                     {\"type\": \"mrkdwn\", \"text\": \"*Commit:* ${COMMIT_SHORT}\"},
                     {\"type\": \"mrkdwn\", \"text\": \"*Actor:* ${{ github.actor }}\"}
                   ]
-                },
-                {
-                  \"type\": \"section\",
-                  \"text\": {
-                    \"type\": \"mrkdwn\",
-                    \"text\": \"*Message:* ${COMMIT_MSG}\"
-                  }
                 },
                 {
                   \"type\": \"context\",
