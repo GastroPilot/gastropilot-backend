@@ -141,7 +141,6 @@ def _serialize_split_payments(data):
     return [sp.model_dump() if hasattr(sp, "model_dump") else dict(sp) for sp in data]
 
 
-@router.post("/", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
 @router.post(
     "/",
     response_model=OrderRead,

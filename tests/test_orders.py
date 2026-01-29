@@ -200,8 +200,10 @@ class TestOrderItems:
             f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}/items",
             headers=admin_auth_headers,
             json={
-                "menu_item_id": menu_item.id,
+                "item_name": "Schnitzel",
                 "quantity": 2,
+                "unit_price": 15.90,
+                "tax_rate": 0.19,
             }
         )
         
@@ -316,7 +318,7 @@ class TestOrderStatistics:
         test_table,
         admin_auth_headers
     ):
-        """Test getting order statistics."""
+        """Test getting order statistics (revenue endpoint)."""
         from app.database.models import Order
         from datetime import timedelta
         
@@ -341,11 +343,13 @@ class TestOrderStatistics:
         await db_session.commit()
         
         response = await client.get(
-            f"/v1/restaurants/{test_restaurant.id}/order-statistics",
+            f"/v1/restaurants/{test_restaurant.id}/order-statistics/revenue",
             headers=admin_auth_headers
         )
         
         assert response.status_code == 200
         data = response.json()
-        # Statistics should include some aggregate data
-        assert "total_revenue" in data or "orders_count" in data or isinstance(data, list)
+        # Statistics should include aggregate data
+        assert "total_revenue" in data
+        assert "total_orders" in data
+        assert data["total_orders"] == 5

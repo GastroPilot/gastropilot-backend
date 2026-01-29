@@ -223,7 +223,17 @@ async def refresh_tokens(
         select(RefreshToken).where(RefreshToken.token_hash == token_hash)
     )
     db_token = result.scalar_one_or_none()
-    if db_token is None or db_token.revoked_at is not None or db_token.expires_at <= now:
+
+    # Ensure expires_at is timezone-aware for comparison
+    expires_at = db_token.expires_at if db_token else None
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+
+    if (
+        db_token is None
+        or db_token.revoked_at is not None
+        or (expires_at is not None and expires_at <= now)
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token is not valid",
