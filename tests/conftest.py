@@ -70,7 +70,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_db_session] = override_get_session
     
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=True) as ac:
         yield ac
     
     app.dependency_overrides.clear()
@@ -134,7 +134,7 @@ async def test_servecta_user(db_session: AsyncSession):
 
 
 @pytest.fixture
-def auth_headers(test_user):
+async def auth_headers(test_user):
     """Create authentication headers for test user."""
     token = create_access_token(
         data={
@@ -148,7 +148,7 @@ def auth_headers(test_user):
 
 
 @pytest.fixture
-def admin_auth_headers(test_admin_user):
+async def admin_auth_headers(test_admin_user):
     """Create authentication headers for admin user."""
     token = create_access_token(
         data={

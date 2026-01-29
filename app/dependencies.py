@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import verify_token
 from app.database.instance import async_session
@@ -34,6 +35,7 @@ async def get_session():
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     access_token: str | None = Cookie(default=None),
+    session: AsyncSession = Depends(get_session),
 ) -> User:
     """
     Holt den aktuellen User aus dem JWT-Token.
@@ -72,23 +74,22 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    async with async_session() as session:
-        result = await session.execute(select(User).where(User.id == int(user_id)))
-        user = result.scalar_one_or_none()
+    result = await session.execute(select(User).where(User.id == int(user_id)))
+    user = result.scalar_one_or_none()
 
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-        if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive"
-            )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive"
+        )
 
-        return user
+    return user
 
 
 async def require_servecta_role(

@@ -44,7 +44,7 @@ class TestLogin:
             "/v1/auth/login",
             json={
                 "operator_number": "1234",
-                "pin": "wrongpin"
+                "pin": "000000"  # Valid format but wrong PIN
             }
         )
         

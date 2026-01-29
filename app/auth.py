@@ -61,6 +61,8 @@ def create_refresh_token(user_id: int) -> str:
     """
     Erstellt ein JWT Refresh Token.
     """
+    import uuid
+
     now = datetime.now(UTC)
     expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
@@ -71,6 +73,7 @@ def create_refresh_token(user_id: int) -> str:
         "iss": JWT_ISSUER,
         "aud": JWT_AUDIENCE,
         "type": "refresh",
+        "jti": str(uuid.uuid4()),  # Unique token ID to ensure uniqueness
     }
 
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)

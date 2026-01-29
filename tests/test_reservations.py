@@ -185,7 +185,8 @@ class TestReservationCRUD:
             headers=admin_auth_headers
         )
         
-        assert response.status_code == 204
+        assert response.status_code == 200
+        assert response.json()["message"] == "deleted"
 
 
 class TestReservationStatus:
