@@ -5,6 +5,7 @@ from datetime import UTC
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.middleware import SlowAPIMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.database.instance import init_db
 from app.middleware import (
@@ -109,6 +110,11 @@ app = FastAPI(
 )
 
 setup_logging()
+
+# Proxy Headers Middleware - MUSS als erstes sein!
+# Vertraut X-Forwarded-Proto und X-Forwarded-For Headers vom Reverse-Proxy (Nginx)
+# Dadurch werden Redirects korrekt mit https:// statt http:// generiert
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 
 # Log CORS-Konfiguration beim Start
 logger.info("=" * 60)
