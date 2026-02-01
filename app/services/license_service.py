@@ -8,7 +8,13 @@ from datetime import UTC, datetime
 
 from httpx import AsyncClient, Timeout
 
-from app.settings import LICENSE_CHECK_INTERVAL, LICENSE_CHECK_TIMEOUT, LICENSE_KEY, MOTHERSHIP_URL
+from app.settings import (
+    LICENSE_CHECK_INTERVAL,
+    LICENSE_CHECK_TIMEOUT,
+    LICENSE_KEY,
+    MOTHERSHIP_API_KEY,
+    MOTHERSHIP_URL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,11 +112,17 @@ class LicenseService:
 
                     # Kommunikation mit Mutterschiff
                     async with AsyncClient(timeout=Timeout(LICENSE_CHECK_TIMEOUT)) as client:
+                        # Bereite Headers vor (mit API-Key, falls konfiguriert)
+                        headers = {}
+                        if MOTHERSHIP_API_KEY:
+                            headers["X-API-Key"] = MOTHERSHIP_API_KEY
+
                         response = await client.get(
                             f"{MOTHERSHIP_URL}/v1/license/check",
                             params={
                                 "license_key": LICENSE_KEY,
                             },
+                            headers=headers,
                         )
 
                         if response.status_code == 200:
