@@ -40,6 +40,9 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - SECRET_KEY=${SECRET_KEY}
       - CORS_ORIGINS=https://staging.gastropilot.app
+      - LICENSE_KEY=${LICENSE_KEY}
+      - MOTHERSHIP_URL=${MOTHERSHIP_URL}
+      - MOTHERSHIP_API_KEY=${MOTHERSHIP_API_KEY}
     networks:
       - gastropilot-staging
     depends_on:

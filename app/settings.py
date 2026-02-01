@@ -155,6 +155,7 @@ LICENSE_KEY = os.getenv("LICENSE_KEY", "")  # Lizenzschlüssel für Kommunikatio
 MOTHERSHIP_URL = os.getenv(
     "MOTHERSHIP_URL", "https://mothership.servecta.com"
 )  # URL des Hauptservers
+MOTHERSHIP_API_KEY = os.getenv("MOTHERSHIP_API_KEY", "")  # API-Key für Mothership-Authentifizierung
 LICENSE_CHECK_INTERVAL = int(
     os.getenv("LICENSE_CHECK_INTERVAL", "3600")
 )  # Intervall für License-Checks in Sekunden (default: 1 Stunde)
