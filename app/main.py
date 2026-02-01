@@ -80,6 +80,7 @@ if ENV == "development":
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle management für Startup und Shutdown"""
+    from app.database.seed import seed_database
     from app.services.license_service import license_service
 
     # Initialize Sentry early for error tracking
@@ -89,6 +90,9 @@ async def lifespan(app: FastAPI):
 
     log_startup()
     await init_db()
+
+    # Seed default users for development
+    await seed_database()
 
     # Initialisiere License Service
     await license_service.check_license(force=True)
