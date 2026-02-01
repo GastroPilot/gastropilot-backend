@@ -38,9 +38,7 @@ async def seed_default_users(session: AsyncSession) -> None:
     logger.info("Starting database seeding for development environment...")
 
     # Check if Servecta user (0000) already exists
-    result = await session.execute(
-        select(User).where(User.operator_number == "0000")
-    )
+    result = await session.execute(select(User).where(User.operator_number == "0000"))
     existing_user = result.scalar_one_or_none()
 
     if existing_user:
