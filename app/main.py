@@ -19,7 +19,7 @@ from app.middleware import (
     log_startup,
     setup_logging,
 )
-from app.rate_limiter import setup_rate_limiting
+from app.rate_limiter import limiter, setup_rate_limiting
 from app.routers import (
     ai,
     areas,
@@ -250,6 +250,7 @@ def _is_production_environment() -> bool:
 
 
 @app.get("/v1/health")
+@limiter.exempt
 async def health():
     """Health Check Endpoint mit API- und Environment-Informationen
 
