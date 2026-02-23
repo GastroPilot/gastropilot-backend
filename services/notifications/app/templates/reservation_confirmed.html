@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reservierung bestätigt</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+    .header { background: #1a1a2e; color: #fff; padding: 32px 40px; }
+    .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+    .header p { margin: 8px 0 0; opacity: .75; font-size: 14px; }
+    .body { padding: 32px 40px; }
+    .detail-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-label { color: #666; font-size: 14px; }
+    .detail-value { font-weight: 500; font-size: 14px; }
+    .cta { display: inline-block; margin-top: 24px; padding: 14px 28px; background: #1a1a2e; color: #fff; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 15px; }
+    .footer { padding: 20px 40px; background: #f9f9f9; color: #999; font-size: 12px; border-top: 1px solid #eee; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Reservierung bestätigt ✓</h1>
+      <p>{{ restaurant_name }}</p>
+    </div>
+    <div class="body">
+      <p>Hallo {{ guest_name }},</p>
+      <p>Ihre Reservierung wurde erfolgreich bestätigt. Wir freuen uns auf Ihren Besuch!</p>
+
+      <div style="margin: 24px 0; background: #f9f9f9; border-radius: 6px; padding: 20px;">
+        <div class="detail-row">
+          <span class="detail-label">Restaurant</span>
+          <span class="detail-value">{{ restaurant_name }}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Datum</span>
+          <span class="detail-value">{{ reservation_date }}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Uhrzeit</span>
+          <span class="detail-value">{{ reservation_time }} Uhr</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Personen</span>
+          <span class="detail-value">{{ party_size }}</span>
+        </div>
+        {% if table_name %}
+        <div class="detail-row">
+          <span class="detail-label">Tisch</span>
+          <span class="detail-value">{{ table_name }}</span>
+        </div>
+        {% endif %}
+        {% if notes %}
+        <div class="detail-row">
+          <span class="detail-label">Notizen</span>
+          <span class="detail-value">{{ notes }}</span>
+        </div>
+        {% endif %}
+      </div>
+
+      <p style="color: #666; font-size: 14px;">
+        Bitte erscheinen Sie pünktlich. Bei Verhinderung bitten wir Sie, Ihre Reservierung rechtzeitig zu stornieren.
+      </p>
+    </div>
+    <div class="footer">
+      Diese E-Mail wurde automatisch durch GastroPilot generiert.<br>
+      Bitte antworten Sie nicht auf diese E-Mail.
+    </div>
+  </div>
+</body>
+</html>
