@@ -65,7 +65,7 @@ def get_engines() -> tuple[AsyncEngine, AsyncEngine]:
         )
 
     if _engine_admin is None:
-        url, sslmode = _strip_sslmode(settings.DATABASE_URL_ADMIN)
+        url, sslmode = _strip_sslmode(settings.DATABASE_ADMIN_URL)
         _engine_admin = create_async_engine(
             url,
             echo=False,
