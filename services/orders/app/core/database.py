@@ -1,6 +1,13 @@
 from __future__ import annotations
-from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine, async_sessionmaker, create_async_engine
+
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
+
 from .config import settings
 
 
@@ -19,11 +26,15 @@ def get_session_factories():
 
     if _engine_app is None:
         _engine_app = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
-        _session_factory_app = async_sessionmaker(_engine_app, class_=AsyncSession, expire_on_commit=False)
+        _session_factory_app = async_sessionmaker(
+            _engine_app, class_=AsyncSession, expire_on_commit=False
+        )
 
     if _engine_admin is None:
         _engine_admin = create_async_engine(settings.DATABASE_URL_ADMIN, pool_pre_ping=True)
-        _session_factory_admin = async_sessionmaker(_engine_admin, class_=AsyncSession, expire_on_commit=False)
+        _session_factory_admin = async_sessionmaker(
+            _engine_admin, class_=AsyncSession, expire_on_commit=False
+        )
 
     return _session_factory_app, _session_factory_admin
 

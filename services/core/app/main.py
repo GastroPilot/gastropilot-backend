@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 if settings.SENTRY_DSN:
     import sentry_sdk
+
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
         environment=settings.SENTRY_ENVIRONMENT,
@@ -77,34 +78,50 @@ from app.api.routes import (  # noqa: E402
     admin,
     allergens,
     auth,
+    blocks,
     dashboard,
     health,
+    license,
     menus,
+    messages,
     payments,
+    prepayments,
+    public_reservations,
+    reservation_table_day_configs,
     reservations,
     restaurants,
+    table_day_configs,
+    upsell_packages,
+    user_settings,
     users,
+    vouchers,
+    waitlist,
 )
 
-app.include_router(health.router, prefix="/api/v1")
-app.include_router(auth.router, prefix="/api/v1")
-app.include_router(users.router, prefix="/api/v1")
-app.include_router(restaurants.router, prefix="/api/v1")
-app.include_router(reservations.router, prefix="/api/v1")
-app.include_router(menus.router, prefix="/api/v1")
-app.include_router(allergens.router, prefix="/api/v1")
-app.include_router(payments.router, prefix="/api/v1")
-app.include_router(admin.router, prefix="/api/v1")
-app.include_router(dashboard.router, prefix="/api/v1")
+_all_routers = [
+    health.router,
+    auth.router,
+    users.router,
+    user_settings.router,
+    restaurants.router,
+    reservations.router,
+    menus.router,
+    allergens.router,
+    payments.router,
+    admin.router,
+    dashboard.router,
+    blocks.router,
+    table_day_configs.router,
+    reservation_table_day_configs.router,
+    waitlist.router,
+    messages.router,
+    vouchers.router,
+    upsell_packages.router,
+    prepayments.router,
+    license.router,
+    public_reservations.router,
+]
 
-# Legacy /v1 prefix support
-app.include_router(health.router, prefix="/v1")
-app.include_router(auth.router, prefix="/v1")
-app.include_router(users.router, prefix="/v1")
-app.include_router(restaurants.router, prefix="/v1")
-app.include_router(reservations.router, prefix="/v1")
-app.include_router(menus.router, prefix="/v1")
-app.include_router(allergens.router, prefix="/v1")
-app.include_router(payments.router, prefix="/v1")
-app.include_router(admin.router, prefix="/v1")
-app.include_router(dashboard.router, prefix="/v1")
+for r in _all_routers:
+    app.include_router(r, prefix="/api/v1")
+    app.include_router(r, prefix="/v1")

@@ -19,6 +19,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 
+
 class TenantCreate(BaseModel):
     # Restaurant
     name: str
@@ -30,7 +31,7 @@ class TenantCreate(BaseModel):
     owner_first_name: str
     owner_last_name: str
     owner_operator_number: str  # 4-stellige Bediener-Nr., z.B. "0001"
-    owner_pin: str              # 6–8 Ziffern
+    owner_pin: str  # 6–8 Ziffern
 
     @field_validator("owner_operator_number")
     @classmethod
@@ -68,6 +69,7 @@ class TenantUpdate(BaseModel):
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
+
 @router.get("/tenants")
 async def list_tenants(
     current_user=Depends(require_platform_admin),
@@ -95,9 +97,7 @@ async def create_tenant(
 ):
     # Slug-Konflikt prüfen
     if data.slug:
-        existing = await session.execute(
-            select(Restaurant).where(Restaurant.slug == data.slug)
-        )
+        existing = await session.execute(select(Restaurant).where(Restaurant.slug == data.slug))
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Slug ist bereits vergeben")
 
@@ -233,9 +233,7 @@ async def get_audit_log(
     session: AsyncSession = Depends(get_db),
 ):
     result = await session.execute(
-        select(PlatformAuditLog)
-        .order_by(PlatformAuditLog.created_at.desc())
-        .limit(200)
+        select(PlatformAuditLog).order_by(PlatformAuditLog.created_at.desc()).limit(200)
     )
     logs = result.scalars().all()
     return [

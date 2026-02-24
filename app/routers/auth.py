@@ -43,19 +43,42 @@ SERVECTA_OPERATOR_NUMBERS = ["0000", "0001"]
 async def login(
     login_data: LoginRequest, response: Response, session: AsyncSession = Depends(get_session)
 ):
-    """Login mit Bedienernummer und PIN.
+    """Login mit Bedienernummer/PIN oder E-Mail/Passwort.
+
+    Unterstützt zwei Login-Methoden:
+    1. PIN-Login: operator_number + pin (für Restaurant-Mitarbeiter)
+    2. E-Mail-Login: email + password (für platform_admin)
 
     When USE_HTTPONLY_COOKIES is enabled, tokens are also set as HttpOnly cookies
     for improved security against XSS attacks.
     """
-    result = await session.execute(
-        select(User).where(User.operator_number == login_data.operator_number)
-    )
-    user = result.scalar_one_or_none()
+    user = None
+
+    # E-Mail/Passwort-Login (platform_admin)
+    if login_data.email and login_data.password:
+        result = await session.execute(
+            select(User).where(User.email == login_data.email)
+        )
+        candidate = result.scalar_one_or_none()
+        if (
+            candidate
+            and candidate.password_hash
+            and verify_password(login_data.password, candidate.password_hash)
+        ):
+            user = candidate
+
+    # PIN-Login (staff)
+    elif login_data.operator_number and login_data.pin:
+        result = await session.execute(
+            select(User).where(User.operator_number == login_data.operator_number)
+        )
+        candidate = result.scalar_one_or_none()
+        if candidate and candidate.pin_hash and verify_password(login_data.pin, candidate.pin_hash):
+            user = candidate
 
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid operator number or PIN"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
 
     if not user.is_active:
@@ -63,10 +86,6 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive"
         )
 
-    if not verify_password(login_data.pin, user.pin_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid operator number or PIN"
-        )
     user.last_login_at_utc = datetime.now(UTC)
 
     access_token = create_access_token(
@@ -75,6 +94,7 @@ async def login(
             "sub": str(user.id),
             "operator_number": user.operator_number,
             "role": user.role,
+            "email": user.email,
         }
     )
     refresh_token = create_refresh_token(user.id)
@@ -105,6 +125,14 @@ async def login(
         refresh_token=refresh_token,
         token_type="bearer",
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user={
+            "id": user.id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role": user.role,
+            "operator_number": user.operator_number,
+            "email": user.email,
+        },
     )
 
 

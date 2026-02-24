@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import json
 from uuid import UUID
 
@@ -9,16 +10,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import get_current_user, get_db, require_manager_or_above, require_owner_or_above
+from app.core.security import hash_password, hash_pin
 from app.models.user import User
 from app.schemas.user import UserCreate, UserMeResponse, UserResponse, UserUpdate
-from app.core.security import hash_password, hash_pin
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+PLATFORM_ROLES = {"platform_admin", "platform_support"}
+
+
+def _effective_tenant_id(request: Request, current_user: User) -> UUID | None:
+    """Gibt die effektive tenant_id zurück.
+
+    - Bei Impersonation: die impersonierte tenant_id aus request.state
+    - Sonst: die tenant_id des Users
+    - Platform-Admins ohne Impersonation: None (= kein Tenant-Filter)
+    """
+    state_tenant = getattr(request.state, "tenant_id", None)
+    if state_tenant:
+        return state_tenant
+    return current_user.tenant_id
 
 
 # ---------------------------------------------------------------------------
 # User Settings (gespeichert in Redis, Key: user_settings:{user_id})
 # ---------------------------------------------------------------------------
+
 
 class UserSettingsResponse(BaseModel):
     id: int = 1
@@ -34,6 +51,7 @@ class UserSettingsUpdate(BaseModel):
 
 async def _get_redis():
     import redis.asyncio as aioredis
+
     r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
         yield r
@@ -110,12 +128,18 @@ async def update_me(
 # Restaurant-User-Verwaltung (Owner/Manager)
 # ---------------------------------------------------------------------------
 
+
 @router.get("/", response_model=list[UserResponse])
 async def list_users(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(User).where(User.is_active.is_(True)))
+    tenant_id = _effective_tenant_id(request, current_user)
+    query = select(User).where(User.is_active.is_(True))
+    if tenant_id:
+        query = query.where(User.tenant_id == tenant_id)
+    result = await db.execute(query)
     return result.scalars().all()
 
 
@@ -149,11 +173,15 @@ async def create_user(
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    tenant_id = _effective_tenant_id(request, current_user)
+    query = select(User).where(User.id == user_id)
+    if tenant_id:
+        query = query.where(User.tenant_id == tenant_id)
+    user = (await db.execute(query)).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     return user
@@ -163,11 +191,15 @@ async def get_user(
 async def update_user(
     user_id: UUID,
     body: UserUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_owner_or_above),
 ):
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    tenant_id = _effective_tenant_id(request, current_user)
+    query = select(User).where(User.id == user_id)
+    if tenant_id:
+        query = query.where(User.tenant_id == tenant_id)
+    user = (await db.execute(query)).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -198,11 +230,15 @@ async def update_user(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_owner_or_above),
 ):
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    tenant_id = _effective_tenant_id(request, current_user)
+    query = select(User).where(User.id == user_id)
+    if tenant_id:
+        query = query.where(User.tenant_id == tenant_id)
+    user = (await db.execute(query)).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     if user.id == current_user.id:

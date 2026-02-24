@@ -7,7 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml .
+# Build context is gastropilot-backend/
+COPY services/core/pyproject.toml .
 RUN pip install --no-cache-dir build && pip install --no-cache-dir .
 
 FROM python:3.11-slim
@@ -21,9 +22,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
-COPY . .
+
+COPY services/core/app/ ./app/
+COPY services/core/alembic/ ./alembic/
+COPY services/core/alembic.ini ./alembic.ini
+COPY packages/ /packages/
 
 ENV PYTHONPATH=/packages:/app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 

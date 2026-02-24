@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -7,10 +8,10 @@ from typing import Any
 import redis
 from celery import Celery
 
-from app.core.config import settings
 from app.channels.email import render_template, send_email
 from app.channels.push import PushMessage, send_push_notification
 from app.channels.sms import send_sms
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ def _run_async(coro: Any) -> Any:
 # ---------------------------------------------------------------------------
 # Reservierungs-Benachrichtigungen
 # ---------------------------------------------------------------------------
+
 
 @celery_app.task(name="notifications.send_reservation_confirmation", bind=True, max_retries=3)
 def send_reservation_confirmation(
@@ -188,6 +190,7 @@ def send_reservation_reminder(
 # Bestell-Benachrichtigungen
 # ---------------------------------------------------------------------------
 
+
 @celery_app.task(name="notifications.send_order_ready", bind=True, max_retries=3)
 def send_order_ready(
     self,
@@ -242,7 +245,9 @@ def send_order_ready(
 
     if guest_phone:
         try:
-            sms_text = f"Ihre Bestellung #{order_number} bei {restaurant_name} ist fertig zur Abholung."
+            sms_text = (
+                f"Ihre Bestellung #{order_number} bei {restaurant_name} ist fertig zur Abholung."
+            )
             results["sms"] = _run_async(send_sms(guest_phone, sms_text))
         except Exception as exc:
             logger.error("SMS-Fehler bei Bestellbenachrichtigung: %s", exc)
@@ -252,25 +257,202 @@ def send_order_ready(
 
 
 # ---------------------------------------------------------------------------
-# Redis Pub/Sub Consumer (läuft als separate Celery Beat-Task oder Worker)
+# Stornierung
 # ---------------------------------------------------------------------------
+
+
+@celery_app.task(name="notifications.send_reservation_canceled", bind=True, max_retries=3)
+def send_reservation_canceled(
+    self,
+    *,
+    guest_email: str,
+    guest_name: str,
+    restaurant_name: str,
+    reservation_date: str,
+    reservation_time: str,
+    party_size: int,
+    guest_push_token: str | None = None,
+    guest_phone: str | None = None,
+) -> dict:
+    results: dict = {}
+
+    context = {
+        "guest_name": guest_name,
+        "restaurant_name": restaurant_name,
+        "reservation_date": reservation_date,
+        "reservation_time": reservation_time,
+        "party_size": party_size,
+    }
+
+    try:
+        html = render_template("reservation_canceled.html", context)
+        success = _run_async(
+            send_email(
+                to=guest_email,
+                subject=f"Reservierung storniert – {restaurant_name}",
+                html_body=html,
+            )
+        )
+        results["email"] = success
+    except Exception as exc:
+        logger.error("E-Mail-Fehler bei Stornierung: %s", exc)
+        results["email"] = False
+        raise self.retry(exc=exc, countdown=60)
+
+    if guest_phone:
+        try:
+            sms_text = (
+                f"Ihre Reservierung bei {restaurant_name} am {reservation_date} "
+                f"um {reservation_time} Uhr wurde storniert."
+            )
+            results["sms"] = _run_async(send_sms(guest_phone, sms_text))
+        except Exception as exc:
+            results["sms"] = False
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Warteliste
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(name="notifications.send_waitlist_notification", bind=True, max_retries=3)
+def send_waitlist_notification(
+    self,
+    *,
+    guest_email: str,
+    guest_name: str,
+    restaurant_name: str,
+    reservation_date: str,
+    party_size: int,
+    guest_phone: str | None = None,
+) -> dict:
+    results: dict = {}
+
+    context = {
+        "guest_name": guest_name,
+        "restaurant_name": restaurant_name,
+        "reservation_date": reservation_date,
+        "party_size": party_size,
+    }
+
+    try:
+        html = render_template("waitlist_notification.html", context)
+        success = _run_async(
+            send_email(
+                to=guest_email,
+                subject=f"Platz frei – {restaurant_name}",
+                html_body=html,
+            )
+        )
+        results["email"] = success
+    except Exception as exc:
+        logger.error("E-Mail-Fehler bei Warteliste: %s", exc)
+        results["email"] = False
+        raise self.retry(exc=exc, countdown=60)
+
+    if guest_phone:
+        try:
+            sms_text = (
+                f"Gute Neuigkeiten! Bei {restaurant_name} ist ein Platz "
+                f"am {reservation_date} frei geworden. Reservieren Sie jetzt!"
+            )
+            results["sms"] = _run_async(send_sms(guest_phone, sms_text))
+        except Exception as exc:
+            results["sms"] = False
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Prepayment-Bestaetigung
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(name="notifications.send_prepayment_confirmation", bind=True, max_retries=3)
+def send_prepayment_confirmation(
+    self,
+    *,
+    guest_email: str,
+    guest_name: str,
+    restaurant_name: str,
+    amount: str,
+    currency: str = "EUR",
+    reservation_date: str,
+    reservation_time: str,
+    party_size: int,
+    transaction_code: str | None = None,
+    guest_phone: str | None = None,
+) -> dict:
+    results: dict = {}
+
+    context = {
+        "guest_name": guest_name,
+        "restaurant_name": restaurant_name,
+        "amount": amount,
+        "currency": currency,
+        "reservation_date": reservation_date,
+        "reservation_time": reservation_time,
+        "party_size": party_size,
+        "transaction_code": transaction_code,
+    }
+
+    try:
+        html = render_template("prepayment_confirmation.html", context)
+        success = _run_async(
+            send_email(
+                to=guest_email,
+                subject=f"Anzahlung bestaetigt – {restaurant_name}",
+                html_body=html,
+            )
+        )
+        results["email"] = success
+    except Exception as exc:
+        logger.error("E-Mail-Fehler bei Prepayment: %s", exc)
+        results["email"] = False
+        raise self.retry(exc=exc, countdown=60)
+
+    if guest_phone:
+        try:
+            sms_text = (
+                f"Ihre Anzahlung von {amount} {currency} fuer die Reservierung "
+                f"bei {restaurant_name} wurde bestaetigt."
+            )
+            results["sms"] = _run_async(send_sms(guest_phone, sms_text))
+        except Exception as exc:
+            results["sms"] = False
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Redis Pub/Sub Consumer
+# ---------------------------------------------------------------------------
+
 
 @celery_app.task(name="notifications.process_redis_event")
 def process_redis_event(event_name: str, payload_json: str) -> None:
     try:
         payload = json.loads(payload_json)
     except json.JSONDecodeError:
-        logger.error("Ungültiges JSON in Redis-Event: %s", payload_json)
+        logger.error("Ungueltiges JSON in Redis-Event: %s", payload_json)
         return
 
     logger.info("Redis-Event empfangen: %s", event_name)
 
-    if event_name == "reservation.confirmed":
-        send_reservation_confirmation.delay(**payload)
-    elif event_name == "reservation.reminder":
-        send_reservation_reminder.delay(**payload)
-    elif event_name == "order.ready":
-        send_order_ready.delay(**payload)
+    handler_map = {
+        "reservation.confirmed": send_reservation_confirmation,
+        "reservation.reminder": send_reservation_reminder,
+        "reservation.canceled": send_reservation_canceled,
+        "order.ready": send_order_ready,
+        "waitlist.notified": send_waitlist_notification,
+        "prepayment.completed": send_prepayment_confirmation,
+    }
+
+    handler = handler_map.get(event_name)
+    if handler:
+        handler.delay(**payload)
     else:
         logger.debug("Unbekanntes Event, wird ignoriert: %s", event_name)
 

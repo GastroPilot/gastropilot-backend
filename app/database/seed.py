@@ -69,6 +69,54 @@ async def seed_default_users(session: AsyncSession) -> None:
     logger.info("   - Role: servecta")
 
 
+async def seed_platform_admin(session: AsyncSession) -> None:
+    """
+    Seeds a platform_admin user if PLATFORM_ADMIN_PASSWORD is set.
+
+    In development/test: falls back to default password if env var not set.
+    In staging/production: only creates user if PLATFORM_ADMIN_PASSWORD is explicitly set.
+
+    This function is idempotent.
+    """
+    import os
+
+    admin_email = os.environ.get("PLATFORM_ADMIN_EMAIL", "admin@gastropilot.de")
+    admin_password = os.environ.get("PLATFORM_ADMIN_PASSWORD")
+
+    if not admin_password:
+        if ENV in ["development", "test"]:
+            admin_password = "admin1234"
+        else:
+            # In production/staging: only create if password is explicitly provided
+            return
+
+    # Check if a platform_admin with this email already exists
+    result = await session.execute(select(User).where(User.email == admin_email))
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        logger.info(f"Platform admin user ({admin_email}) already exists, skipping seed")
+        return
+
+    logger.info(f"Creating platform admin user ({admin_email})...")
+
+    admin_user = User(
+        email=admin_email,
+        password_hash=hash_password(admin_password),
+        first_name="Platform",
+        last_name="Admin",
+        role="platform_admin",
+        is_active=True,
+        created_at_utc=datetime.now(UTC),
+        updated_at_utc=datetime.now(UTC),
+    )
+
+    session.add(admin_user)
+    await session.commit()
+
+    logger.info(f"Successfully created platform admin user ({admin_email})")
+
+
 async def seed_database() -> None:
     """
     Main seeding function that orchestrates all seeding operations.
@@ -80,3 +128,4 @@ async def seed_database() -> None:
 
     async with async_session() as session:
         await seed_default_users(session)
+        await seed_platform_admin(session)

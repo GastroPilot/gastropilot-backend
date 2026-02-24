@@ -7,14 +7,21 @@ from sqlalchemy.dialects.postgresql import ENUM, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 user_role_enum = ENUM(
-    "guest", "owner", "manager", "staff", "kitchen",
-    "platform_admin", "platform_support", "platform_analyst",
+    "guest",
+    "owner",
+    "manager",
+    "staff",
+    "kitchen",
+    "platform_admin",
+    "platform_support",
+    "platform_analyst",
     name="user_role",
     create_type=False,
 )
 
 auth_method_enum = ENUM(
-    "pin", "password",
+    "pin",
+    "password",
     name="auth_method",
     create_type=False,
 )

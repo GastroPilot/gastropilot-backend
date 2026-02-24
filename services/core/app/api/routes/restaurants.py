@@ -18,8 +18,10 @@ router = APIRouter(prefix="/restaurants", tags=["restaurants"])
 # Schemas
 # ---------------------------------------------------------------------------
 
+
 class TenantSettings(BaseModel):
     """Strukturierte Tenant-Einstellungen. Neue Keys werden automatisch in settings JSONB gespeichert."""
+
     # Allgemein
     timezone: str = "Europe/Berlin"
     currency: str = "EUR"
@@ -45,6 +47,7 @@ class TenantSettings(BaseModel):
 
 class TenantSettingsUpdate(BaseModel):
     """Partial update – nur übergebene Felder werden aktualisiert."""
+
     timezone: str | None = None
     currency: str | None = None
     language: str | None = None
@@ -90,6 +93,7 @@ class RestaurantUpdate(BaseModel):
 # Hilfsfunktion: Restaurant-Spalten + JSONB zu TenantSettings zusammenführen
 # ---------------------------------------------------------------------------
 
+
 def _build_settings(restaurant: Restaurant) -> dict[str, Any]:
     """Mergt strukturierte DB-Spalten mit dem freien settings-JSONB."""
     base: dict[str, Any] = {
@@ -119,6 +123,7 @@ def _build_settings(restaurant: Restaurant) -> dict[str, Any]:
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.get("/public/name")
 async def get_public_name(slug: str | None = None, session: AsyncSession = Depends(get_db)):
     """Öffentlicher Endpoint – liefert den Restaurantnamen für die Login-Seite.
@@ -128,7 +133,10 @@ async def get_public_name(slug: str | None = None, session: AsyncSession = Depen
     else:
         result = await session.execute(select(Restaurant).limit(1))
     restaurant = result.scalar_one_or_none()
-    return {"name": restaurant.name if restaurant else "GastroPilot", "found": restaurant is not None}
+    return {
+        "name": restaurant.name if restaurant else "GastroPilot",
+        "found": restaurant is not None,
+    }
 
 
 @router.get("/", response_model=list[RestaurantResponse])
@@ -148,9 +156,7 @@ async def list_restaurants(
         tenant_id = effective_tenant_id or current_user.tenant_id
         if not tenant_id:
             return []
-        result = await session.execute(
-            select(Restaurant).where(Restaurant.id == tenant_id)
-        )
+        result = await session.execute(select(Restaurant).where(Restaurant.id == tenant_id))
     restaurants = result.scalars().all()
     return [
         RestaurantResponse(
@@ -226,6 +232,7 @@ async def update_restaurant(
 # Tenant-Einstellungen
 # ---------------------------------------------------------------------------
 
+
 @router.get("/{restaurant_id}/settings", response_model=TenantSettings)
 async def get_settings(
     restaurant_id: uuid.UUID,
@@ -285,6 +292,7 @@ async def update_settings(
 # ---------------------------------------------------------------------------
 # Tische, Bereiche, Hindernisse
 # ---------------------------------------------------------------------------
+
 
 @router.get("/{restaurant_id}/tables")
 async def list_tables(
@@ -364,7 +372,8 @@ async def list_audit_logs(
     current_user=Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
-    from sqlalchemy import and_, func, desc
+    from sqlalchemy import and_, desc, func
+
     from app.models.audit import AuditLog
 
     # Zugriffsprüfung: nur eigener Tenant oder platform_admin

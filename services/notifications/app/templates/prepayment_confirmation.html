@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anzahlung bestaetigt</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+    .header { background: #27ae60; color: #fff; padding: 32px 40px; }
+    .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+    .header p { margin: 8px 0 0; opacity: .75; font-size: 14px; }
+    .body { padding: 32px 40px; }
+    .detail-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-label { color: #666; font-size: 14px; }
+    .detail-value { font-weight: 500; font-size: 14px; }
+    .footer { padding: 20px 40px; background: #f9f9f9; color: #999; font-size: 12px; border-top: 1px solid #eee; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Anzahlung bestaetigt</h1>
+      <p>{{ restaurant_name }}</p>
+    </div>
+    <div class="body">
+      <p>Hallo {{ guest_name }},</p>
+      <p>Ihre Anzahlung fuer die Reservierung bei <strong>{{ restaurant_name }}</strong> wurde erfolgreich verarbeitet.</p>
+
+      <div style="margin: 24px 0; background: #eafaf1; border: 1px solid #abebc6; border-radius: 6px; padding: 20px;">
+        <div class="detail-row">
+          <span class="detail-label">Betrag</span>
+          <span class="detail-value">{{ amount }} {{ currency }}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Reservierung</span>
+          <span class="detail-value">{{ reservation_date }} um {{ reservation_time }} Uhr</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Personen</span>
+          <span class="detail-value">{{ party_size }}</span>
+        </div>
+        {% if transaction_code %}
+        <div class="detail-row">
+          <span class="detail-label">Transaktionscode</span>
+          <span class="detail-value">{{ transaction_code }}</span>
+        </div>
+        {% endif %}
+      </div>
+
+      <p style="color: #666; font-size: 14px;">
+        Die Anzahlung wird mit Ihrer Rechnung vor Ort verrechnet.
+      </p>
+    </div>
+    <div class="footer">
+      Diese E-Mail wurde automatisch durch GastroPilot generiert.
+    </div>
+  </div>
+</body>
+</html>

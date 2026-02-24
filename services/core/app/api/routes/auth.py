@@ -58,35 +58,36 @@ async def login(
 
     # PIN login
     if data.operator_number and data.pin:
-        if data.tenant_slug:
-            # Tenant-Slug mitgeschickt → direkt auf diesen Tenant einschränken
-            tenant_res = await session.execute(
-                select(Restaurant).where(Restaurant.slug == data.tenant_slug)
+        if not data.tenant_slug:
+            raise HTTPException(status_code=400, detail="tenant_slug is required for PIN login")
+        tenant_res = await session.execute(
+            select(Restaurant).where(Restaurant.slug == data.tenant_slug)
+        )
+        tenant = tenant_res.scalar_one_or_none()
+        if not tenant:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        result = await session.execute(
+            select(User).where(
+                User.operator_number == data.operator_number,
+                User.tenant_id == tenant.id,
             )
-            tenant = tenant_res.scalar_one_or_none()
-            if not tenant:
-                raise HTTPException(status_code=401, detail="Invalid credentials")
-            result = await session.execute(
-                select(User).where(
-                    User.operator_number == data.operator_number,
-                    User.tenant_id == tenant.id,
-                )
-            )
-        else:
-            # Kein Slug → Fallback (Single-Tenant oder Abwärtskompatibilität)
-            result = await session.execute(
-                select(User).where(User.operator_number == data.operator_number)
-            )
+        )
         candidate = result.scalar_one_or_none()
         if candidate and candidate.pin_hash and verify_pin(data.pin, candidate.pin_hash):
             user = candidate
 
     # NFC login
     elif data.nfc_tag_id:
-        result = await session.execute(
-            select(User).where(User.nfc_tag_id == data.nfc_tag_id)
-        )
-        user = result.scalar_one_or_none()
+        query = select(User).where(User.nfc_tag_id == data.nfc_tag_id)
+        if data.tenant_slug:
+            tenant_res = await session.execute(
+                select(Restaurant).where(Restaurant.slug == data.tenant_slug)
+            )
+            tenant = tenant_res.scalar_one_or_none()
+            if not tenant:
+                raise HTTPException(status_code=401, detail="Invalid credentials")
+            query = query.where(User.tenant_id == tenant.id)
+        user = (await session.execute(query)).scalar_one_or_none()
 
     # Email/password login
     elif data.email and data.password:
@@ -107,9 +108,7 @@ async def login(
 
     # Check tenant suspension
     if user.tenant_id:
-        res = await session.execute(
-            select(Restaurant).where(Restaurant.id == user.tenant_id)
-        )
+        res = await session.execute(select(Restaurant).where(Restaurant.id == user.tenant_id))
         restaurant = res.scalar_one_or_none()
         if restaurant and restaurant.is_suspended:
             raise HTTPException(status_code=403, detail="Restaurant account is suspended")

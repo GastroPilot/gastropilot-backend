@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import json
 import logging
 from uuid import UUID
@@ -43,6 +44,7 @@ async def publish_event(
 
 
 # Vordefinierte Event-Helfer
+
 
 async def order_created(order_id: UUID, tenant_id: UUID, order_data: dict) -> None:
     await publish_event(

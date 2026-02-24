@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 import json
 import logging
 from collections import defaultdict
 from typing import Any
+
 from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
@@ -17,7 +19,9 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket, tenant_id: str) -> None:
         await websocket.accept()
         self._connections[tenant_id].add(websocket)
-        logger.info(f"WebSocket connected: tenant={tenant_id}, total={len(self._connections[tenant_id])}")
+        logger.info(
+            f"WebSocket connected: tenant={tenant_id}, total={len(self._connections[tenant_id])}"
+        )
 
     def disconnect(self, websocket: WebSocket, tenant_id: str) -> None:
         self._connections[tenant_id].discard(websocket)

@@ -8,10 +8,11 @@ Hinweis: Diese Migration erwartet, dass init.sql und rls.sql bereits über
 Docker-Entrypoint oder manuell ausgeführt wurden. Sie erstellt die
 SQLAlchemy-spezifischen Constraints und Indizes on top.
 """
+
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0001_initial"
@@ -23,25 +24,45 @@ depends_on = None
 def upgrade() -> None:
     # Enums (idempotent, bereits in init.sql erstellt – hier als native Enum referenziert)
     user_role = postgresql.ENUM(
-        "guest", "owner", "manager", "staff", "kitchen",
-        "platform_admin", "platform_support", "platform_analyst",
+        "guest",
+        "owner",
+        "manager",
+        "staff",
+        "kitchen",
+        "platform_admin",
+        "platform_support",
+        "platform_analyst",
         name="user_role",
         create_type=False,
     )
     auth_method = postgresql.ENUM("pin", "password", "nfc", name="auth_method", create_type=False)
     order_status = postgresql.ENUM(
-        "pending", "confirmed", "sent_to_kitchen", "in_preparation",
-        "ready", "served", "completed", "cancelled",
+        "pending",
+        "confirmed",
+        "sent_to_kitchen",
+        "in_preparation",
+        "ready",
+        "served",
+        "completed",
+        "cancelled",
         name="order_status",
         create_type=False,
     )
     reservation_status = postgresql.ENUM(
-        "pending", "confirmed", "seated", "completed", "cancelled", "no_show",
+        "pending",
+        "confirmed",
+        "seated",
+        "completed",
+        "cancelled",
+        "no_show",
         name="reservation_status",
         create_type=False,
     )
     subscription_tier = postgresql.ENUM(
-        "starter", "growth", "pro", "enterprise",
+        "starter",
+        "growth",
+        "pro",
+        "enterprise",
         name="subscription_tier",
         create_type=False,
     )
@@ -49,7 +70,12 @@ def upgrade() -> None:
     # restaurants
     op.create_table(
         "restaurants",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("slug", sa.String(100), unique=True, nullable=True),
         sa.Column("address", sa.Text, nullable=True),
@@ -69,8 +95,18 @@ def upgrade() -> None:
     # users
     op.create_table(
         "users",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("restaurants.id", ondelete="CASCADE"),
+            nullable=True,
+        ),
         sa.Column("email", sa.String(255), nullable=True),
         sa.Column("password_hash", sa.Text, nullable=True),
         sa.Column("pin_hash", sa.Text, nullable=True),
@@ -86,14 +122,36 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
     )
     op.create_index("ix_users_tenant_id", "users", ["tenant_id"])
-    op.create_index("ix_users_email", "users", ["email"], unique=True, postgresql_where=sa.text("email IS NOT NULL"))
-    op.create_index("ix_users_operator_number", "users", ["tenant_id", "operator_number"], unique=True, postgresql_where=sa.text("operator_number IS NOT NULL"))
+    op.create_index(
+        "ix_users_email",
+        "users",
+        ["email"],
+        unique=True,
+        postgresql_where=sa.text("email IS NOT NULL"),
+    )
+    op.create_index(
+        "ix_users_operator_number",
+        "users",
+        ["tenant_id", "operator_number"],
+        unique=True,
+        postgresql_where=sa.text("operator_number IS NOT NULL"),
+    )
 
     # refresh_tokens
     op.create_table(
         "refresh_tokens",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("token_hash", sa.Text, nullable=False, unique=True),
         sa.Column("rotated_from_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
@@ -105,8 +163,18 @@ def upgrade() -> None:
     # areas
     op.create_table(
         "areas",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("restaurants.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("sort_order", sa.Integer, server_default="0"),
     )
@@ -114,9 +182,24 @@ def upgrade() -> None:
     # tables
     op.create_table(
         "tables",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("area_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("areas.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("restaurants.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "area_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("areas.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("name", sa.String(50), nullable=False),
         sa.Column("capacity", sa.Integer, nullable=False),
         sa.Column("min_capacity", sa.Integer, server_default="1"),
@@ -133,8 +216,18 @@ def upgrade() -> None:
     # menu_categories
     op.create_table(
         "menu_categories",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("restaurants.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("sort_order", sa.Integer, server_default="0"),
@@ -144,9 +237,24 @@ def upgrade() -> None:
     # menu_items
     op.create_table(
         "menu_items",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("category_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("menu_categories.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("restaurants.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "category_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("menu_categories.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("price", sa.Numeric(10, 2), nullable=False),
@@ -166,7 +274,12 @@ def upgrade() -> None:
     # guests
     op.create_table(
         "guests",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("email", sa.String(255), nullable=True),
         sa.Column("phone", sa.String(50), nullable=True),
@@ -176,10 +289,30 @@ def upgrade() -> None:
     # reservations
     op.create_table(
         "reservations",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("guest_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("guests.id", ondelete="SET NULL"), nullable=True),
-        sa.Column("table_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("tables.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("restaurants.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "guest_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("guests.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+        sa.Column(
+            "table_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("tables.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("party_size", sa.Integer, nullable=False),
         sa.Column("starts_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("ends_at", sa.DateTime(timezone=True), nullable=True),
@@ -195,8 +328,18 @@ def upgrade() -> None:
     # audit_logs
     op.create_table(
         "audit_logs",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("restaurants.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("entity_type", sa.String(100), nullable=True),
         sa.Column("entity_id", sa.String(100), nullable=True),
@@ -212,7 +355,12 @@ def upgrade() -> None:
     # platform_audit_logs
     op.create_table(
         "platform_audit_logs",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("admin_user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("target_tenant_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("action", sa.String(100), nullable=False),
@@ -226,9 +374,24 @@ def upgrade() -> None:
     # orders (in Orders-Service, aber als Reference hier für FK-Konsistenz)
     op.create_table(
         "orders",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("table_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("tables.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("restaurants.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "table_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("tables.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("order_number", sa.String(20), nullable=False),
         sa.Column("status", order_status, server_default="pending"),
         sa.Column("notes", sa.Text, nullable=True),
@@ -242,8 +405,18 @@ def upgrade() -> None:
     # order_items
     op.create_table(
         "order_items",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("orders.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "order_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("orders.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("menu_item_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("quantity", sa.Integer, nullable=False),

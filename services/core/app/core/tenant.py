@@ -1,4 +1,5 @@
 """Tenant middleware adapter for Core Service."""
+
 import sys
 from pathlib import Path
 

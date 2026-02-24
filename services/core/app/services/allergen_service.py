@@ -1,19 +1,43 @@
 from __future__ import annotations
+
 from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.menu import MenuItem
 from app.schemas.menu import AllergenCheckResult
 
 # Standardisierte Allergen-Bezeichnungen (EU-14 + erweitert)
 KNOWN_ALLERGENS = {
-    "gluten", "weizen", "roggen", "gerste", "hafer", "dinkel",
-    "krebstiere", "eier", "fisch", "erdnüsse", "soja", "milch",
-    "schalenfrüchte", "mandeln", "haselnüsse", "walnüsse", "cashews",
-    "pekannüsse", "paranüsse", "pistazien", "macadamia",
-    "sellerie", "senf", "sesam", "schwefeldioxid", "sulfite",
-    "lupinen", "weichtiere",
+    "gluten",
+    "weizen",
+    "roggen",
+    "gerste",
+    "hafer",
+    "dinkel",
+    "krebstiere",
+    "eier",
+    "fisch",
+    "erdnüsse",
+    "soja",
+    "milch",
+    "schalenfrüchte",
+    "mandeln",
+    "haselnüsse",
+    "walnüsse",
+    "cashews",
+    "pekannüsse",
+    "paranüsse",
+    "pistazien",
+    "macadamia",
+    "sellerie",
+    "senf",
+    "sesam",
+    "schwefeldioxid",
+    "sulfite",
+    "lupinen",
+    "weichtiere",
 }
 
 # Alias-Mapping für flexible Eingabe
@@ -68,9 +92,7 @@ async def check_menu_items(
     if not item_ids:
         return []
 
-    result = await session.execute(
-        select(MenuItem).where(MenuItem.id.in_(item_ids))
-    )
+    result = await session.execute(select(MenuItem).where(MenuItem.id.in_(item_ids)))
     items = result.scalars().all()
 
     results = []
@@ -80,11 +102,13 @@ async def check_menu_items(
             item.ingredients or [],
             guest_allergens,
         )
-        results.append(AllergenCheckResult(
-            item_id=item.id,
-            item_name=item.name,
-            is_safe=is_safe,
-            matched_allergens=matched,
-            ingredients=item.ingredients or [],
-        ))
+        results.append(
+            AllergenCheckResult(
+                item_id=item.id,
+                item_name=item.name,
+                is_safe=is_safe,
+                matched_allergens=matched,
+                ingredients=item.ingredients or [],
+            )
+        )
     return results

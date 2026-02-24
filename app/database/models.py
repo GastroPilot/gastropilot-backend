@@ -47,17 +47,19 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     operator_number = Column(
-        String(4), nullable=False, unique=True, index=True
-    )  # 4-stellige Bedienernummer
-    pin_hash = Column(String(255), nullable=False)  # 6-8 stelliger PIN (gehasht)
+        String(4), nullable=True, unique=True, index=True
+    )  # 4-stellige Bedienernummer (nullable für platform_admin)
+    pin_hash = Column(String(255), nullable=True)  # 6-8 stelliger PIN (gehasht, nullable für E-Mail-Login)
     nfc_tag_id = Column(
         String(64), nullable=True, unique=True, index=True
     )  # NFC-Tag-ID für Transponder-Login
+    email = Column(String(255), nullable=True, unique=True, index=True)  # E-Mail für Platform-Admin-Login
+    password_hash = Column(String(255), nullable=True)  # Passwort-Hash für E-Mail-Login
     first_name = Column(String(120), nullable=False)
     last_name = Column(String(120), nullable=False)
     role = Column(
         String(20), nullable=False, default="mitarbeiter"
-    )  # servecta, restaurantinhaber, schichtleiter, mitarbeiter
+    )  # platform_admin, servecta, restaurantinhaber, schichtleiter, mitarbeiter
     is_active = Column(Boolean, nullable=False, default=True)
     created_at_utc = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at_utc = Column(

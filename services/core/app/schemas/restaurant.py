@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from datetime import datetime
 from uuid import UUID
+
 from pydantic import BaseModel
 
 
@@ -43,6 +45,7 @@ class RestaurantResponse(RestaurantBase):
 
 
 # Floor Plan & Table
+
 
 class AreaBase(BaseModel):
     name: str

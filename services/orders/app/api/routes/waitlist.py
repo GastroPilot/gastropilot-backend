@@ -1,11 +1,12 @@
 from __future__ import annotations
+
 import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db, require_staff_or_above
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/waitlist", tags=["waitlist"])
 # ---------------------------------------------------------------------------
 # Pydantic-Schemas (lokal, kein separates schemas/-Modul nötig)
 # ---------------------------------------------------------------------------
+
 
 class WaitlistEntryCreate(BaseModel):
     guest_name: str
@@ -55,6 +57,7 @@ class WaitlistEntryResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 import json
+
 from app.services.cache_service import get_redis
 
 WAITLIST_TTL = 86400  # 24 Stunden
@@ -77,6 +80,7 @@ async def _save_waitlist(tenant_id: UUID, entries: list[dict]) -> None:
 # Endpunkte
 # ---------------------------------------------------------------------------
 
+
 @router.get("/", response_model=list[WaitlistEntryResponse])
 async def list_waitlist(
     current_user: User = Depends(require_staff_or_above),
@@ -93,6 +97,7 @@ async def add_to_waitlist(
     current_user: User = Depends(require_staff_or_above),
 ):
     import uuid
+
     entry = {
         "id": str(uuid.uuid4()),
         "tenant_id": str(current_user.tenant_id),

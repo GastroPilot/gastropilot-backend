@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 import threading
 from contextlib import asynccontextmanager
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Redis Consumer in separatem Thread starten
     from app.worker import start_redis_consumer
+
     consumer_thread = threading.Thread(
         target=start_redis_consumer,
         name="redis-consumer",
@@ -42,8 +44,9 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-from app.api.routes import health
+from app.api.routes import health, webhooks
 
 app.include_router(health.router, prefix="/api/v1")
+app.include_router(webhooks.router, prefix="/api/v1")
 # Legacy-Präfix für Kompatibilität
 app.include_router(health.router, prefix="/v1")

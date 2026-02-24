@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 from uuid import UUID
 
@@ -47,9 +48,8 @@ async def create_checkout(
     """Erstellt eine Zahlungssession bei Stripe oder SumUp."""
     # Restaurant-Settings für Provider-Auswahl laden
     from app.models.restaurant import Restaurant
-    result = await db.execute(
-        select(Restaurant).where(Restaurant.id == current_user.tenant_id)
-    )
+
+    result = await db.execute(select(Restaurant).where(Restaurant.id == current_user.tenant_id))
     restaurant = result.scalar_one_or_none()
     restaurant_settings = restaurant.settings or {} if restaurant else {}
 
@@ -101,8 +101,8 @@ async def get_checkout_status(
 @router.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
     """Stripe Webhook-Empfänger."""
-    import hmac
     import hashlib
+    import hmac
 
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
@@ -125,6 +125,7 @@ async def stripe_webhook(request: Request):
             raise HTTPException(status_code=400, detail="Webhook-Validierung fehlgeschlagen")
 
     import json
+
     event = json.loads(payload)
     logger.info("Stripe Webhook empfangen: %s", event.get("type"))
     # TODO: Event-Verarbeitung (payment_intent.succeeded etc.)

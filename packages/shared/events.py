@@ -32,6 +32,19 @@ USER_LOGGED_OUT = "user.logged_out"
 TENANT_SUSPENDED = "tenant.suspended"
 TENANT_ACTIVATED = "tenant.activated"
 
+BLOCK_CREATED = "block.created"
+BLOCK_DELETED = "block.deleted"
+
+WAITLIST_ADDED = "waitlist.added"
+WAITLIST_NOTIFIED = "waitlist.notified"
+
+VOUCHER_REDEEMED = "voucher.redeemed"
+
+PREPAYMENT_COMPLETED = "prepayment.completed"
+PREPAYMENT_FAILED = "prepayment.failed"
+
+MESSAGE_SENT = "message.sent"
+
 
 class EventPublisher:
     """

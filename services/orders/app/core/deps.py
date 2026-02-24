@@ -1,13 +1,16 @@
 from __future__ import annotations
-import uuid
+
 import sys
+import uuid
 from pathlib import Path
+
 from fastapi import Cookie, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from .database import get_session_factories
+
 from .config import settings
+from .database import get_session_factories
 
 _shared_path = Path(__file__).parent.parent.parent.parent.parent / "packages"
 if str(_shared_path) not in sys.path:
@@ -56,6 +59,7 @@ async def get_current_user(
     session: AsyncSession = Depends(get_db),
 ):
     from app.models.user import User
+
     header_token = credentials.credentials if credentials else None
     token = access_token or header_token
     if not token:

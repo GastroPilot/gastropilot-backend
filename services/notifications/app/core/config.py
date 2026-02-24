@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,10 +25,19 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = "noreply@gastropilot.de"
     EMAIL_FROM_NAME: str = "GastroPilot"
 
-    # SMS (Twilio)
+    # SMS / WhatsApp (Twilio)
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_FROM_NUMBER: str = ""
+    TWILIO_WHATSAPP_NUMBER: str = ""
+
+    # WhatsApp Bot
+    WHATSAPP_ENABLED: bool = False
+    OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4o-mini"
+
+    # Database (read-only for restaurant lookup)
+    DATABASE_URL: str = ""
 
     # Push (Expo)
     EXPO_ACCESS_TOKEN: str = ""

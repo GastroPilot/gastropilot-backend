@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -13,8 +14,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     ENV: str = "development"
-    DATABASE_URL: str = "postgresql+asyncpg://gastropilot_app:gastropilot_app_password@localhost:5432/gastropilot"
-    DATABASE_URL_ADMIN: str = "postgresql+asyncpg://gastropilot_admin:gastropilot_admin_password@localhost:5432/gastropilot"
+    DATABASE_URL: str = (
+        "postgresql+asyncpg://gastropilot_app:gastropilot_app_password@localhost:5432/gastropilot"
+    )
+    DATABASE_URL_ADMIN: str = (
+        "postgresql+asyncpg://gastropilot_admin:gastropilot_admin_password@localhost:5432/gastropilot"
+    )
     JWT_SECRET: str = "dev-secret-key-change-in-production-min-32-characters-long"
     JWT_ALGORITHM: str = "HS256"
     JWT_ISSUER: str = "gastropilot"

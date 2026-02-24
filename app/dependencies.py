@@ -95,8 +95,8 @@ async def get_current_user(
 async def require_servecta_role(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """Stellt sicher, dass der User die Rolle 'servecta' hat."""
-    if current_user.role != "servecta":
+    """Stellt sicher, dass der User die Rolle 'servecta' oder 'platform_admin' hat."""
+    if current_user.role not in ["servecta", "platform_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions: servecta role required",
@@ -107,8 +107,8 @@ async def require_servecta_role(
 async def require_restaurantinhaber_role(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """Stellt sicher, dass der User die Rolle 'restaurantinhaber' oder 'servecta' hat."""
-    if current_user.role not in ["restaurantinhaber", "servecta"]:
+    """Stellt sicher, dass der User die Rolle 'restaurantinhaber', 'servecta' oder 'platform_admin' hat."""
+    if current_user.role not in ["restaurantinhaber", "servecta", "platform_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions: restaurantinhaber or servecta role required",
@@ -119,8 +119,8 @@ async def require_restaurantinhaber_role(
 async def require_schichtleiter_role(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """Stellt sicher, dass der User die Rolle 'schichtleiter', 'restaurantinhaber' oder 'servecta' hat."""
-    if current_user.role not in ["schichtleiter", "restaurantinhaber", "servecta"]:
+    """Stellt sicher, dass der User die Rolle 'schichtleiter', 'restaurantinhaber', 'servecta' oder 'platform_admin' hat."""
+    if current_user.role not in ["schichtleiter", "restaurantinhaber", "servecta", "platform_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions: schichtleiter, restaurantinhaber or servecta role required",
@@ -132,7 +132,7 @@ async def require_mitarbeiter_role(
     current_user: User = Depends(get_current_user),
 ) -> User:
     """Stellt sicher, dass der User die Rolle 'mitarbeiter' oder höher hat."""
-    if current_user.role not in ["mitarbeiter", "schichtleiter", "restaurantinhaber", "servecta"]:
+    if current_user.role not in ["mitarbeiter", "schichtleiter", "restaurantinhaber", "servecta", "platform_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions: mitarbeiter role or higher required",
