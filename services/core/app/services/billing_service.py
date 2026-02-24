@@ -2,14 +2,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from uuid import UUID
-from enum import Enum
+from enum import StrEnum
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
 
-class PaymentProvider(str, Enum):
+class PaymentProvider(StrEnum):
     STRIPE = "stripe"
     SUMUP = "sumup"
     BOTH = "both"

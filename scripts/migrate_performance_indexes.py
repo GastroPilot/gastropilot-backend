@@ -250,7 +250,7 @@ async def run_migration():
     
     print()
     print("=" * 60)
-    print(f"Zusammenfassung:")
+    print("Zusammenfassung:")
     print(f"  Erstellt: {created}")
     print(f"  Übersprungen: {skipped}")
     print(f"  Fehler: {errors}")

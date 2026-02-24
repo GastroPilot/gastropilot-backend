@@ -1,6 +1,6 @@
 from __future__ import annotations
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -103,7 +103,7 @@ async def add_to_waitlist(
         "status": "waiting",
         "estimated_wait_minutes": body.estimated_wait_minutes,
         "table_id": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     entries = await _get_waitlist(current_user.tenant_id)

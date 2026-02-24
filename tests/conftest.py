@@ -3,7 +3,7 @@ Pytest configuration and fixtures for GastroPilot backend tests.
 """
 import pytest
 import asyncio
-from typing import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Generator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from fastapi.testclient import TestClient
 from httpx import AsyncClient, ASGITransport

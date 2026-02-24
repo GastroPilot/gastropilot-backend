@@ -24,7 +24,7 @@ def get_db_user(role: UserRole) -> str:
 
 
 async def set_tenant_context(
-    session: "AsyncSession",
+    session: AsyncSession,
     tenant_id: uuid.UUID | None,
     role: str,
 ) -> None:

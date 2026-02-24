@@ -55,7 +55,7 @@ async def migrate():
             except Exception as e:
                 # Column might already exist
                 if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
-                    print(f"  - Column already exists, skipping...")
+                    print("  - Column already exists, skipping...")
                 else:
                     print(f"  ✗ Error: {e}")
         

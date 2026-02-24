@@ -19,7 +19,7 @@ from app.middleware import (
     log_startup,
     setup_logging,
 )
-from app.rate_limiter import limiter, setup_rate_limiting
+from app.rate_limiter import setup_rate_limiting
 from app.routers import (
     ai,
     areas,
