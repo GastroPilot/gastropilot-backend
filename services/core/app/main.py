@@ -15,6 +15,8 @@ from app.core.config import settings
 from app.core.database import close_engines, get_engines
 from app.core.tenant import TenantMiddleware
 
+import app.models  # noqa: F401  — register all models for FK resolution
+
 # Add shared packages to path
 _shared_path = Path(__file__).parent.parent.parent.parent / "packages"
 if str(_shared_path) not in sys.path:
