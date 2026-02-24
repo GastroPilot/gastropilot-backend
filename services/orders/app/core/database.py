@@ -14,15 +14,8 @@ from .config import settings
 
 
 def _fix_asyncpg_url(url: str) -> str:
-    """Translate ``sslmode`` to asyncpg-compatible ``ssl`` parameter."""
-    parsed = urlparse(url)
-    params = parse_qs(parsed.query)
-    sslmode = params.pop("sslmode", [None])[0]
-    if sslmode and "ssl" not in params:
-        ssl_val = "true" if sslmode in ("require", "verify-ca", "verify-full") else "false"
-        params["ssl"] = [ssl_val]
-    cleaned = parsed._replace(query=urlencode(params, doseq=True))
-    return urlunparse(cleaned)
+    """Pass through URL as-is; asyncpg handles sslmode natively."""
+    return url
 
 
 class Base(DeclarativeBase):
