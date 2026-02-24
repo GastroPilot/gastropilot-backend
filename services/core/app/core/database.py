@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -13,6 +14,15 @@ from sqlalchemy.orm import DeclarativeBase
 from .config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _fix_asyncpg_url(url: str) -> str:
+    """Remove ``sslmode`` query param that asyncpg doesn't understand."""
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    params.pop("sslmode", None)
+    cleaned = parsed._replace(query=urlencode(params, doseq=True))
+    return urlunparse(cleaned)
 
 
 class Base(DeclarativeBase):
@@ -30,7 +40,7 @@ def get_engines() -> tuple[AsyncEngine, AsyncEngine]:
 
     if _engine_app is None:
         _engine_app = create_async_engine(
-            settings.DATABASE_URL,
+            _fix_asyncpg_url(settings.DATABASE_URL),
             echo=settings.is_development,
             pool_size=10,
             max_overflow=20,
@@ -39,7 +49,7 @@ def get_engines() -> tuple[AsyncEngine, AsyncEngine]:
 
     if _engine_admin is None:
         _engine_admin = create_async_engine(
-            settings.DATABASE_URL_ADMIN,
+            _fix_asyncpg_url(settings.DATABASE_URL_ADMIN),
             echo=False,
             pool_size=5,
             max_overflow=10,
