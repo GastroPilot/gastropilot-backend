@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from app.core.config import settings
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 SESSION_TIMEOUT_MINUTES = 60
 
 
-class BotState(str, Enum):
+class BotState(StrEnum):
     INIT = "init"
     COLLECT_DATE = "collect_date"
     COLLECT_TIME = "collect_time"
