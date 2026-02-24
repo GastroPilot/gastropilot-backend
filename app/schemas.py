@@ -11,8 +11,12 @@ class Timestamped(BaseModel):
 
 # Auth Schemas
 class LoginRequest(BaseModel):
-    operator_number: str = Field(min_length=4, max_length=4, pattern="^[0-9]{4}$")
-    pin: str = Field(min_length=6, max_length=8, pattern="^[0-9]{6,8}$")
+    # PIN login (staff)
+    operator_number: str | None = Field(None, min_length=4, max_length=4, pattern="^[0-9]{4}$")
+    pin: str | None = Field(None, min_length=6, max_length=8, pattern="^[0-9]{6,8}$")
+    # Email/password login (platform_admin)
+    email: EmailStr | None = None
+    password: str | None = Field(None, min_length=8, max_length=128)
 
 
 class NFCLoginRequest(BaseModel):
@@ -24,6 +28,7 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    user: dict | None = None
 
 
 class RefreshRequest(BaseModel):
@@ -32,8 +37,9 @@ class RefreshRequest(BaseModel):
 
 class UserRead(Timestamped):
     id: int
-    operator_number: str
+    operator_number: str | None = None
     nfc_tag_id: str | None = None
+    email: str | None = None
     first_name: str
     last_name: str
     role: str
@@ -45,13 +51,16 @@ class UserRead(Timestamped):
 
 
 class UserCreate(BaseModel):
-    operator_number: str = Field(min_length=4, max_length=4, pattern="^[0-9]{4}$")
-    pin: str = Field(min_length=6, max_length=8, pattern="^[0-9]{6,8}$")
+    operator_number: str | None = Field(None, min_length=4, max_length=4, pattern="^[0-9]{4}$")
+    pin: str | None = Field(None, min_length=6, max_length=8, pattern="^[0-9]{6,8}$")
     nfc_tag_id: str | None = Field(None, min_length=1, max_length=64)
+    email: EmailStr | None = None
+    password: str | None = Field(None, min_length=8, max_length=128)
     first_name: str = Field(min_length=2, max_length=120)
     last_name: str = Field(min_length=2, max_length=120)
     role: str = Field(
-        default="mitarbeiter", pattern="^(servecta|restaurantinhaber|schichtleiter|mitarbeiter)$"
+        default="mitarbeiter",
+        pattern="^(platform_admin|servecta|restaurantinhaber|schichtleiter|mitarbeiter)$",
     )
 
 
@@ -59,10 +68,12 @@ class UserUpdate(BaseModel):
     operator_number: str | None = Field(None, min_length=4, max_length=4, pattern="^[0-9]{4}$")
     pin: str | None = Field(None, min_length=6, max_length=8, pattern="^[0-9]{6,8}$")
     nfc_tag_id: str | None = Field(None, min_length=1, max_length=64)
+    email: EmailStr | None = None
+    password: str | None = Field(None, min_length=8, max_length=128)
     first_name: str | None = Field(None, min_length=2, max_length=120)
     last_name: str | None = Field(None, min_length=2, max_length=120)
     role: str | None = Field(
-        None, pattern="^(servecta|restaurantinhaber|schichtleiter|mitarbeiter)$"
+        None, pattern="^(platform_admin|servecta|restaurantinhaber|schichtleiter|mitarbeiter)$"
     )
     is_active: bool | None = None
 

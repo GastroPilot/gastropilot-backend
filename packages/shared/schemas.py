@@ -28,6 +28,53 @@ class AuthMethod(StrEnum):
     password = "password"
 
 
+class ReservationStatus(StrEnum):
+    pending = "pending"
+    confirmed = "confirmed"
+    seated = "seated"
+    completed = "completed"
+    canceled = "canceled"
+    no_show = "no_show"
+
+
+class OrderStatus(StrEnum):
+    open = "open"
+    sent_to_kitchen = "sent_to_kitchen"
+    in_preparation = "in_preparation"
+    ready = "ready"
+    served = "served"
+    paid = "paid"
+    canceled = "canceled"
+
+
+class OrderItemStatus(StrEnum):
+    pending = "pending"
+    sent = "sent"
+    in_preparation = "in_preparation"
+    ready = "ready"
+    served = "served"
+    canceled = "canceled"
+
+
+class PaymentStatus(StrEnum):
+    unpaid = "unpaid"
+    partial = "partial"
+    paid = "paid"
+
+
+class VoucherType(StrEnum):
+    fixed = "fixed"
+    percentage = "percentage"
+
+
+class PrepaymentStatus(StrEnum):
+    pending = "pending"
+    processing = "processing"
+    completed = "completed"
+    failed = "failed"
+    refunded = "refunded"
+
+
 class TokenPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

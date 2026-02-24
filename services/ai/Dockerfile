@@ -4,19 +4,23 @@ WORKDIR /build
 
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml .
+# Build context is gastropilot-backend/
+COPY services/ai/pyproject.toml .
 RUN uv pip install --system --no-cache -e .
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN addgroup --system app && adduser --system --group app
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && addgroup --system app && adduser --system --group app
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-COPY app/ ./app/
+COPY services/ai/app/ ./app/
+COPY packages/ /packages/
 
 RUN chown -R app:app /app
 USER app

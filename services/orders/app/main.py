@@ -45,18 +45,20 @@ app.add_middleware(
 )
 app.add_middleware(TenantMiddleware)
 
-from app.api.routes import health, kitchen, orders, waitlist
+from app.api.routes import health, kitchen, orders, waitlist, statistics, invoices, sumup, webhook_sumup
 from app.websocket.manager import manager
 
+# Health-Router zuerst, damit /orders/health nicht von /{order_id} abgefangen wird
 app.include_router(health.router, prefix="/api/v1")
-app.include_router(orders.router, prefix="/api/v1")
-app.include_router(kitchen.router, prefix="/api/v1")
-app.include_router(waitlist.router, prefix="/api/v1")
+app.include_router(webhook_sumup.router, prefix="/api/v1")
 
-# Legacy prefix
-app.include_router(orders.router, prefix="/v1")
-app.include_router(kitchen.router, prefix="/v1")
-app.include_router(waitlist.router, prefix="/v1")
+for prefix in ("/api/v1", "/v1"):
+    app.include_router(orders.router, prefix=prefix)
+    app.include_router(kitchen.router, prefix=prefix)
+    app.include_router(waitlist.router, prefix=prefix)
+    app.include_router(statistics.router, prefix=prefix)
+    app.include_router(invoices.router, prefix=prefix)
+    app.include_router(sumup.router, prefix=prefix)
 
 
 @app.websocket("/ws/{tenant_id}")

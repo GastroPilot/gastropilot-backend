@@ -42,8 +42,9 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-from app.api.routes import health
+from app.api.routes import health, webhooks
 
 app.include_router(health.router, prefix="/api/v1")
+app.include_router(webhooks.router, prefix="/api/v1")
 # Legacy-Präfix für Kompatibilität
 app.include_router(health.router, prefix="/v1")
