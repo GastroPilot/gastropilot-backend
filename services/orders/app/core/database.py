@@ -14,10 +14,13 @@ from .config import settings
 
 
 def _fix_asyncpg_url(url: str) -> str:
-    """Remove ``sslmode`` query param that asyncpg doesn't understand."""
+    """Translate ``sslmode`` to asyncpg-compatible ``ssl`` parameter."""
     parsed = urlparse(url)
     params = parse_qs(parsed.query)
-    params.pop("sslmode", None)
+    sslmode = params.pop("sslmode", [None])[0]
+    if sslmode and "ssl" not in params:
+        ssl_val = "true" if sslmode in ("require", "verify-ca", "verify-full") else "false"
+        params["ssl"] = [ssl_val]
     cleaned = parsed._replace(query=urlencode(params, doseq=True))
     return urlunparse(cleaned)
 
