@@ -36,7 +36,8 @@ def _connect_args_for_sslmode(sslmode: str | None) -> dict:
             ctx.check_hostname = False
             ctx.verify_mode = _ssl.CERT_NONE
         return {"ssl": ctx}
-    return {"ssl": False} if sslmode == "disable" else {}
+    # No sslmode or explicitly disabled → no SSL
+    return {"ssl": False}
 
 
 class Base(DeclarativeBase):
