@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 
@@ -87,10 +88,7 @@ async def send_bulk_push(messages: list[PushMessage]) -> dict[str, bool]:
             response = await client.post(EXPO_PUSH_URL, json=payloads, headers=headers)
             response.raise_for_status()
             results = response.json().get("data", [])
-            return {
-                m.to: (r.get("status") == "ok")
-                for m, r in zip(messages, results)
-            }
+            return {m.to: (r.get("status") == "ok") for m, r in zip(messages, results)}
     except httpx.HTTPError as exc:
         logger.error("HTTP-Fehler beim Bulk-Push-Versand: %s", exc)
         return {m.to: False for m in messages}

@@ -1,17 +1,28 @@
 from __future__ import annotations
+
 import secrets
 import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.deps import get_current_user, get_db
 from app.models.order import Order, OrderItem
 from app.websocket.manager import manager
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
-ORDER_STATUSES = ["open", "sent_to_kitchen", "in_preparation", "ready", "served", "paid", "canceled"]
+ORDER_STATUSES = [
+    "open",
+    "sent_to_kitchen",
+    "in_preparation",
+    "ready",
+    "served",
+    "paid",
+    "canceled",
+]
 
 
 class OrderCreate(BaseModel):
@@ -96,7 +107,10 @@ async def create_order(
 
     await manager.broadcast_to_tenant(
         str(tenant_id),
-        {"type": "order_created", "data": {"id": str(order.id), "order_number": order.order_number}},
+        {
+            "type": "order_created",
+            "data": {"id": str(order.id), "order_number": order.order_number},
+        },
     )
 
     return {"id": str(order.id), "order_number": order.order_number, "status": order.status}

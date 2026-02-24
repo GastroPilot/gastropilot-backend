@@ -9,14 +9,15 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db, require_manager_or_above, require_staff_or_above
-from app.models.table_config import ReservationTableDayConfig, TableDayConfig
 from app.models.restaurant import Table
+from app.models.table_config import ReservationTableDayConfig, TableDayConfig
 from app.models.user import User
 
 router = APIRouter(prefix="/table-day-configs", tags=["table-day-configs"])
 
 
 # --- Schemas ---
+
 
 class TableDayConfigCreate(BaseModel):
     table_id: UUID | None = None
@@ -37,6 +38,7 @@ class TableDayConfigCreate(BaseModel):
     rotation: int | None = None
     notes: str | None = None
 
+
 class TableDayConfigUpdate(BaseModel):
     is_hidden: bool | None = None
     is_temporary: bool | None = None
@@ -53,6 +55,7 @@ class TableDayConfigUpdate(BaseModel):
     is_joinable: bool | None = None
     rotation: int | None = None
     notes: str | None = None
+
 
 class TableDayConfigResponse(BaseModel):
     id: UUID
@@ -83,9 +86,7 @@ async def list_configs_by_date(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(TableDayConfig).where(TableDayConfig.date == date)
-    )
+    result = await db.execute(select(TableDayConfig).where(TableDayConfig.date == date))
     return result.scalars().all()
 
 
@@ -129,7 +130,9 @@ async def create_or_update_config(
         )
         existing = result.scalar_one_or_none()
         if existing:
-            for field, value in body.model_dump(exclude_none=True, exclude={"table_id", "date"}).items():
+            for field, value in body.model_dump(
+                exclude_none=True, exclude={"table_id", "date"}
+            ).items():
                 setattr(existing, field, value)
             await db.commit()
             await db.refresh(existing)
@@ -141,7 +144,15 @@ async def create_or_update_config(
         table_result = await db.execute(select(Table).where(Table.id == body.table_id))
         table = table_result.scalar_one_or_none()
         if table:
-            for field in ("position_x", "position_y", "width", "height", "is_active", "rotation", "is_joinable"):
+            for field in (
+                "position_x",
+                "position_y",
+                "width",
+                "height",
+                "is_active",
+                "rotation",
+                "is_joinable",
+            ):
                 if field not in config_data:
                     val = getattr(table, field, None)
                     if val is not None:
@@ -219,9 +230,7 @@ async def delete_all_configs_by_date(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(
-        select(TableDayConfig).where(TableDayConfig.date == date)
-    )
+    result = await db.execute(select(TableDayConfig).where(TableDayConfig.date == date))
     configs = result.scalars().all()
     for config in configs:
         await db.delete(config)

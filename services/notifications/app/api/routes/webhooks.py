@@ -1,4 +1,5 @@
 """Twilio WhatsApp webhook receiver."""
+
 from __future__ import annotations
 
 import logging
@@ -53,7 +54,9 @@ async def handle_whatsapp_webhook(
 
 async def _send_whatsapp_reply(to: str, body: str) -> bool:
     """Send a WhatsApp message via Twilio REST API."""
-    if not all([settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_WHATSAPP_NUMBER]):
+    if not all(
+        [settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_WHATSAPP_NUMBER]
+    ):
         logger.warning("Twilio WhatsApp not configured, skipping reply to %s", to)
         return False
 

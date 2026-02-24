@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import logging
 from uuid import UUID
@@ -49,19 +50,16 @@ def generate_receipt(
     logger.info("Bon-Generierung für Order %s (Tenant %s)", order_id, tenant_id)
 
     async def _generate():
+        from sqlalchemy import select
+
         from app.core.database import get_session_factories
         from app.models.order import Order, OrderItem
-        from sqlalchemy import select
 
         factories = get_session_factories()
         async with factories["app"]() as session:
             # Tenant-Kontext setzen
-            await session.execute(
-                f"SELECT set_tenant_context('{tenant_id}', 'staff')"
-            )
-            result = await session.execute(
-                select(Order).where(Order.id == order_id)
-            )
+            await session.execute(f"SELECT set_tenant_context('{tenant_id}', 'staff')")
+            result = await session.execute(select(Order).where(Order.id == order_id))
             order = result.scalar_one_or_none()
             if not order:
                 logger.error("Order %s nicht gefunden", order_id)
@@ -110,18 +108,15 @@ def order_completed_report(
     logger.info("Abschluss-Report für Order %s", order_id)
 
     async def _report():
+        from sqlalchemy import select
+
         from app.core.database import get_session_factories
         from app.models.order import Order
-        from sqlalchemy import select
 
         factories = get_session_factories()
         async with factories["app"]() as session:
-            await session.execute(
-                f"SELECT set_tenant_context('{tenant_id}', 'staff')"
-            )
-            result = await session.execute(
-                select(Order).where(Order.id == order_id)
-            )
+            await session.execute(f"SELECT set_tenant_context('{tenant_id}', 'staff')")
+            result = await session.execute(select(Order).where(Order.id == order_id))
             order = result.scalar_one_or_none()
             if not order:
                 return {"error": "order_not_found"}

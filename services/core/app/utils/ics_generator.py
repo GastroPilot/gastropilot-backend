@@ -1,4 +1,5 @@
 """ICS (iCalendar) file generation for reservations."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

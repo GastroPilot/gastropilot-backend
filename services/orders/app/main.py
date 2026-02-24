@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -11,9 +12,10 @@ _shared_path = Path(__file__).parent.parent.parent.parent / "packages"
 if str(_shared_path) not in sys.path:
     sys.path.insert(0, str(_shared_path))
 
+from shared.tenant import TenantMiddleware
+
 from app.core.config import settings
 from app.core.database import close_engines, get_session_factories
-from shared.tenant import TenantMiddleware
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -45,7 +47,16 @@ app.add_middleware(
 )
 app.add_middleware(TenantMiddleware)
 
-from app.api.routes import health, kitchen, orders, waitlist, statistics, invoices, sumup, webhook_sumup
+from app.api.routes import (
+    health,
+    invoices,
+    kitchen,
+    orders,
+    statistics,
+    sumup,
+    waitlist,
+    webhook_sumup,
+)
 from app.websocket.manager import manager
 
 # Health-Router zuerst, damit /orders/health nicht von /{order_id} abgefangen wird

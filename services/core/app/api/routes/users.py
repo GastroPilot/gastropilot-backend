@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import json
 from uuid import UUID
 
@@ -9,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import get_current_user, get_db, require_manager_or_above, require_owner_or_above
+from app.core.security import hash_password, hash_pin
 from app.models.user import User
 from app.schemas.user import UserCreate, UserMeResponse, UserResponse, UserUpdate
-from app.core.security import hash_password, hash_pin
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -35,6 +36,7 @@ def _effective_tenant_id(request: Request, current_user: User) -> UUID | None:
 # User Settings (gespeichert in Redis, Key: user_settings:{user_id})
 # ---------------------------------------------------------------------------
 
+
 class UserSettingsResponse(BaseModel):
     id: int = 1
     user_id: str
@@ -49,6 +51,7 @@ class UserSettingsUpdate(BaseModel):
 
 async def _get_redis():
     import redis.asyncio as aioredis
+
     r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
         yield r
@@ -124,6 +127,7 @@ async def update_me(
 # ---------------------------------------------------------------------------
 # Restaurant-User-Verwaltung (Owner/Manager)
 # ---------------------------------------------------------------------------
+
 
 @router.get("/", response_model=list[UserResponse])
 async def list_users(

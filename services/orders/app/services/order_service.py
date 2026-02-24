@@ -1,13 +1,14 @@
 from __future__ import annotations
+
 import logging
 from uuid import UUID
 
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
 
 from app.models.order import Order, OrderItem, OrderStatus
-from app.services.event_publisher import order_status_changed
 from app.services.cache_service import cache_order_status, invalidate_order_cache
+from app.services.event_publisher import order_status_changed
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +38,11 @@ async def transition_order_status(
     allowed = VALID_TRANSITIONS.get(order.status, [])
     if new_status not in allowed:
         from fastapi import HTTPException
+
         raise HTTPException(
             status_code=400,
             detail=f"Übergang von '{order.status}' nach '{new_status}' nicht erlaubt. "
-                   f"Erlaubt: {allowed}",
+            f"Erlaubt: {allowed}",
         )
 
     old_status = order.status

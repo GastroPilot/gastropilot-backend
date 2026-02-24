@@ -1,4 +1,5 @@
 """SumUp API integration service for prepayments and checkouts."""
+
 from __future__ import annotations
 
 import logging
@@ -103,9 +104,7 @@ class SumUpService:
 
     async def get_reader(self, merchant_code: str, reader_id: str) -> dict:
         try:
-            response = await self.client.get(
-                f"/v0.1/merchants/{merchant_code}/readers/{reader_id}"
-            )
+            response = await self.client.get(f"/v0.1/merchants/{merchant_code}/readers/{reader_id}")
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -193,7 +192,10 @@ class SumUpService:
     # --- Transaction ---
 
     async def get_transaction(
-        self, merchant_code: str, transaction_code: str | None = None, transaction_id: str | None = None
+        self,
+        merchant_code: str,
+        transaction_code: str | None = None,
+        transaction_id: str | None = None,
     ) -> dict:
         params: dict = {}
         if transaction_code:
@@ -211,7 +213,10 @@ class SumUpService:
             raise
 
     async def get_receipt(
-        self, merchant_code: str, transaction_code: str | None = None, transaction_id: str | None = None
+        self,
+        merchant_code: str,
+        transaction_code: str | None = None,
+        transaction_id: str | None = None,
     ) -> dict:
         tx_id = transaction_code or transaction_id
         try:

@@ -4,10 +4,11 @@ Revision ID: 0002_remove_license
 Revises: 0001_initial
 Create Date: 2026-02-23
 """
+
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0002_remove_license"
 down_revision = "0001_initial"
@@ -53,7 +54,9 @@ def downgrade() -> None:
     op.add_column("restaurants", sa.Column("subscription_tier", sa.Text, server_default="starter"))
     op.add_column("restaurants", sa.Column("is_suspended", sa.Boolean, server_default="false"))
     op.add_column("restaurants", sa.Column("suspended_reason", sa.Text, nullable=True))
-    op.add_column("restaurants", sa.Column("suspended_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "restaurants", sa.Column("suspended_at", sa.DateTime(timezone=True), nullable=True)
+    )
     op.add_column("restaurants", sa.Column("payment_provider", sa.Text, server_default="sumup"))
     op.add_column("restaurants", sa.Column("stripe_customer_id", sa.String(128), nullable=True))
     op.add_column("restaurants", sa.Column("stripe_subscription_id", sa.String(128), nullable=True))

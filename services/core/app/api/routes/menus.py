@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/menus", tags=["menus"])
 # Kategorien
 # ---------------------------------------------------------------------------
 
+
 @router.get("/categories", response_model=list[MenuCategoryResponse])
 async def list_categories(
     db: AsyncSession = Depends(get_db),
@@ -35,7 +37,9 @@ async def list_categories(
     return result.scalars().all()
 
 
-@router.post("/categories", response_model=MenuCategoryResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/categories", response_model=MenuCategoryResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_category(
     request: Request,
     body: MenuCategoryCreate,
@@ -90,6 +94,7 @@ async def delete_category(
 # ---------------------------------------------------------------------------
 # Gerichte
 # ---------------------------------------------------------------------------
+
 
 @router.get("/items", response_model=list[MenuItemResponse])
 async def list_items(

@@ -1,4 +1,5 @@
 """Dashboard batch endpoints – aggregieren mehrere Ressourcen in einem Request."""
+
 from __future__ import annotations
 
 import uuid
@@ -40,11 +41,15 @@ async def _get_restaurant_or_404(
     try:
         rid = uuid.UUID(restaurant_id)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant nicht gefunden")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant nicht gefunden"
+        )
 
     row = await session.get(Restaurant, rid)
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant nicht gefunden")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant nicht gefunden"
+        )
     return row
 
 
@@ -74,7 +79,9 @@ async def get_dashboard_batch(
     areas = [_serialize(r) for r in areas_result.scalars().all()]
 
     # Tables
-    tables_result = await session.execute(select(Table).where(Table.tenant_id == rid, Table.is_active == True))
+    tables_result = await session.execute(
+        select(Table).where(Table.tenant_id == rid, Table.is_active == True)
+    )
     tables = [_serialize(r) for r in tables_result.scalars().all()]
 
     # Obstacles
@@ -98,8 +105,7 @@ async def get_dashboard_batch(
     # Orders – aktive Orders für heute (status != closed/cancelled)
     try:
         orders_result = await session.execute(
-            text(
-                """
+            text("""
                 SELECT id, tenant_id, table_id, order_number, status,
                        subtotal, tax_amount, total, payment_status,
                        notes, opened_at, closed_at, created_at, updated_at
@@ -109,8 +115,7 @@ async def get_dashboard_batch(
                   AND opened_at < :day_end
                 ORDER BY opened_at DESC
                 LIMIT 500
-                """
-            ),
+                """),
             {"tid": str(rid), "day_start": day_start, "day_end": day_end},
         )
         orders = [dict(row._mapping) for row in orders_result]
@@ -163,8 +168,7 @@ async def get_kitchen_data(
     # Aktive Orders
     try:
         orders_result = await session.execute(
-            text(
-                """
+            text("""
                 SELECT id, tenant_id, table_id, order_number, status,
                        subtotal, tax_amount, total, payment_status,
                        notes, opened_at, closed_at, created_at, updated_at
@@ -173,8 +177,7 @@ async def get_kitchen_data(
                   AND status IN ('open', 'in_preparation', 'ready', 'confirmed', 'sent_to_kitchen')
                 ORDER BY opened_at ASC
                 LIMIT 200
-                """
-            ),
+                """),
             {"tid": str(rid)},
         )
         orders = [dict(row._mapping) for row in orders_result]
@@ -184,18 +187,14 @@ async def get_kitchen_data(
         order_items: list[dict] = []
         if order_ids:
             ids_literal = ", ".join(f"'{oid}'" for oid in order_ids)
-            items_result = await session.execute(
-                text(
-                    f"""
+            items_result = await session.execute(text(f"""
                     SELECT id, order_id, menu_item_id, item_name, item_description,
                            category, quantity, unit_price, total_price,
                            tax_rate, status, notes, sort_order, created_at, updated_at
                     FROM order_items
                     WHERE order_id IN ({ids_literal})
                     ORDER BY sort_order ASC
-                    """
-                )
-            )
+                    """))
             order_items = [dict(row._mapping) for row in items_result]
 
         # Serialisieren
@@ -248,7 +247,9 @@ async def get_insights_data(
 
     # Reservierungen im Zeitraum
     reservations_result = await session.execute(
-        select(func.count(Reservation.id), func.coalesce(func.sum(Reservation.party_size), 0)).where(
+        select(
+            func.count(Reservation.id), func.coalesce(func.sum(Reservation.party_size), 0)
+        ).where(
             Reservation.tenant_id == rid,
             Reservation.start_at >= period_start,
             Reservation.start_at < period_end,
@@ -260,8 +261,7 @@ async def get_insights_data(
     # Orders-Aggregat
     try:
         agg_result = await session.execute(
-            text(
-                """
+            text("""
                 SELECT
                     COUNT(*) AS orders_count,
                     COALESCE(SUM(total), 0) AS total_revenue,
@@ -271,8 +271,7 @@ async def get_insights_data(
                   AND opened_at >= :from_dt
                   AND opened_at < :to_dt
                   AND status NOT IN ('cancelled')
-                """
-            ),
+                """),
             {"tid": str(rid), "from_dt": period_start, "to_dt": period_end},
         )
         agg = dict(agg_result.one()._mapping)
@@ -282,8 +281,7 @@ async def get_insights_data(
 
         # Umsatz pro Tag
         revenue_by_day_result = await session.execute(
-            text(
-                """
+            text("""
                 SELECT
                     DATE(opened_at AT TIME ZONE 'UTC') AS day,
                     COALESCE(SUM(total), 0) AS revenue
@@ -294,35 +292,30 @@ async def get_insights_data(
                   AND status NOT IN ('cancelled')
                 GROUP BY day
                 ORDER BY day ASC
-                """
-            ),
+                """),
             {"tid": str(rid), "from_dt": period_start, "to_dt": period_end},
         )
         revenue_by_day = [
-            {"date": str(row.day), "revenue": float(row.revenue)}
-            for row in revenue_by_day_result
+            {"date": str(row.day), "revenue": float(row.revenue)} for row in revenue_by_day_result
         ]
 
         # Bestellungen nach Status
         status_result = await session.execute(
-            text(
-                """
+            text("""
                 SELECT status, COUNT(*) AS cnt
                 FROM orders
                 WHERE tenant_id = :tid
                   AND opened_at >= :from_dt
                   AND opened_at < :to_dt
                 GROUP BY status
-                """
-            ),
+                """),
             {"tid": str(rid), "from_dt": period_start, "to_dt": period_end},
         )
         orders_by_status = {row.status: int(row.cnt) for row in status_result}
 
         # Beliebteste Artikel
         popular_result = await session.execute(
-            text(
-                """
+            text("""
                 SELECT
                     oi.item_name AS name,
                     SUM(oi.quantity) AS quantity,
@@ -336,8 +329,7 @@ async def get_insights_data(
                 GROUP BY oi.item_name
                 ORDER BY quantity DESC
                 LIMIT 10
-                """
-            ),
+                """),
             {"tid": str(rid), "from_dt": period_start, "to_dt": period_end},
         )
         popular_items = [

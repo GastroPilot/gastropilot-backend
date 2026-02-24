@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 import threading
 from contextlib import asynccontextmanager
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Redis Consumer in separatem Thread starten
     from app.worker import start_redis_consumer
+
     consumer_thread = threading.Thread(
         target=start_redis_consumer,
         name="redis-consumer",

@@ -2,7 +2,18 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,7 +63,10 @@ class VoucherUsage(Base):
         index=True,
     )
     reservation_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("reservations.id", ondelete="SET NULL"), nullable=True, index=True
+        UUID(as_uuid=True),
+        ForeignKey("reservations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

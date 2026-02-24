@@ -2,7 +2,18 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -45,7 +56,9 @@ class TableDayConfig(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    __table_args__ = (UniqueConstraint("tenant_id", "table_id", "date", name="uq_table_day_config"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "table_id", "date", name="uq_table_day_config"),
+    )
 
 
 class ReservationTable(Base):

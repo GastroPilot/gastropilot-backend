@@ -29,6 +29,7 @@ class UpsellPackageCreate(BaseModel):
     image_url: str | None = None
     display_order: int = 0
 
+
 class UpsellPackageUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
@@ -42,6 +43,7 @@ class UpsellPackageUpdate(BaseModel):
     available_weekdays: list[int] | None = None
     image_url: str | None = None
     display_order: int | None = None
+
 
 class UpsellPackageResponse(BaseModel):
     id: UUID
@@ -61,6 +63,7 @@ class UpsellPackageResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
 
 class AvailabilityRequest(BaseModel):
     date: date
@@ -88,9 +91,7 @@ async def list_packages(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(UpsellPackage).order_by(UpsellPackage.display_order)
-    )
+    result = await db.execute(select(UpsellPackage).order_by(UpsellPackage.display_order))
     return result.scalars().all()
 
 
@@ -171,7 +172,15 @@ async def check_availability(
         if pkg.available_weekdays and weekday not in pkg.available_weekdays:
             continue
         if body.time and pkg.available_times:
-            weekday_name = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"][weekday]
+            weekday_name = [
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday",
+            ][weekday]
             allowed_times = pkg.available_times.get(weekday_name, [])
             if allowed_times and body.time not in allowed_times:
                 continue

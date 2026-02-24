@@ -46,7 +46,10 @@ class Message(Base):
         index=True,
     )
     reservation_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("reservations.id", ondelete="SET NULL"), nullable=True, index=True
+        UUID(as_uuid=True),
+        ForeignKey("reservations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     guest_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("guests.id", ondelete="SET NULL"), nullable=True, index=True

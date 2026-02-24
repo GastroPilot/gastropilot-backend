@@ -1,10 +1,11 @@
 from __future__ import annotations
+
 import logging
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
 
 from app.models.reservation import Reservation
 from app.models.restaurant import Table
@@ -64,8 +65,12 @@ async def get_available_timeslots(
 
     # Zeitslots generieren
     slots = []
-    current_time = datetime(target_date.year, target_date.month, target_date.day, OPENING_HOUR, 0, tzinfo=UTC)
-    end_of_service = datetime(target_date.year, target_date.month, target_date.day, CLOSING_HOUR, 0, tzinfo=UTC)
+    current_time = datetime(
+        target_date.year, target_date.month, target_date.day, OPENING_HOUR, 0, tzinfo=UTC
+    )
+    end_of_service = datetime(
+        target_date.year, target_date.month, target_date.day, CLOSING_HOUR, 0, tzinfo=UTC
+    )
     slot_end = end_of_service - timedelta(minutes=duration_minutes)
 
     while current_time <= slot_end:
@@ -78,7 +83,9 @@ async def get_available_timeslots(
             for res in existing_reservations:
                 if res.table_id != table.id:
                     continue
-                res_end = res.ends_at or (res.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES))
+                res_end = res.ends_at or (
+                    res.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)
+                )
                 # Überlappungs-Check
                 if not (slot_end_time <= res.starts_at or current_time >= res_end):
                     conflict = True
@@ -86,12 +93,14 @@ async def get_available_timeslots(
             if not conflict:
                 available_count += 1
 
-        slots.append(TimeSlot(
-            starts_at=current_time,
-            ends_at=slot_end_time,
-            available=available_count > 0,
-            available_tables=available_count,
-        ))
+        slots.append(
+            TimeSlot(
+                starts_at=current_time,
+                ends_at=slot_end_time,
+                available=available_count > 0,
+                available_tables=available_count,
+            )
+        )
 
         current_time += timedelta(minutes=DEFAULT_SLOT_INTERVAL_MINUTES)
 
@@ -107,12 +116,14 @@ async def find_available_table(
 ) -> Table | None:
     """Findet den passendsten freien Tisch für eine Reservierung."""
     tables_result = await session.execute(
-        select(Table).where(
+        select(Table)
+        .where(
             and_(
                 Table.capacity >= party_size,
                 Table.is_active.is_(True),
             )
-        ).order_by(Table.capacity)  # kleinsten passenden zuerst
+        )
+        .order_by(Table.capacity)  # kleinsten passenden zuerst
     )
     suitable_tables = tables_result.scalars().all()
 

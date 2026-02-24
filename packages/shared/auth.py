@@ -56,6 +56,7 @@ def _get_secret() -> str:
 # Password utilities (Email/Password auth)
 # ---------------------------------------------------------------------------
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(
@@ -76,6 +77,7 @@ def hash_password(plain_password: str) -> str:
 # PIN utilities (Staff PIN auth)
 # ---------------------------------------------------------------------------
 
+
 def verify_pin(plain_pin: str, hashed_pin: str) -> bool:
     try:
         return bcrypt.checkpw(
@@ -95,6 +97,7 @@ def hash_pin(plain_pin: str) -> str:
 # ---------------------------------------------------------------------------
 # Token utilities
 # ---------------------------------------------------------------------------
+
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
     """
@@ -156,9 +159,7 @@ def verify_token(token: str, token_type: str = "access") -> dict | None:
         )
 
         if payload.get("type") != token_type:
-            logger.warning(
-                f"Token type mismatch: expected {token_type}, got {payload.get('type')}"
-            )
+            logger.warning(f"Token type mismatch: expected {token_type}, got {payload.get('type')}")
             return None
 
         return payload

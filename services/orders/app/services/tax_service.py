@@ -1,4 +1,5 @@
 """Tax calculation service for German VAT (7%/19%) with discount distribution."""
+
 from __future__ import annotations
 
 

@@ -1,4 +1,5 @@
 """Seating suggestion endpoint with block/reservation awareness."""
+
 from __future__ import annotations
 
 from datetime import datetime

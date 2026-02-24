@@ -1,13 +1,14 @@
 from __future__ import annotations
+
 from datetime import timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db, require_staff_or_above
-from app.models.reservation import Reservation, Guest
+from app.models.reservation import Guest, Reservation
 from app.models.user import User
 from app.schemas.reservation import (
     ReservationCreate,
@@ -37,6 +38,7 @@ async def list_reservations(
 
     if date:
         from datetime import UTC, datetime
+
         day_start = datetime.fromisoformat(date).replace(tzinfo=UTC)
         day_end = day_start + timedelta(days=1)
         filters.append(Reservation.starts_at >= day_start)
@@ -115,6 +117,7 @@ async def get_timeslots(
 ):
     effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
     from datetime import date as date_type
+
     target_date = date_type.fromisoformat(date)
     return await get_available_timeslots(
         db,
@@ -131,9 +134,7 @@ async def get_reservation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(Reservation).where(Reservation.id == reservation_id)
-    )
+    result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
@@ -147,9 +148,7 @@ async def update_reservation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(Reservation).where(Reservation.id == reservation_id)
-    )
+    result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
@@ -168,9 +167,7 @@ async def cancel_reservation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(Reservation).where(Reservation.id == reservation_id)
-    )
+    result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")

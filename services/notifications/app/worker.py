@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -7,10 +8,10 @@ from typing import Any
 import redis
 from celery import Celery
 
-from app.core.config import settings
 from app.channels.email import render_template, send_email
 from app.channels.push import PushMessage, send_push_notification
 from app.channels.sms import send_sms
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ def _run_async(coro: Any) -> Any:
 # ---------------------------------------------------------------------------
 # Reservierungs-Benachrichtigungen
 # ---------------------------------------------------------------------------
+
 
 @celery_app.task(name="notifications.send_reservation_confirmation", bind=True, max_retries=3)
 def send_reservation_confirmation(
@@ -188,6 +190,7 @@ def send_reservation_reminder(
 # Bestell-Benachrichtigungen
 # ---------------------------------------------------------------------------
 
+
 @celery_app.task(name="notifications.send_order_ready", bind=True, max_retries=3)
 def send_order_ready(
     self,
@@ -242,7 +245,9 @@ def send_order_ready(
 
     if guest_phone:
         try:
-            sms_text = f"Ihre Bestellung #{order_number} bei {restaurant_name} ist fertig zur Abholung."
+            sms_text = (
+                f"Ihre Bestellung #{order_number} bei {restaurant_name} ist fertig zur Abholung."
+            )
             results["sms"] = _run_async(send_sms(guest_phone, sms_text))
         except Exception as exc:
             logger.error("SMS-Fehler bei Bestellbenachrichtigung: %s", exc)
@@ -254,6 +259,7 @@ def send_order_ready(
 # ---------------------------------------------------------------------------
 # Stornierung
 # ---------------------------------------------------------------------------
+
 
 @celery_app.task(name="notifications.send_reservation_canceled", bind=True, max_retries=3)
 def send_reservation_canceled(
@@ -310,6 +316,7 @@ def send_reservation_canceled(
 # Warteliste
 # ---------------------------------------------------------------------------
 
+
 @celery_app.task(name="notifications.send_waitlist_notification", bind=True, max_retries=3)
 def send_waitlist_notification(
     self,
@@ -361,6 +368,7 @@ def send_waitlist_notification(
 # ---------------------------------------------------------------------------
 # Prepayment-Bestaetigung
 # ---------------------------------------------------------------------------
+
 
 @celery_app.task(name="notifications.send_prepayment_confirmation", bind=True, max_retries=3)
 def send_prepayment_confirmation(
@@ -421,6 +429,7 @@ def send_prepayment_confirmation(
 # ---------------------------------------------------------------------------
 # Redis Pub/Sub Consumer
 # ---------------------------------------------------------------------------
+
 
 @celery_app.task(name="notifications.process_redis_event")
 def process_redis_event(event_name: str, payload_json: str) -> None:

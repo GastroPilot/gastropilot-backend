@@ -1,4 +1,5 @@
 """SumUp webhook receiver for payment status updates."""
+
 from __future__ import annotations
 
 import hashlib
@@ -26,12 +27,11 @@ async def sumup_webhook(request: Request):
 
     # Signature verification (optional — depends on config)
     from app.core.config import settings
+
     webhook_secret = getattr(settings, "SUMUP_WEBHOOK_SECRET", None)
     if webhook_secret:
         signature = request.headers.get("x-payload-signature", "")
-        expected = hmac.new(
-            webhook_secret.encode(), raw_body, hashlib.sha256
-        ).hexdigest()
+        expected = hmac.new(webhook_secret.encode(), raw_body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature, expected):
             raise HTTPException(status_code=401, detail="Invalid signature")
 
@@ -76,6 +76,7 @@ async def sumup_webhook(request: Request):
                 if len(parts) >= 2:
                     try:
                         from uuid import UUID
+
                         order_uuid = UUID(parts[1])
                         result = await db.execute(
                             select(SumUpPayment)

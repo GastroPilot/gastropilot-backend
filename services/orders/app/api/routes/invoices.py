@@ -1,4 +1,5 @@
 """Invoice/receipt PDF generation endpoint."""
+
 from __future__ import annotations
 
 import io
@@ -45,14 +46,29 @@ async def generate_invoice_pdf(
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4
-        from reportlab.lib.units import mm
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table as RLTable, TableStyle
         from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import (
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+        )
+        from reportlab.platypus import Table as RLTable
+        from reportlab.platypus import (
+            TableStyle,
+        )
     except ImportError:
         raise HTTPException(status_code=500, detail="ReportLab not installed")
 
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=20 * mm, bottomMargin=20 * mm)
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=20 * mm,
+        bottomMargin=20 * mm,
+    )
     styles = getSampleStyleSheet()
     story = []
 
@@ -61,32 +77,40 @@ async def generate_invoice_pdf(
     story.append(Spacer(1, 5 * mm))
 
     if order.opened_at:
-        story.append(Paragraph(f"Datum: {order.opened_at.strftime('%d.%m.%Y %H:%M')}", styles["Normal"]))
+        story.append(
+            Paragraph(f"Datum: {order.opened_at.strftime('%d.%m.%Y %H:%M')}", styles["Normal"])
+        )
     story.append(Spacer(1, 5 * mm))
 
     # Items table
     table_data = [["Artikel", "Menge", "Einzelpreis", "MwSt", "Gesamt"]]
     for item in items:
         tax_pct = f"{int(item.tax_rate * 100)}%"
-        table_data.append([
-            item.item_name,
-            str(item.quantity),
-            f"{item.unit_price:.2f} EUR",
-            tax_pct,
-            f"{item.total_price:.2f} EUR",
-        ])
+        table_data.append(
+            [
+                item.item_name,
+                str(item.quantity),
+                f"{item.unit_price:.2f} EUR",
+                tax_pct,
+                f"{item.total_price:.2f} EUR",
+            ]
+        )
 
     if table_data:
         t = RLTable(table_data, colWidths=[200, 50, 80, 50, 80])
-        t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-        ]))
+        t.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ]
+            )
+        )
         story.append(t)
 
     story.append(Spacer(1, 5 * mm))
@@ -106,12 +130,16 @@ async def generate_invoice_pdf(
     totals.append(["Gesamtbetrag:", f"{order.total:.2f} EUR"])
 
     totals_table = RLTable(totals, colWidths=[350, 110])
-    totals_table.setStyle(TableStyle([
-        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("LINEABOVE", (0, -1), (-1, -1), 1, colors.black),
-    ]))
+    totals_table.setStyle(
+        TableStyle(
+            [
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                ("LINEABOVE", (0, -1), (-1, -1), 1, colors.black),
+            ]
+        )
+    )
     story.append(totals_table)
 
     # Payment info
@@ -122,7 +150,9 @@ async def generate_invoice_pdf(
 
     if payment and payment.transaction_code:
         story.append(Spacer(1, 3 * mm))
-        story.append(Paragraph(f"SumUp Transaktionscode: {payment.transaction_code}", styles["Normal"]))
+        story.append(
+            Paragraph(f"SumUp Transaktionscode: {payment.transaction_code}", styles["Normal"])
+        )
 
     doc.build(story)
     buffer.seek(0)

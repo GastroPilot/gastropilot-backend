@@ -21,6 +21,7 @@ class RTDCCreate(BaseModel):
     start_at: datetime
     end_at: datetime
 
+
 class RTDCResponse(BaseModel):
     reservation_id: UUID
     table_day_config_id: UUID

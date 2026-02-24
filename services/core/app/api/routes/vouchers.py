@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_manager_or_above, require_staff_or_above
-from app.models.voucher import Voucher, VoucherUsage
 from app.models.user import User
+from app.models.voucher import Voucher, VoucherUsage
 
 router = APIRouter(prefix="/vouchers", tags=["vouchers"])
 
@@ -27,6 +27,7 @@ class VoucherCreate(BaseModel):
     min_order_value: float | None = None
     is_active: bool = True
 
+
 class VoucherUpdate(BaseModel):
     code: str | None = None
     name: str | None = None
@@ -38,6 +39,7 @@ class VoucherUpdate(BaseModel):
     max_uses: int | None = None
     min_order_value: float | None = None
     is_active: bool | None = None
+
 
 class VoucherResponse(BaseModel):
     id: UUID
@@ -58,9 +60,11 @@ class VoucherResponse(BaseModel):
     updated_at: datetime
     model_config = {"from_attributes": True}
 
+
 class VoucherValidateRequest(BaseModel):
     code: str
     order_value: float | None = None
+
 
 class VoucherValidateResponse(BaseModel):
     valid: bool
@@ -69,6 +73,7 @@ class VoucherValidateResponse(BaseModel):
     discount_value: float | None = None
     discount_amount: float | None = None
     message: str | None = None
+
 
 class VoucherUsageResponse(BaseModel):
     id: UUID
@@ -176,9 +181,7 @@ async def validate_voucher(
     """Public endpoint to validate a voucher code."""
     effective_tenant_id = getattr(request.state, "tenant_id", None)
 
-    result = await db.execute(
-        select(Voucher).where(Voucher.code == body.code.upper().strip())
-    )
+    result = await db.execute(select(Voucher).where(Voucher.code == body.code.upper().strip()))
     voucher = result.scalar_one_or_none()
 
     if not voucher:
@@ -196,7 +199,11 @@ async def validate_voucher(
     if voucher.max_uses and voucher.used_count >= voucher.max_uses:
         return VoucherValidateResponse(valid=False, message="Voucher usage limit reached")
 
-    if body.order_value is not None and voucher.min_order_value and body.order_value < voucher.min_order_value:
+    if (
+        body.order_value is not None
+        and voucher.min_order_value
+        and body.order_value < voucher.min_order_value
+    ):
         return VoucherValidateResponse(
             valid=False,
             message=f"Minimum order value of {voucher.min_order_value} EUR required",
@@ -222,6 +229,8 @@ async def get_voucher_usage(
     current_user: User = Depends(require_staff_or_above),
 ):
     result = await db.execute(
-        select(VoucherUsage).where(VoucherUsage.voucher_id == voucher_id).order_by(VoucherUsage.used_at.desc())
+        select(VoucherUsage)
+        .where(VoucherUsage.voucher_id == voucher_id)
+        .order_by(VoucherUsage.used_at.desc())
     )
     return result.scalars().all()

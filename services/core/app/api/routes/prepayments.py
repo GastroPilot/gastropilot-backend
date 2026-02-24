@@ -23,6 +23,7 @@ class PrepaymentCreate(BaseModel):
     payment_provider: str = "sumup"
     return_url: str | None = None
 
+
 class PrepaymentResponse(BaseModel):
     id: UUID
     reservation_id: UUID
@@ -50,9 +51,7 @@ async def create_prepayment(
     effective_tenant_id = getattr(request.state, "tenant_id", None)
 
     # Validate reservation exists
-    res_result = await db.execute(
-        select(Reservation).where(Reservation.id == body.reservation_id)
-    )
+    res_result = await db.execute(select(Reservation).where(Reservation.id == body.reservation_id))
     reservation = res_result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservation not found")

@@ -8,6 +8,7 @@ Usage:
     python migrate_legacy_data.py --legacy-db <LEGACY_URL> --target-db <TARGET_URL> --dry-run
     python migrate_legacy_data.py --legacy-db <LEGACY_URL> --target-db <TARGET_URL> --verify-only
 """
+
 from __future__ import annotations
 
 import argparse
@@ -15,7 +16,7 @@ import asyncio
 import logging
 import sys
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 import asyncpg
 
@@ -85,8 +86,13 @@ async def migrate_restaurants(ctx: MigrationContext) -> None:
                 created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, row["name"], row["slug"], row["address"],
-            row["phone"], row["email"], row["description"],
+            new_id,
+            row["name"],
+            row["slug"],
+            row["address"],
+            row["phone"],
+            row["email"],
+            row["description"],
             row.get("public_booking_enabled", False),
             row.get("booking_lead_time_hours", 2),
             row.get("booking_max_party_size", 12),
@@ -122,9 +128,16 @@ async def migrate_users(ctx: MigrationContext) -> None:
                 created_at, updated_at, last_login_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, row.get("operator_number"), row.get("pin_hash"),
-            row.get("nfc_tag_id"), row.get("email"), row.get("password_hash"),
-            row.get("first_name"), row.get("last_name"), new_role, "email",
+            new_id,
+            row.get("operator_number"),
+            row.get("pin_hash"),
+            row.get("nfc_tag_id"),
+            row.get("email"),
+            row.get("password_hash"),
+            row.get("first_name"),
+            row.get("last_name"),
+            new_role,
+            "email",
             row.get("is_active", True),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
@@ -149,7 +162,9 @@ async def migrate_areas(ctx: MigrationContext) -> None:
         await ctx.execute(
             """INSERT INTO areas (id, tenant_id, name)
             VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, row["name"],
+            new_id,
+            tenant_id,
+            row["name"],
         )
     ctx.counts["areas"] = len(rows)
 
@@ -175,13 +190,22 @@ async def migrate_tables(ctx: MigrationContext) -> None:
                 created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, area_id,
-            row.get("number"), row.get("capacity"), row.get("shape", "rectangle"),
-            row.get("position_x"), row.get("position_y"),
-            row.get("width", 120.0), row.get("height", 120.0),
-            row.get("is_active", True), row.get("notes"),
-            row.get("is_joinable", False), row.get("join_group_id"),
-            row.get("is_outdoor", False), row.get("rotation"),
+            new_id,
+            tenant_id,
+            area_id,
+            row.get("number"),
+            row.get("capacity"),
+            row.get("shape", "rectangle"),
+            row.get("position_x"),
+            row.get("position_y"),
+            row.get("width", 120.0),
+            row.get("height", 120.0),
+            row.get("is_active", True),
+            row.get("notes"),
+            row.get("is_joinable", False),
+            row.get("join_group_id"),
+            row.get("is_outdoor", False),
+            row.get("rotation"),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
         )
@@ -207,11 +231,19 @@ async def migrate_obstacles(ctx: MigrationContext) -> None:
                 rotation, blocking, color, notes
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, area_id,
-            row.get("type"), row.get("name"),
-            row.get("x"), row.get("y"), row.get("width"), row.get("height"),
-            row.get("rotation"), row.get("blocking", True),
-            row.get("color"), row.get("notes"),
+            new_id,
+            tenant_id,
+            area_id,
+            row.get("type"),
+            row.get("name"),
+            row.get("x"),
+            row.get("y"),
+            row.get("width"),
+            row.get("height"),
+            row.get("rotation"),
+            row.get("blocking", True),
+            row.get("color"),
+            row.get("notes"),
         )
     ctx.counts["obstacles"] = len(rows)
 
@@ -235,11 +267,17 @@ async def migrate_guests(ctx: MigrationContext) -> None:
                 created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id,
-            row.get("first_name"), row.get("last_name"),
-            row.get("email"), row.get("phone"),
-            row.get("language"), row.get("birthday"),
-            row.get("company"), row.get("type"), row.get("notes"),
+            new_id,
+            tenant_id,
+            row.get("first_name"),
+            row.get("last_name"),
+            row.get("email"),
+            row.get("phone"),
+            row.get("language"),
+            row.get("birthday"),
+            row.get("company"),
+            row.get("type"),
+            row.get("notes"),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
         )
@@ -263,8 +301,12 @@ async def migrate_menu(ctx: MigrationContext) -> None:
                 created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, row["name"], row.get("description"),
-            row.get("sort_order", 0), row.get("is_active", True),
+            new_id,
+            tenant_id,
+            row["name"],
+            row.get("description"),
+            row.get("sort_order", 0),
+            row.get("is_active", True),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
         )
@@ -285,10 +327,17 @@ async def migrate_menu(ctx: MigrationContext) -> None:
                 created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, cat_id,
-            row["name"], row.get("description"), row.get("price"),
-            row.get("tax_rate", 0.19), row.get("is_available", True),
-            row.get("sort_order", 0), row.get("allergens"), row.get("modifiers"),
+            new_id,
+            tenant_id,
+            cat_id,
+            row["name"],
+            row.get("description"),
+            row.get("price"),
+            row.get("tax_rate", 0.19),
+            row.get("is_available", True),
+            row.get("sort_order", 0),
+            row.get("allergens"),
+            row.get("modifiers"),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
         )
@@ -315,11 +364,19 @@ async def migrate_vouchers(ctx: MigrationContext) -> None:
                 created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, row["code"], row.get("name"), row.get("description"),
-            row.get("type", "fixed"), row.get("value"),
-            row.get("valid_from"), row.get("valid_until"),
-            row.get("max_uses"), row.get("used_count", 0),
-            row.get("min_order_value"), row.get("is_active", True),
+            new_id,
+            tenant_id,
+            row["code"],
+            row.get("name"),
+            row.get("description"),
+            row.get("type", "fixed"),
+            row.get("value"),
+            row.get("valid_from"),
+            row.get("valid_until"),
+            row.get("max_uses"),
+            row.get("used_count", 0),
+            row.get("min_order_value"),
+            row.get("is_active", True),
             created_by,
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
@@ -340,8 +397,11 @@ async def migrate_vouchers(ctx: MigrationContext) -> None:
                 discount_amount, used_at
             ) VALUES ($1,$2,$3,$4,$5,$6)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, voucher_id, reservation_id,
-            row.get("used_by_email"), row.get("discount_amount"),
+            new_id,
+            voucher_id,
+            reservation_id,
+            row.get("used_by_email"),
+            row.get("discount_amount"),
             row.get("used_at_utc"),
         )
     ctx.counts["voucher_usage"] = len(usage_rows)
@@ -362,8 +422,12 @@ async def migrate_blocks(ctx: MigrationContext) -> None:
         await ctx.execute(
             """INSERT INTO blocks (id, tenant_id, start_at, end_at, reason, created_by_user_id)
             VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, row["start_at"], row["end_at"],
-            row.get("reason"), created_by,
+            new_id,
+            tenant_id,
+            row["start_at"],
+            row["end_at"],
+            row.get("reason"),
+            created_by,
         )
     ctx.counts["blocks"] = len(rows)
 
@@ -378,7 +442,10 @@ async def migrate_blocks(ctx: MigrationContext) -> None:
         await ctx.execute(
             """INSERT INTO block_assignments (id, block_id, table_id, created_at)
             VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING""",
-            new_id, block_id, table_id, row.get("created_at_utc", datetime.now(UTC)),
+            new_id,
+            block_id,
+            table_id,
+            row.get("created_at_utc", datetime.now(UTC)),
         )
     ctx.counts["block_assignments"] = len(assignments)
 
@@ -403,12 +470,20 @@ async def migrate_upsell_packages(ctx: MigrationContext) -> None:
                 image_url, display_order, created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, row["name"], row.get("description"),
-            row.get("price"), row.get("is_active", True),
-            row.get("available_from_date"), row.get("available_until_date"),
-            row.get("min_party_size"), row.get("max_party_size"),
-            row.get("available_times"), row.get("available_weekdays"),
-            row.get("image_url"), row.get("display_order", 0),
+            new_id,
+            tenant_id,
+            row["name"],
+            row.get("description"),
+            row.get("price"),
+            row.get("is_active", True),
+            row.get("available_from_date"),
+            row.get("available_until_date"),
+            row.get("min_party_size"),
+            row.get("max_party_size"),
+            row.get("available_times"),
+            row.get("available_weekdays"),
+            row.get("image_url"),
+            row.get("display_order", 0),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
         )
@@ -440,16 +515,32 @@ async def migrate_reservations(ctx: MigrationContext) -> None:
                 created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, guest_id, table_id,
-            row["start_at"], row["end_at"],
-            row.get("party_size"), row.get("status", "pending"),
+            new_id,
+            tenant_id,
+            guest_id,
+            table_id,
+            row["start_at"],
+            row["end_at"],
+            row.get("party_size"),
+            row.get("status", "pending"),
             row.get("channel", "manual"),
-            row.get("guest_name"), row.get("guest_email"), row.get("guest_phone"),
-            row.get("confirmation_code"), row.get("special_requests"), row.get("notes"),
-            row.get("confirmed_at"), row.get("seated_at"), row.get("completed_at"),
-            row.get("canceled_at"), row.get("canceled_reason"), row.get("no_show_at"),
-            row.get("tags"), voucher_id, row.get("voucher_discount_amount"),
-            row.get("prepayment_required", False), row.get("prepayment_amount"),
+            row.get("guest_name"),
+            row.get("guest_email"),
+            row.get("guest_phone"),
+            row.get("confirmation_code"),
+            row.get("special_requests"),
+            row.get("notes"),
+            row.get("confirmed_at"),
+            row.get("seated_at"),
+            row.get("completed_at"),
+            row.get("canceled_at"),
+            row.get("canceled_reason"),
+            row.get("no_show_at"),
+            row.get("tags"),
+            voucher_id,
+            row.get("voucher_discount_amount"),
+            row.get("prepayment_required", False),
+            row.get("prepayment_amount"),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
         )
@@ -466,7 +557,10 @@ async def migrate_reservations(ctx: MigrationContext) -> None:
         await ctx.execute(
             """INSERT INTO reservation_tables (reservation_id, table_id, start_at, end_at)
             VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING""",
-            res_id, tbl_id, row.get("start_at"), row.get("end_at"),
+            res_id,
+            tbl_id,
+            row.get("start_at"),
+            row.get("end_at"),
         )
     ctx.counts["reservation_tables"] = len(rt_rows)
 
@@ -482,7 +576,11 @@ async def migrate_reservations(ctx: MigrationContext) -> None:
         await ctx.execute(
             """INSERT INTO reservation_upsell_packages (id, reservation_id, upsell_package_id, price_at_time, created_at)
             VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING""",
-            new_id, res_id, pkg_id, row.get("price_at_time"), row.get("created_at_utc"),
+            new_id,
+            res_id,
+            pkg_id,
+            row.get("price_at_time"),
+            row.get("created_at_utc"),
         )
     ctx.counts["reservation_upsell_packages"] = len(rup_rows)
 
@@ -502,10 +600,15 @@ async def migrate_reservations(ctx: MigrationContext) -> None:
                 status, payment_data, created_at, updated_at, completed_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, res_id, tenant_id,
-            row.get("amount"), row.get("currency", "EUR"),
-            row.get("payment_provider"), row.get("payment_id"),
-            row.get("transaction_id"), row.get("status", "pending"),
+            new_id,
+            res_id,
+            tenant_id,
+            row.get("amount"),
+            row.get("currency", "EUR"),
+            row.get("payment_provider"),
+            row.get("payment_id"),
+            row.get("transaction_id"),
+            row.get("status", "pending"),
             row.get("payment_data"),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
@@ -534,14 +637,25 @@ async def migrate_table_day_configs(ctx: MigrationContext) -> None:
                 is_joinable, rotation, notes, created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, table_id, row["date"],
-            row.get("is_hidden", False), row.get("is_temporary", False),
-            row.get("number"), row.get("capacity"), row.get("shape"),
-            row.get("position_x"), row.get("position_y"),
-            row.get("width"), row.get("height"),
-            row.get("is_active"), row.get("color"),
-            row.get("join_group_id"), row.get("is_joinable"),
-            row.get("rotation"), row.get("notes"),
+            new_id,
+            tenant_id,
+            table_id,
+            row["date"],
+            row.get("is_hidden", False),
+            row.get("is_temporary", False),
+            row.get("number"),
+            row.get("capacity"),
+            row.get("shape"),
+            row.get("position_x"),
+            row.get("position_y"),
+            row.get("width"),
+            row.get("height"),
+            row.get("is_active"),
+            row.get("color"),
+            row.get("join_group_id"),
+            row.get("is_joinable"),
+            row.get("rotation"),
+            row.get("notes"),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
         )
@@ -575,17 +689,30 @@ async def migrate_orders(ctx: MigrationContext) -> None:
                 created_by_user_id, created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, table_id, guest_id, res_id,
-            row.get("order_number"), row.get("status", "open"),
+            new_id,
+            tenant_id,
+            table_id,
+            guest_id,
+            res_id,
+            row.get("order_number"),
+            row.get("status", "open"),
             row.get("party_size"),
-            row.get("subtotal", 0), row.get("tax_amount_7", 0),
-            row.get("tax_amount_19", 0), row.get("tax_amount", 0),
-            row.get("discount_amount", 0), row.get("discount_percentage"),
-            row.get("tip_amount", 0), row.get("total", 0),
-            row.get("payment_method"), row.get("payment_status", "unpaid"),
+            row.get("subtotal", 0),
+            row.get("tax_amount_7", 0),
+            row.get("tax_amount_19", 0),
+            row.get("tax_amount", 0),
+            row.get("discount_amount", 0),
+            row.get("discount_percentage"),
+            row.get("tip_amount", 0),
+            row.get("total", 0),
+            row.get("payment_method"),
+            row.get("payment_status", "unpaid"),
             row.get("split_payments"),
-            row.get("notes"), row.get("special_requests"),
-            row.get("opened_at"), row.get("closed_at"), row.get("paid_at"),
+            row.get("notes"),
+            row.get("special_requests"),
+            row.get("opened_at"),
+            row.get("closed_at"),
+            row.get("paid_at"),
             created_by,
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
@@ -608,12 +735,19 @@ async def migrate_orders(ctx: MigrationContext) -> None:
                 status, notes, sort_order, created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, order_id, menu_item_id,
-            row.get("item_name"), row.get("item_description"),
-            row.get("category"), row.get("quantity", 1),
-            row.get("unit_price"), row.get("total_price"),
-            row.get("tax_rate", 0.19), row.get("status", "pending"),
-            row.get("notes"), row.get("sort_order", 0),
+            new_id,
+            order_id,
+            menu_item_id,
+            row.get("item_name"),
+            row.get("item_description"),
+            row.get("category"),
+            row.get("quantity", 1),
+            row.get("unit_price"),
+            row.get("total_price"),
+            row.get("tax_rate", 0.19),
+            row.get("status", "pending"),
+            row.get("notes"),
+            row.get("sort_order", 0),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
         )
@@ -636,13 +770,20 @@ async def migrate_orders(ctx: MigrationContext) -> None:
                 initiated_at, completed_at, created_at, updated_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, order_id, tenant_id,
-            row.get("checkout_id"), row.get("client_transaction_id"),
-            row.get("transaction_code"), row.get("transaction_id"),
+            new_id,
+            order_id,
+            tenant_id,
+            row.get("checkout_id"),
+            row.get("client_transaction_id"),
+            row.get("transaction_code"),
+            row.get("transaction_id"),
             row.get("reader_id"),
-            row.get("amount"), row.get("currency", "EUR"),
-            row.get("status", "pending"), row.get("webhook_data"),
-            row.get("initiated_at"), row.get("completed_at"),
+            row.get("amount"),
+            row.get("currency", "EUR"),
+            row.get("status", "pending"),
+            row.get("webhook_data"),
+            row.get("initiated_at"),
+            row.get("completed_at"),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
         )
@@ -667,11 +808,18 @@ async def migrate_waitlist_messages(ctx: MigrationContext) -> None:
                 status, priority, notified_at, confirmed_at, notes, created_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, guest_id,
-            row.get("party_size"), row.get("desired_from"), row.get("desired_to"),
-            row.get("status", "waiting"), row.get("priority"),
-            row.get("notified_at"), row.get("confirmed_at"),
-            row.get("notes"), row.get("created_at_utc", datetime.now(UTC)),
+            new_id,
+            tenant_id,
+            guest_id,
+            row.get("party_size"),
+            row.get("desired_from"),
+            row.get("desired_to"),
+            row.get("status", "waiting"),
+            row.get("priority"),
+            row.get("notified_at"),
+            row.get("confirmed_at"),
+            row.get("notes"),
+            row.get("created_at_utc", datetime.now(UTC)),
         )
     ctx.counts["waitlist"] = len(wl_rows)
 
@@ -690,9 +838,14 @@ async def migrate_waitlist_messages(ctx: MigrationContext) -> None:
                 address, body, status, created_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, res_id, guest_id,
-            row.get("direction"), row.get("channel"),
-            row.get("address"), row.get("body"),
+            new_id,
+            tenant_id,
+            res_id,
+            guest_id,
+            row.get("direction"),
+            row.get("channel"),
+            row.get("address"),
+            row.get("body"),
             row.get("status", "queued"),
             row.get("created_at_utc", datetime.now(UTC)),
         )
@@ -713,7 +866,9 @@ async def migrate_user_settings_audit(ctx: MigrationContext) -> None:
         await ctx.execute(
             """INSERT INTO user_settings (id, user_id, settings, created_at, updated_at)
             VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING""",
-            new_id, user_id, row.get("settings"),
+            new_id,
+            user_id,
+            row.get("settings"),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
         )
@@ -733,10 +888,15 @@ async def migrate_user_settings_audit(ctx: MigrationContext) -> None:
                 action, description, details, ip_address, created_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
             ON CONFLICT (id) DO NOTHING""",
-            new_id, tenant_id, user_id,
-            row.get("entity_type"), str(row.get("entity_id", "")),
-            row.get("action"), row.get("description"),
-            row.get("details"), row.get("ip_address"),
+            new_id,
+            tenant_id,
+            user_id,
+            row.get("entity_type"),
+            str(row.get("entity_id", "")),
+            row.get("action"),
+            row.get("description"),
+            row.get("details"),
+            row.get("ip_address"),
             row.get("created_at_utc", datetime.now(UTC)),
         )
     ctx.counts["audit_logs"] = len(al_rows)
@@ -748,7 +908,9 @@ async def migrate_user_settings_audit(ctx: MigrationContext) -> None:
 async def save_id_mapping(ctx: MigrationContext) -> None:
     """Persist the ID mapping table for rollback support."""
     if ctx.dry_run:
-        logger.info("DRY-RUN: Would save %d mapping entries", sum(len(v) for v in ctx.id_map.values()))
+        logger.info(
+            "DRY-RUN: Would save %d mapping entries", sum(len(v) for v in ctx.id_map.values())
+        )
         return
 
     await ctx.execute("""
@@ -766,7 +928,9 @@ async def save_id_mapping(ctx: MigrationContext) -> None:
             await ctx.execute(
                 """INSERT INTO _migration_id_map (table_name, old_int_id, new_uuid)
                 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING""",
-                table_name, old_id, new_uuid,
+                table_name,
+                old_id,
+                new_uuid,
             )
 
     total = sum(len(v) for v in ctx.id_map.values())
@@ -779,13 +943,31 @@ async def save_id_mapping(ctx: MigrationContext) -> None:
 async def verify_migration(legacy_pool: asyncpg.Pool, target_pool: asyncpg.Pool) -> bool:
     """Compare row counts between legacy and target databases."""
     tables = [
-        "restaurants", "users", "areas", "tables", "obstacles", "guests",
-        "menu_categories", "menu_items", "vouchers", "voucher_usage",
-        "blocks", "block_assignments", "upsell_packages",
-        "reservations", "reservation_tables", "reservation_upsell_packages",
-        "reservation_prepayments", "table_day_configs",
-        "orders", "order_items", "sumup_payments",
-        "waitlist", "messages", "user_settings", "audit_logs",
+        "restaurants",
+        "users",
+        "areas",
+        "tables",
+        "obstacles",
+        "guests",
+        "menu_categories",
+        "menu_items",
+        "vouchers",
+        "voucher_usage",
+        "blocks",
+        "block_assignments",
+        "upsell_packages",
+        "reservations",
+        "reservation_tables",
+        "reservation_upsell_packages",
+        "reservation_prepayments",
+        "table_day_configs",
+        "orders",
+        "order_items",
+        "sumup_payments",
+        "waitlist",
+        "messages",
+        "user_settings",
+        "audit_logs",
     ]
 
     all_ok = True
@@ -811,7 +993,9 @@ async def verify_migration(legacy_pool: asyncpg.Pool, target_pool: asyncpg.Pool)
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-async def run_migration(legacy_url: str, target_url: str, dry_run: bool = False, verify_only: bool = False) -> None:
+async def run_migration(
+    legacy_url: str, target_url: str, dry_run: bool = False, verify_only: bool = False
+) -> None:
     legacy_pool = await asyncpg.create_pool(legacy_url, min_size=1, max_size=5)
     target_pool = await asyncpg.create_pool(target_url, min_size=1, max_size=5)
 
@@ -868,14 +1052,22 @@ async def run_migration(legacy_url: str, target_url: str, dry_run: bool = False,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Migrate GastroPilot legacy data to microservices schema")
+    parser = argparse.ArgumentParser(
+        description="Migrate GastroPilot legacy data to microservices schema"
+    )
     parser.add_argument("--legacy-db", required=True, help="Legacy database URL (postgresql://...)")
     parser.add_argument("--target-db", required=True, help="Target database URL (postgresql://...)")
     parser.add_argument("--dry-run", action="store_true", help="Simulate migration without writing")
-    parser.add_argument("--verify-only", action="store_true", help="Only verify counts, no migration")
+    parser.add_argument(
+        "--verify-only", action="store_true", help="Only verify counts, no migration"
+    )
     args = parser.parse_args()
 
-    asyncio.run(run_migration(args.legacy_db, args.target_db, dry_run=args.dry_run, verify_only=args.verify_only))
+    asyncio.run(
+        run_migration(
+            args.legacy_db, args.target_db, dry_run=args.dry_run, verify_only=args.verify_only
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 """Public reservation endpoints for the booking widget."""
+
 from __future__ import annotations
 
 import logging
@@ -32,10 +33,12 @@ RESTAURANT_TZ = ZoneInfo("Europe/Berlin")
 
 # --- Schemas ---
 
+
 class NotificationChannels(BaseModel):
     email: bool = True
     sms: bool = False
     whatsapp: bool = False
+
 
 class PublicReservationCreate(BaseModel):
     guest_name: str
@@ -52,15 +55,18 @@ class PublicReservationCreate(BaseModel):
     upsell_package_ids: list[UUID] | None = None
     prepayment_required: bool = False
 
+
 class AvailabilitySlot(BaseModel):
     time: str
     available: bool
     tables_available: int
 
+
 class AvailabilityResponse(BaseModel):
     date: str
     slots: list[AvailabilitySlot]
     max_party_size: int
+
 
 class PublicRestaurantInfo(BaseModel):
     id: UUID
@@ -72,6 +78,7 @@ class PublicRestaurantInfo(BaseModel):
     opening_hours: dict | None = None
     max_party_size: int
     lead_time_hours: int
+
 
 class PublicReservationResponse(BaseModel):
     success: bool
@@ -86,6 +93,7 @@ class PublicReservationResponse(BaseModel):
     prepayment_checkout_url: str | None = None
     prepayment_amount: float | None = None
 
+
 class ReservationUpdateRequest(BaseModel):
     desired_date: date | None = None
     desired_time: str | None = None
@@ -94,6 +102,7 @@ class ReservationUpdateRequest(BaseModel):
 
 
 # --- Helpers ---
+
 
 async def _get_restaurant_by_slug(slug: str, db: AsyncSession) -> Restaurant:
     result = await db.execute(select(Restaurant).where(Restaurant.slug == slug))
@@ -115,13 +124,15 @@ async def _find_available_table(
 ) -> Table | None:
     """Find smallest available table that fits the party."""
     tables_result = await db.execute(
-        select(Table).where(
+        select(Table)
+        .where(
             and_(
                 Table.tenant_id == tenant_id,
                 Table.is_active.is_(True),
                 Table.capacity >= party_size,
             )
-        ).order_by(Table.capacity)
+        )
+        .order_by(Table.capacity)
     )
     tables = tables_result.scalars().all()
 
@@ -212,6 +223,7 @@ async def _count_available_tables(
 
 # --- Endpoints ---
 
+
 @router.get("/{slug}/info", response_model=PublicRestaurantInfo)
 async def get_restaurant_info(slug: str, db: AsyncSession = Depends(get_db)):
     restaurant = await _get_restaurant_by_slug(slug, db)
@@ -263,12 +275,10 @@ async def check_availability(
             slot_utc = slot_local.astimezone(UTC)
             end_utc = slot_utc + timedelta(minutes=duration)
 
-            count = await _count_available_tables(
-                db, restaurant.id, slot_utc, end_utc, party_size
+            count = await _count_available_tables(db, restaurant.id, slot_utc, end_utc, party_size)
+            slots.append(
+                AvailabilitySlot(time=time_str, available=count > 0, tables_available=count)
             )
-            slots.append(AvailabilitySlot(
-                time=time_str, available=count > 0, tables_available=count
-            ))
 
     return AvailabilityResponse(
         date=check_date.isoformat(),
@@ -277,7 +287,11 @@ async def check_availability(
     )
 
 
-@router.post("/{slug}/reservations", response_model=PublicReservationResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{slug}/reservations",
+    response_model=PublicReservationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_reservation(
     slug: str,
     body: PublicReservationCreate,
@@ -300,7 +314,9 @@ async def create_reservation(
     now_local = datetime.now(RESTAURANT_TZ)
     lead_cutoff = now_local + timedelta(hours=restaurant.booking_lead_time_hours)
     if slot_local <= lead_cutoff:
-        raise HTTPException(status_code=400, detail="Reservation time does not meet lead time requirement")
+        raise HTTPException(
+            status_code=400, detail="Reservation time does not meet lead time requirement"
+        )
 
     start_utc = slot_local.astimezone(UTC)
     duration = restaurant.booking_default_duration
@@ -313,9 +329,7 @@ async def create_reservation(
 
     # Create or find guest
     guest_result = await db.execute(
-        select(Guest).where(
-            and_(Guest.tenant_id == restaurant.id, Guest.email == body.guest_email)
-        )
+        select(Guest).where(and_(Guest.tenant_id == restaurant.id, Guest.email == body.guest_email))
     )
     guest = guest_result.scalar_one_or_none()
     if not guest:
@@ -378,24 +392,28 @@ async def create_reservation(
                 reservation.voucher_id = voucher.id
                 reservation.voucher_discount_amount = discount
                 voucher.used_count += 1
-                db.add(VoucherUsage(
-                    voucher_id=voucher.id,
-                    tenant_id=restaurant.id,
-                    used_by_email=body.guest_email,
-                    discount_amount=discount,
-                ))
+                db.add(
+                    VoucherUsage(
+                        voucher_id=voucher.id,
+                        tenant_id=restaurant.id,
+                        used_by_email=body.guest_email,
+                        discount_amount=discount,
+                    )
+                )
 
     db.add(reservation)
     await db.flush()
 
     # Reservation-Table junction
-    db.add(ReservationTable(
-        reservation_id=reservation.id,
-        table_id=table.id,
-        tenant_id=restaurant.id,
-        start_at=start_utc,
-        end_at=end_utc,
-    ))
+    db.add(
+        ReservationTable(
+            reservation_id=reservation.id,
+            table_id=table.id,
+            tenant_id=restaurant.id,
+            start_at=start_utc,
+            end_at=end_utc,
+        )
+    )
 
     # Upsell packages
     prepayment_amount = 0.0
@@ -412,12 +430,14 @@ async def create_reservation(
             )
             pkg = pkg_result.scalar_one_or_none()
             if pkg:
-                db.add(ReservationUpsellPackage(
-                    reservation_id=reservation.id,
-                    upsell_package_id=pkg.id,
-                    tenant_id=restaurant.id,
-                    price_at_time=pkg.price,
-                ))
+                db.add(
+                    ReservationUpsellPackage(
+                        reservation_id=reservation.id,
+                        upsell_package_id=pkg.id,
+                        tenant_id=restaurant.id,
+                        price_at_time=pkg.price,
+                    )
+                )
                 prepayment_amount += pkg.price
 
     # Prepayment
@@ -427,13 +447,15 @@ async def create_reservation(
         reservation.prepayment_amount = prepayment_amount
         # SumUp checkout creation would go here
         # For now, create a pending prepayment record
-        db.add(ReservationPrepayment(
-            reservation_id=reservation.id,
-            tenant_id=restaurant.id,
-            amount=prepayment_amount,
-            payment_provider="sumup",
-            status="pending",
-        ))
+        db.add(
+            ReservationPrepayment(
+                reservation_id=reservation.id,
+                tenant_id=restaurant.id,
+                amount=prepayment_amount,
+                payment_provider="sumup",
+                status="pending",
+            )
+        )
 
     await db.commit()
     await db.refresh(reservation)
@@ -518,7 +540,9 @@ async def cancel_reservation(
         raise HTTPException(status_code=404, detail="Reservation not found")
 
     if reservation.status in ("seated", "completed", "canceled"):
-        raise HTTPException(status_code=400, detail=f"Cannot cancel reservation with status {reservation.status}")
+        raise HTTPException(
+            status_code=400, detail=f"Cannot cancel reservation with status {reservation.status}"
+        )
 
     reservation.status = "canceled"
     reservation.canceled_at = datetime.now(UTC)
@@ -562,9 +586,7 @@ async def download_ics(
     return Response(
         content=ics_content,
         media_type="text/calendar",
-        headers={
-            "Content-Disposition": f'attachment; filename="reservation-{code}.ics"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="reservation-{code}.ics"'},
     )
 
 
@@ -577,12 +599,14 @@ async def list_public_upsell_packages(
 ):
     restaurant = await _get_restaurant_by_slug(slug, db)
     result = await db.execute(
-        select(UpsellPackage).where(
+        select(UpsellPackage)
+        .where(
             and_(
                 UpsellPackage.tenant_id == restaurant.id,
                 UpsellPackage.is_active.is_(True),
             )
-        ).order_by(UpsellPackage.display_order)
+        )
+        .order_by(UpsellPackage.display_order)
     )
     packages = result.scalars().all()
 
@@ -601,13 +625,15 @@ async def list_public_upsell_packages(
             continue
         if pkg.available_weekdays and weekday not in pkg.available_weekdays:
             continue
-        available.append({
-            "id": str(pkg.id),
-            "name": pkg.name,
-            "description": pkg.description,
-            "price": pkg.price,
-            "image_url": pkg.image_url,
-        })
+        available.append(
+            {
+                "id": str(pkg.id),
+                "name": pkg.name,
+                "description": pkg.description,
+                "price": pkg.price,
+                "image_url": pkg.image_url,
+            }
+        )
 
     return available
 

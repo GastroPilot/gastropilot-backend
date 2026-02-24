@@ -7,6 +7,7 @@ Revision ID: 0003_missing_models
 Revises: 0002_remove_license
 Create Date: 2026-02-24
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -43,7 +44,9 @@ def upgrade() -> None:
         UNIQUE(block_id, table_id)
     )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS idx_block_assignments_tenant_id ON block_assignments(tenant_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_block_assignments_tenant_id ON block_assignments(tenant_id)"
+    )
 
     op.execute("""
     CREATE TABLE IF NOT EXISTS table_day_configs (
@@ -71,7 +74,9 @@ def upgrade() -> None:
         UNIQUE(tenant_id, table_id, date)
     )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS idx_table_day_configs_tenant_id ON table_day_configs(tenant_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_table_day_configs_tenant_id ON table_day_configs(tenant_id)"
+    )
     op.execute("CREATE INDEX IF NOT EXISTS idx_table_day_configs_date ON table_day_configs(date)")
 
     op.execute("""
@@ -84,7 +89,9 @@ def upgrade() -> None:
         PRIMARY KEY (reservation_id, table_id)
     )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS idx_reservation_tables_tenant_id ON reservation_tables(tenant_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_reservation_tables_tenant_id ON reservation_tables(tenant_id)"
+    )
 
     op.execute("""
     CREATE TABLE IF NOT EXISTS reservation_table_day_configs (
@@ -96,7 +103,9 @@ def upgrade() -> None:
         PRIMARY KEY (reservation_id, table_day_config_id)
     )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS idx_reservation_table_day_configs_tenant_id ON reservation_table_day_configs(tenant_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_reservation_table_day_configs_tenant_id ON reservation_table_day_configs(tenant_id)"
+    )
 
     op.execute("""
     CREATE TABLE IF NOT EXISTS waitlist (
@@ -161,7 +170,9 @@ def upgrade() -> None:
     )
     """)
     op.execute("CREATE INDEX IF NOT EXISTS idx_voucher_usage_tenant_id ON voucher_usage(tenant_id)")
-    op.execute("CREATE INDEX IF NOT EXISTS idx_voucher_usage_voucher_id ON voucher_usage(voucher_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_voucher_usage_voucher_id ON voucher_usage(voucher_id)"
+    )
 
     op.execute("""
     CREATE TABLE IF NOT EXISTS upsell_packages (
@@ -183,7 +194,9 @@ def upgrade() -> None:
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS idx_upsell_packages_tenant_id ON upsell_packages(tenant_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_upsell_packages_tenant_id ON upsell_packages(tenant_id)"
+    )
 
     op.execute("""
     CREATE TABLE IF NOT EXISTS reservation_upsell_packages (
@@ -196,7 +209,9 @@ def upgrade() -> None:
         UNIQUE(reservation_id, upsell_package_id)
     )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS idx_reservation_upsell_packages_tenant_id ON reservation_upsell_packages(tenant_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_reservation_upsell_packages_tenant_id ON reservation_upsell_packages(tenant_id)"
+    )
 
     op.execute("""
     CREATE TABLE IF NOT EXISTS reservation_prepayments (
@@ -215,7 +230,9 @@ def upgrade() -> None:
         completed_at TIMESTAMPTZ
     )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS idx_reservation_prepayments_tenant_id ON reservation_prepayments(tenant_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_reservation_prepayments_tenant_id ON reservation_prepayments(tenant_id)"
+    )
 
     op.execute("""
     CREATE TABLE IF NOT EXISTS messages (
@@ -235,10 +252,19 @@ def upgrade() -> None:
 
     # RLS for new tables
     for table in [
-        "blocks", "block_assignments", "table_day_configs", "reservation_tables",
-        "reservation_table_day_configs", "waitlist", "vouchers", "voucher_usage",
-        "upsell_packages", "reservation_upsell_packages", "reservation_prepayments",
-        "messages", "audit_logs",
+        "blocks",
+        "block_assignments",
+        "table_day_configs",
+        "reservation_tables",
+        "reservation_table_day_configs",
+        "waitlist",
+        "vouchers",
+        "voucher_usage",
+        "upsell_packages",
+        "reservation_upsell_packages",
+        "reservation_prepayments",
+        "messages",
+        "audit_logs",
     ]:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         op.execute(f"""
@@ -260,9 +286,18 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     for table in [
-        "messages", "reservation_prepayments", "reservation_upsell_packages",
-        "upsell_packages", "voucher_usage", "vouchers", "user_settings",
-        "waitlist", "reservation_table_day_configs", "reservation_tables",
-        "table_day_configs", "block_assignments", "blocks",
+        "messages",
+        "reservation_prepayments",
+        "reservation_upsell_packages",
+        "upsell_packages",
+        "voucher_usage",
+        "vouchers",
+        "user_settings",
+        "waitlist",
+        "reservation_table_day_configs",
+        "reservation_tables",
+        "table_day_configs",
+        "block_assignments",
+        "blocks",
     ]:
         op.execute(f"DROP TABLE IF EXISTS {table} CASCADE")

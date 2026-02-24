@@ -1,10 +1,10 @@
 """Menu recommendation engine with collaborative filtering on order history."""
+
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -112,13 +112,15 @@ def recommend_items(
         if not reason_parts:
             reason_parts.append("menu item")
 
-        recommendations.append(MenuRecommendation(
-            menu_item_id=item_id,
-            item_name=item_name,
-            score=round(score, 1),
-            safe_for_allergens=True,
-            reason=", ".join(reason_parts),
-        ))
+        recommendations.append(
+            MenuRecommendation(
+                menu_item_id=item_id,
+                item_name=item_name,
+                score=round(score, 1),
+                safe_for_allergens=True,
+                reason=", ".join(reason_parts),
+            )
+        )
 
     recommendations.sort(key=lambda x: x.score, reverse=True)
     return recommendations[:top_n]

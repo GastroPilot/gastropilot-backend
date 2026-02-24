@@ -1,4 +1,5 @@
 """Order statistics and analytics endpoints."""
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -73,9 +74,7 @@ async def top_items(
     if not order_ids:
         return []
 
-    items_result = await db.execute(
-        select(OrderItem).where(OrderItem.order_id.in_(order_ids))
-    )
+    items_result = await db.execute(select(OrderItem).where(OrderItem.order_id.in_(order_ids)))
     items = items_result.scalars().all()
 
     item_stats: dict[str, dict] = {}
@@ -109,9 +108,7 @@ async def category_statistics(
     if not order_ids:
         return {}
 
-    items_result = await db.execute(
-        select(OrderItem).where(OrderItem.order_id.in_(order_ids))
-    )
+    items_result = await db.execute(select(OrderItem).where(OrderItem.order_id.in_(order_ids)))
     items = items_result.scalars().all()
 
     cat_stats: dict[str, dict] = {}

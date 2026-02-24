@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_staff_or_above
-from app.models.waitlist import Message
 from app.models.user import User
+from app.models.waitlist import Message
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -24,12 +24,14 @@ class MessageCreate(BaseModel):
     body: str
     status: str = "queued"
 
+
 class MessageUpdate(BaseModel):
     direction: str | None = None
     channel: str | None = None
     address: str | None = None
     body: str | None = None
     status: str | None = None
+
 
 class MessageResponse(BaseModel):
     id: UUID

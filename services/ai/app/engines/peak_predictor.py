@@ -1,11 +1,11 @@
 """Peak occupancy prediction with historical data support."""
+
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +20,30 @@ class PeakPrediction:
 
 # Baseline occupancy by hour (used when no historical data available)
 _BASELINE: dict[int, float] = {
-    0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0,
-    6: 0.05, 7: 0.1, 8: 0.15, 9: 0.2, 10: 0.25,
-    11: 0.4, 12: 0.85, 13: 0.9, 14: 0.7, 15: 0.4,
-    16: 0.3, 17: 0.35, 18: 0.7, 19: 0.95, 20: 0.9,
-    21: 0.75, 22: 0.5, 23: 0.2,
+    0: 0.0,
+    1: 0.0,
+    2: 0.0,
+    3: 0.0,
+    4: 0.0,
+    5: 0.0,
+    6: 0.05,
+    7: 0.1,
+    8: 0.15,
+    9: 0.2,
+    10: 0.25,
+    11: 0.4,
+    12: 0.85,
+    13: 0.9,
+    14: 0.7,
+    15: 0.4,
+    16: 0.3,
+    17: 0.35,
+    18: 0.7,
+    19: 0.95,
+    20: 0.9,
+    21: 0.75,
+    22: 0.5,
+    23: 0.2,
 }
 
 _WEEKEND_MULTIPLIER = 1.15
@@ -61,7 +80,9 @@ def predict_peak(
     """
     is_weekend = date.weekday() >= 5
     is_friday = date.weekday() == 4
-    day_multiplier = _WEEKEND_MULTIPLIER if is_weekend else (_FRIDAY_MULTIPLIER if is_friday else 1.0)
+    day_multiplier = (
+        _WEEKEND_MULTIPLIER if is_weekend else (_FRIDAY_MULTIPLIER if is_friday else 1.0)
+    )
 
     # Build historical hourly averages if data provided
     hist_avg: dict[int, float] = {}
@@ -93,11 +114,13 @@ def predict_peak(
             confidence = 0.4 if not historical_data else 0.5
 
         occ = min(1.0, max(0.0, blended))
-        predictions.append(PeakPrediction(
-            hour=hour,
-            predicted_occupancy=round(occ, 2),
-            confidence=round(confidence, 2),
-            label=_label_for_occupancy(occ),
-        ))
+        predictions.append(
+            PeakPrediction(
+                hour=hour,
+                predicted_occupancy=round(occ, 2),
+                confidence=round(confidence, 2),
+                label=_label_for_occupancy(occ),
+            )
+        )
 
     return predictions

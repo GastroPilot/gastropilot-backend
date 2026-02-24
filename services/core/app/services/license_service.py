@@ -2,6 +2,7 @@
 License Service - Kommunikation mit Mutterschiff für Feature-Freischaltungen.
 Portiert vom Legacy-Monolith, angepasst für Core-Service-Architektur.
 """
+
 from __future__ import annotations
 
 import asyncio

@@ -1,4 +1,5 @@
 """WhatsApp bot with state-machine conversation flow for reservations."""
+
 from __future__ import annotations
 
 import json
@@ -92,7 +93,7 @@ async def _analyze_with_openai(text: str) -> NLPResult:
     system_prompt = (
         "Du bist ein NLP-Analyser fuer einen Restaurant-Reservierungsbot. "
         "Extrahiere intent und entities aus der Nachricht. "
-        "Antworte NUR mit JSON: {\"intent\": \"...\", \"entities\": {...}, \"confidence\": 0.0-1.0}. "
+        'Antworte NUR mit JSON: {"intent": "...", "entities": {...}, "confidence": 0.0-1.0}. '
         "Moegliche intents: reserve, cancel, modify, check_availability, greeting, help, yes, no, unknown. "
         "Moegliche entities: date (YYYY-MM-DD), time (HH:MM), party_size (int), name (str), "
         "confirmation_code (str), special_requests (str)."
@@ -272,7 +273,9 @@ async def _handle_init(session: ConversationSession, nlp: NLPResult) -> str:
 
 def _handle_collect_date(session: ConversationSession, nlp: NLPResult) -> str:
     if session.data.get("date"):
-        session.state = BotState.COLLECT_TIME if not session.data.get("time") else BotState.COLLECT_SIZE
+        session.state = (
+            BotState.COLLECT_TIME if not session.data.get("time") else BotState.COLLECT_SIZE
+        )
         if session.state == BotState.COLLECT_TIME:
             return f"Datum: {session.data['date']}. Um wie viel Uhr moechten Sie kommen?"
         return f"Datum: {session.data['date']}. Fuer wie viele Personen?"

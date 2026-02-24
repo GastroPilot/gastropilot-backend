@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_staff_or_above
-from app.models.waitlist import Waitlist
 from app.models.user import User
+from app.models.waitlist import Waitlist
 
 router = APIRouter(prefix="/waitlist", tags=["waitlist"])
 
@@ -24,6 +24,7 @@ class WaitlistCreate(BaseModel):
     priority: int | None = None
     notes: str | None = None
 
+
 class WaitlistUpdate(BaseModel):
     guest_id: UUID | None = None
     party_size: int | None = None
@@ -34,6 +35,7 @@ class WaitlistUpdate(BaseModel):
     notified_at: datetime | None = None
     confirmed_at: datetime | None = None
     notes: str | None = None
+
 
 class WaitlistResponse(BaseModel):
     id: UUID

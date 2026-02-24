@@ -2,7 +2,18 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -67,5 +78,7 @@ class ReservationUpsellPackage(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("reservation_id", "upsell_package_id", name="uq_reservation_upsell_package"),
+        UniqueConstraint(
+            "reservation_id", "upsell_package_id", name="uq_reservation_upsell_package"
+        ),
     )

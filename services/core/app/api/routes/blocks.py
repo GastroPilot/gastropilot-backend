@@ -18,15 +18,18 @@ router = APIRouter(prefix="/blocks", tags=["blocks"])
 
 # --- Schemas ---
 
+
 class BlockCreate(BaseModel):
     start_at: datetime
     end_at: datetime
     reason: str | None = None
 
+
 class BlockUpdate(BaseModel):
     start_at: datetime | None = None
     end_at: datetime | None = None
     reason: str | None = None
+
 
 class BlockResponse(BaseModel):
     id: UUID
@@ -37,9 +40,11 @@ class BlockResponse(BaseModel):
     created_by_user_id: UUID | None = None
     model_config = {"from_attributes": True}
 
+
 class BlockAssignmentCreate(BaseModel):
     block_id: UUID
     table_id: UUID
+
 
 class BlockAssignmentResponse(BaseModel):
     id: UUID
@@ -57,6 +62,7 @@ def _normalize_utc(dt: datetime) -> datetime:
 
 
 # --- Block CRUD ---
+
 
 @router.post("/", response_model=BlockResponse, status_code=status.HTTP_201_CREATED)
 async def create_block(
@@ -141,7 +147,10 @@ async def delete_block(
 
 # --- Block Assignment CRUD ---
 
-@router.post("/assignments", response_model=BlockAssignmentResponse, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/assignments", response_model=BlockAssignmentResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_block_assignment(
     request: Request,
     body: BlockAssignmentCreate,
@@ -185,9 +194,7 @@ async def list_assignments_by_block(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(BlockAssignment).where(BlockAssignment.block_id == block_id)
-    )
+    result = await db.execute(select(BlockAssignment).where(BlockAssignment.block_id == block_id))
     return result.scalars().all()
 
 
@@ -197,9 +204,7 @@ async def list_assignments_by_table(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(BlockAssignment).where(BlockAssignment.table_id == table_id)
-    )
+    result = await db.execute(select(BlockAssignment).where(BlockAssignment.table_id == table_id))
     return result.scalars().all()
 
 

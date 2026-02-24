@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 if settings.SENTRY_DSN:
     import sentry_sdk
+
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
         environment=settings.SENTRY_ENVIRONMENT,

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 
 from app.core.config import settings
@@ -11,7 +12,9 @@ async def send_sms(to: str, body: str) -> bool:
         logger.debug("SMS deaktiviert – überspringe Versand an %s", to)
         return False
 
-    if not all([settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_FROM_NUMBER]):
+    if not all(
+        [settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_FROM_NUMBER]
+    ):
         logger.error("Twilio-Konfiguration unvollständig")
         return False
 

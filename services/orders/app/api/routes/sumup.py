@@ -1,4 +1,5 @@
 """SumUp terminal management and payment endpoints."""
+
 from __future__ import annotations
 
 import uuid
@@ -10,8 +11,8 @@ from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_db, require_manager_or_above, require_staff_or_above
 from app.core.config import settings
+from app.core.deps import get_db, require_manager_or_above, require_staff_or_above
 from app.models.order import Order, OrderItem, SumUpPayment
 
 router = APIRouter(prefix="/sumup", tags=["sumup"])
@@ -21,6 +22,7 @@ class ReaderCreateRequest(BaseModel):
     pairing_code: str
     name: str
     metadata: dict | None = None
+
 
 class PaymentRequest(BaseModel):
     reader_id: str | None = None
@@ -36,6 +38,7 @@ async def _get_sumup_service():
     # Import here to avoid circular dependency
     import sys
     from pathlib import Path
+
     # Use shared sumup_service from core or inline
     from httpx import AsyncClient, Timeout
 
@@ -47,12 +50,14 @@ async def _get_sumup_service():
 
 # --- Reader endpoints ---
 
+
 @router.get("/readers")
 async def list_readers(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_staff_or_above),
 ):
     from httpx import AsyncClient, Timeout
+
     api_key = await _get_sumup_service()
     merchant_code = getattr(settings, "SUMUP_MERCHANT_CODE", None)
     if not merchant_code:
@@ -75,6 +80,7 @@ async def create_reader(
     current_user=Depends(require_manager_or_above),
 ):
     from httpx import AsyncClient, Timeout
+
     api_key = await _get_sumup_service()
     merchant_code = getattr(settings, "SUMUP_MERCHANT_CODE", None)
 
@@ -98,6 +104,7 @@ async def get_reader(
     current_user=Depends(require_staff_or_above),
 ):
     from httpx import AsyncClient, Timeout
+
     api_key = await _get_sumup_service()
     merchant_code = getattr(settings, "SUMUP_MERCHANT_CODE", None)
 
@@ -118,6 +125,7 @@ async def get_reader_status(
     current_user=Depends(require_staff_or_above),
 ):
     from httpx import AsyncClient, Timeout
+
     api_key = await _get_sumup_service()
     merchant_code = getattr(settings, "SUMUP_MERCHANT_CODE", None)
 
@@ -126,14 +134,13 @@ async def get_reader_status(
         timeout=Timeout(30.0),
         headers={"Authorization": f"Bearer {api_key}"},
     ) as client:
-        response = await client.get(
-            f"/v0.1/merchants/{merchant_code}/readers/{reader_id}/status"
-        )
+        response = await client.get(f"/v0.1/merchants/{merchant_code}/readers/{reader_id}/status")
         response.raise_for_status()
         return response.json()
 
 
 # --- Payment endpoints ---
+
 
 @router.post("/orders/{order_id}/pay")
 async def initiate_payment(
@@ -236,6 +243,7 @@ async def terminate_payment(
     current_user=Depends(require_staff_or_above),
 ):
     from httpx import AsyncClient, Timeout
+
     api_key = await _get_sumup_service()
     merchant_code = getattr(settings, "SUMUP_MERCHANT_CODE", None)
 
@@ -253,6 +261,7 @@ async def terminate_payment(
 
 
 # --- Payment history ---
+
 
 @router.get("/payments")
 async def list_payments(

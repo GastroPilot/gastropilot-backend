@@ -1,4 +1,5 @@
 """Peak occupancy prediction endpoint."""
+
 from __future__ import annotations
 
 from datetime import datetime

@@ -1,8 +1,9 @@
 from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
-from uuid import UUID
 from enum import StrEnum
+from uuid import UUID
 
 import httpx
 
