@@ -1,6 +1,6 @@
 from __future__ import annotations
 import logging
-from datetime import datetime, timedelta, timezone, date
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,7 +47,7 @@ async def get_available_timeslots(
     table_ids = [t.id for t in suitable_tables]
 
     # Bestehende Reservierungen für den Tag laden
-    day_start = datetime(target_date.year, target_date.month, target_date.day, 0, 0, tzinfo=timezone.utc)
+    day_start = datetime(target_date.year, target_date.month, target_date.day, 0, 0, tzinfo=UTC)
     day_end = day_start + timedelta(days=1)
 
     reservations_result = await session.execute(
@@ -64,8 +64,8 @@ async def get_available_timeslots(
 
     # Zeitslots generieren
     slots = []
-    current_time = datetime(target_date.year, target_date.month, target_date.day, OPENING_HOUR, 0, tzinfo=timezone.utc)
-    end_of_service = datetime(target_date.year, target_date.month, target_date.day, CLOSING_HOUR, 0, tzinfo=timezone.utc)
+    current_time = datetime(target_date.year, target_date.month, target_date.day, OPENING_HOUR, 0, tzinfo=UTC)
+    end_of_service = datetime(target_date.year, target_date.month, target_date.day, CLOSING_HOUR, 0, tzinfo=UTC)
     slot_end = end_of_service - timedelta(minutes=duration_minutes)
 
     while current_time <= slot_end:

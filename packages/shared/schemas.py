@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 
-class UserRole(str, Enum):
+class UserRole(StrEnum):
     guest = "guest"
     owner = "owner"
     manager = "manager"
@@ -23,7 +23,7 @@ PLATFORM_ROLES = {UserRole.platform_admin, UserRole.platform_support, UserRole.p
 MANAGEMENT_ROLES = {UserRole.owner, UserRole.manager}
 
 
-class AuthMethod(str, Enum):
+class AuthMethod(StrEnum):
     pin = "pin"
     password = "password"
 

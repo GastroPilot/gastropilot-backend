@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -82,8 +82,8 @@ async def get_dashboard_batch(
     obstacles = [_serialize(r) for r in obstacles_result.scalars().all()]
 
     # Reservations – gefiltert nach Datum wenn angegeben, sonst heutiger Tag
-    target_date = date or datetime.now(timezone.utc).date()
-    day_start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc)
+    target_date = date or datetime.now(UTC).date()
+    day_start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=UTC)
     day_end = day_start + timedelta(days=1)
 
     reservations_result = await session.execute(
@@ -239,12 +239,12 @@ async def get_insights_data(
     rid = restaurant.id
 
     # Zeitraum bestimmen
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     _to = to_date or today
     _from = from_date or (_to - timedelta(days=30))
 
-    period_start = datetime(_from.year, _from.month, _from.day, tzinfo=timezone.utc)
-    period_end = datetime(_to.year, _to.month, _to.day, tzinfo=timezone.utc) + timedelta(days=1)
+    period_start = datetime(_from.year, _from.month, _from.day, tzinfo=UTC)
+    period_end = datetime(_to.year, _to.month, _to.day, tzinfo=UTC) + timedelta(days=1)
 
     # Reservierungen im Zeitraum
     reservations_result = await session.execute(

@@ -2,7 +2,7 @@
 Tests for order endpoints.
 """
 import pytest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from httpx import AsyncClient
 
 
@@ -323,7 +323,7 @@ class TestOrderStatistics:
         from datetime import timedelta
         
         # Create some paid orders
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for i in range(5):
             order = Order(
                 restaurant_id=test_restaurant.id,

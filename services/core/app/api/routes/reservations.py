@@ -36,8 +36,8 @@ async def list_reservations(
     filters = []
 
     if date:
-        from datetime import datetime, timezone
-        day_start = datetime.fromisoformat(date).replace(tzinfo=timezone.utc)
+        from datetime import UTC, datetime
+        day_start = datetime.fromisoformat(date).replace(tzinfo=UTC)
         day_end = day_start + timedelta(days=1)
         filters.append(Reservation.starts_at >= day_start)
         filters.append(Reservation.starts_at < day_end)

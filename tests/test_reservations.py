@@ -2,7 +2,7 @@
 Tests for reservation endpoints.
 """
 import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from httpx import AsyncClient
 
 
@@ -18,7 +18,7 @@ class TestReservationCRUD:
         admin_auth_headers
     ):
         """Test creating a new reservation."""
-        start_time = datetime.now(timezone.utc) + timedelta(days=1)
+        start_time = datetime.now(UTC) + timedelta(days=1)
         end_time = start_time + timedelta(hours=2)
         
         response = await client.post(
@@ -54,7 +54,7 @@ class TestReservationCRUD:
         from app.database.models import Reservation
         
         # Create some reservations
-        start_time = datetime.now(timezone.utc) + timedelta(days=1)
+        start_time = datetime.now(UTC) + timedelta(days=1)
         for i in range(3):
             reservation = Reservation(
                 restaurant_id=test_restaurant.id,
@@ -89,7 +89,7 @@ class TestReservationCRUD:
         """Test getting a single reservation."""
         from app.database.models import Reservation
         
-        start_time = datetime.now(timezone.utc) + timedelta(days=1)
+        start_time = datetime.now(UTC) + timedelta(days=1)
         reservation = Reservation(
             restaurant_id=test_restaurant.id,
             table_id=test_table.id,
@@ -125,7 +125,7 @@ class TestReservationCRUD:
         """Test updating a reservation."""
         from app.database.models import Reservation
         
-        start_time = datetime.now(timezone.utc) + timedelta(days=1)
+        start_time = datetime.now(UTC) + timedelta(days=1)
         reservation = Reservation(
             restaurant_id=test_restaurant.id,
             table_id=test_table.id,
@@ -165,7 +165,7 @@ class TestReservationCRUD:
         """Test deleting a reservation."""
         from app.database.models import Reservation
         
-        start_time = datetime.now(timezone.utc) + timedelta(days=1)
+        start_time = datetime.now(UTC) + timedelta(days=1)
         reservation = Reservation(
             restaurant_id=test_restaurant.id,
             table_id=test_table.id,
@@ -203,7 +203,7 @@ class TestReservationStatus:
         """Test confirming a reservation."""
         from app.database.models import Reservation
         
-        start_time = datetime.now(timezone.utc) + timedelta(days=1)
+        start_time = datetime.now(UTC) + timedelta(days=1)
         reservation = Reservation(
             restaurant_id=test_restaurant.id,
             table_id=test_table.id,
@@ -238,7 +238,7 @@ class TestReservationStatus:
         """Test canceling a reservation."""
         from app.database.models import Reservation
         
-        start_time = datetime.now(timezone.utc) + timedelta(days=1)
+        start_time = datetime.now(UTC) + timedelta(days=1)
         reservation = Reservation(
             restaurant_id=test_restaurant.id,
             table_id=test_table.id,
@@ -281,7 +281,7 @@ class TestReservationFilters:
         from app.database.models import Reservation
         
         # Create reservations for different dates
-        today = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+        today = datetime.now(UTC).replace(hour=12, minute=0, second=0, microsecond=0)
         tomorrow = today + timedelta(days=1)
         
         # Today's reservation
