@@ -11,11 +11,10 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+import app.models  # noqa: F401  — register all models for FK resolution
 from app.core.config import settings
 from app.core.database import close_engines, get_engines
 from app.core.tenant import TenantMiddleware
-
-import app.models  # noqa: F401  — register all models for FK resolution
 
 # Add shared packages to path
 _shared_path = Path(__file__).parent.parent.parent.parent / "packages"
