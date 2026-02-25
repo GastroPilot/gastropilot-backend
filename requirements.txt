@@ -27,7 +27,7 @@ black>=24.10.0
 isort>=5.13.2
 
 # Error Tracking
-sentry-sdk[fastapi]==2.19.2
+sentry-sdk[fastapi]==2.53.0
 
 # AI / OpenAI
 openai>=1.0.0
