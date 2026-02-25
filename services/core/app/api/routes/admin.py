@@ -202,6 +202,41 @@ async def update_tenant(
     return {"id": str(tenant.id), "name": tenant.name}
 
 
+@router.delete("/tenants/{tenant_id}", status_code=200)
+async def delete_tenant(
+    tenant_id: uuid.UUID,
+    request: Request,
+    current_user=Depends(require_platform_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(select(Restaurant).where(Restaurant.id == tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    tenant_name = tenant.name
+
+    # Audit-Log VOR dem Loeschen erstellen (target_tenant_id wird via CASCADE nicht geloescht,
+    # da PlatformAuditLog.target_tenant_id nullable ist oder kein FK-Constraint hat)
+    log = PlatformAuditLog(
+        admin_user_id=current_user.id,
+        target_tenant_id=tenant_id,
+        action="tenant.deleted",
+        entity_type="restaurant",
+        entity_id=tenant_id,
+        description=f"Tenant '{tenant_name}' und alle zugehoerigen Daten geloescht",
+        ip_address=request.client.host if request.client else None,
+    )
+    session.add(log)
+    await session.flush()
+
+    # Tenant loeschen — CASCADE loescht Users, Areas, Tables, Obstacles etc.
+    await session.delete(tenant)
+    await session.commit()
+
+    return {"deleted": True, "tenant_id": str(tenant_id), "tenant_name": tenant_name}
+
+
 @router.get("/tenants/{tenant_id}/impersonate")
 async def impersonate_tenant(
     tenant_id: uuid.UUID,
