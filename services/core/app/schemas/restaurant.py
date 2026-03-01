@@ -29,14 +29,11 @@ class RestaurantUpdate(BaseModel):
     timezone: str | None = None
     currency: str | None = None
     language: str | None = None
-    is_suspended: bool | None = None
     settings: dict | None = None
 
 
 class RestaurantResponse(RestaurantBase):
     id: UUID
-    subscription_tier: str
-    is_suspended: bool
     settings: dict | None = None
     created_at: datetime
     updated_at: datetime
