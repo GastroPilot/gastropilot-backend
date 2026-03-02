@@ -1,11 +1,37 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
 version: 2
 updates:
-  - package-ecosystem: "pip" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  # Core Service
+  - package-ecosystem: "pip"
+    directory: "/services/core"
     schedule:
       interval: "weekly"
+    labels:
+      - "dependencies"
+      - "core"
+
+  # Orders Service
+  - package-ecosystem: "pip"
+    directory: "/services/orders"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "orders"
+
+  # AI Service
+  - package-ecosystem: "pip"
+    directory: "/services/ai"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ai"
+
+  # Notifications Service
+  - package-ecosystem: "pip"
+    directory: "/services/notifications"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "notifications"
