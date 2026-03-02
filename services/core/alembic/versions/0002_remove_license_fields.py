@@ -17,6 +17,9 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Materialized View entfernen, die von subscription_tier abhängt
+    op.execute("DROP MATERIALIZED VIEW IF EXISTS tenant_analytics CASCADE")
+
     # Spalten entfernen
     op.drop_column("restaurants", "subscription_tier")
     op.drop_column("restaurants", "is_suspended")

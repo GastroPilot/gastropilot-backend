@@ -106,13 +106,6 @@ async def login(
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is inactive")
 
-    # Check tenant suspension
-    if user.tenant_id:
-        res = await session.execute(select(Restaurant).where(Restaurant.id == user.tenant_id))
-        restaurant = res.scalar_one_or_none()
-        if restaurant and restaurant.is_suspended:
-            raise HTTPException(status_code=403, detail="Restaurant account is suspended")
-
     auth_method = "pin" if data.operator_number else "password"
 
     token_data = {

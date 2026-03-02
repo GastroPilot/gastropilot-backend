@@ -14,7 +14,6 @@ class Order(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("restaurants.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -81,7 +80,6 @@ class SumUpPayment(Base):
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("restaurants.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
