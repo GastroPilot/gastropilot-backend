@@ -366,24 +366,46 @@ async def create_operator(
     session: AsyncSession = Depends(get_session),
     current_user=Depends(require_restaurantinhaber_role),
 ):
-    """Erstellt einen neuen Bediener (Servecta und Restaurantinhaber).
-    Restaurantinhaber können keine Servecta-Rolle vergeben."""
-    # Prüfe ob Bedienernummer bereits existiert
-    result = await session.execute(
-        select(User).where(User.operator_number == operator_data.operator_number)
-    )
-    existing_user = result.scalar_one_or_none()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Operator number already exists"
-        )
+    """Erstellt einen neuen Bediener oder E-Mail-Zugang.
 
-    # Prüfe ob Bedienernummer reserviert ist (0000, 0001 für Servecta)
-    if operator_data.operator_number in SERVECTA_OPERATOR_NUMBERS:
+    Unterstützt zwei Anmeldemethoden:
+    1. PIN-Login: operator_number + pin (für Restaurant-Mitarbeiter)
+    2. E-Mail-Login: email + password (für Admins)
+    """
+    # Mindestens eine Anmeldemethode muss angegeben sein
+    has_pin = operator_data.operator_number and operator_data.pin
+    has_email = operator_data.email and operator_data.password
+    if not has_pin and not has_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Operator number {operator_data.operator_number} is reserved for Servecta",
+            detail="Either operator_number+pin or email+password must be provided",
         )
+
+    # Prüfe ob Bedienernummer bereits existiert
+    if operator_data.operator_number:
+        result = await session.execute(
+            select(User).where(User.operator_number == operator_data.operator_number)
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Operator number already exists"
+            )
+        # Prüfe ob Bedienernummer reserviert ist (0000, 0001 für Servecta)
+        if operator_data.operator_number in SERVECTA_OPERATOR_NUMBERS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Operator number {operator_data.operator_number} is reserved for Servecta",
+            )
+
+    # Prüfe ob E-Mail bereits existiert
+    if operator_data.email:
+        result_email = await session.execute(
+            select(User).where(User.email == operator_data.email)
+        )
+        if result_email.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists"
+            )
 
     # Restaurantinhaber können keine Servecta-Rolle vergeben
     if current_user.role == "restaurantinhaber" and operator_data.role == "servecta":
@@ -397,16 +419,17 @@ async def create_operator(
         result_nfc = await session.execute(
             select(User).where(User.nfc_tag_id == operator_data.nfc_tag_id)
         )
-        existing_user_nfc = result_nfc.scalar_one_or_none()
-        if existing_user_nfc:
+        if result_nfc.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="NFC tag ID already exists"
             )
 
     user = User(
-        operator_number=operator_data.operator_number,
-        pin_hash=hash_password(operator_data.pin),
+        operator_number=operator_data.operator_number or None,
+        pin_hash=hash_password(operator_data.pin) if operator_data.pin else None,
         nfc_tag_id=operator_data.nfc_tag_id,
+        email=operator_data.email or None,
+        password_hash=hash_password(operator_data.password) if operator_data.password else None,
         first_name=operator_data.first_name,
         last_name=operator_data.last_name,
         role=operator_data.role,
@@ -488,9 +511,24 @@ async def update_operator(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="NFC tag ID already exists"
             )
 
+    # Prüfe ob E-Mail geändert wird und bereits existiert
+    if "email" in update_data and update_data["email"]:
+        if update_data["email"] != user.email:
+            result_email = await session.execute(
+                select(User).where(User.email == update_data["email"], User.id != operator_id)
+            )
+            if result_email.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists"
+                )
+
     # PIN hashen, falls geändert
     if "pin" in update_data:
         update_data["pin_hash"] = hash_password(update_data.pop("pin"))
+
+    # Passwort hashen, falls geändert
+    if "password" in update_data:
+        update_data["password_hash"] = hash_password(update_data.pop("password"))
 
     for field, value in update_data.items():
         setattr(user, field, value)
