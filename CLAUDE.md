@@ -64,7 +64,7 @@ Platform admin users (`is_admin=True`) use a separate DB session factory (`sessi
 
 ### Database
 - Two engines per service: `_engine_app` (normal) and `_engine_admin` (platform admin)
-- Config fields: `DATABASE_URL` and `DATABASE_URL_ADMIN` (must match docker-compose env var names exactly — pydantic-settings matches by field name)
+- Config fields: `DATABASE_URL` and `DATABASE_ADMIN_URL` (must match docker-compose env var names exactly — pydantic-settings matches by field name)
 - SSL handling: `_strip_sslmode()` removes sslmode from URL and passes it via `connect_args` because asyncpg rejects sslmode as a URL parameter
 - UUID primary keys, `tenant_id` on all tenant-scoped tables
 - Init scripts in `/sql/init.sql` and `/sql/rls.sql`

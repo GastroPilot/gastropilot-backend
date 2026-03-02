@@ -60,7 +60,7 @@ def get_session_factories():
         )
 
     if _engine_admin is None:
-        url, sslmode = _strip_sslmode(settings.DATABASE_URL_ADMIN)
+        url, sslmode = _strip_sslmode(settings.DATABASE_ADMIN_URL)
         _engine_admin = create_async_engine(
             url, pool_pre_ping=True, connect_args=_connect_args_for_sslmode(sslmode)
         )
