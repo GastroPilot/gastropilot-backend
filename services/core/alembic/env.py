@@ -22,7 +22,7 @@ from app.core.database import Base
 from app.models import audit, menu, reservation, restaurant, user  # noqa: F401
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_ADMIN_URL)
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_ADMIN)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
