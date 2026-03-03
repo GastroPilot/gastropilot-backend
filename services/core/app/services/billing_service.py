@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -302,7 +302,7 @@ class SubscriptionService:
         restaurant.subscription_status = sub.status
         if sub.current_period_end:
             restaurant.subscription_current_period_end = (
-                datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
+                datetime.fromtimestamp(sub.current_period_end, tz=UTC)
             )
         await self.session.flush()
         return {
@@ -350,7 +350,7 @@ class SubscriptionService:
         if sub_data.get("current_period_end"):
             restaurant.subscription_current_period_end = (
                 datetime.fromtimestamp(
-                    sub_data["current_period_end"], tz=timezone.utc
+                    sub_data["current_period_end"], tz=UTC
                 )
             )
         await self.session.flush()

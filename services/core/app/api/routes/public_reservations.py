@@ -8,8 +8,6 @@ from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, EmailStr
@@ -46,16 +44,16 @@ class NotificationChannels(BaseModel):
 class PublicReservationCreate(BaseModel):
     guest_name: str
     guest_email: EmailStr
-    guest_phone: Optional[str] = None
+    guest_phone: str | None = None
     party_size: int
     desired_date: date
     desired_time: str  # HH:MM
-    special_requests: Optional[str] = None
+    special_requests: str | None = None
     channel: str = "web"
     privacy_accepted: bool = True
     notification_channels: NotificationChannels = NotificationChannels()
-    voucher_code: Optional[str] = None
-    upsell_package_ids: Optional[list[UUID]] = None
+    voucher_code: str | None = None
+    upsell_package_ids: list[UUID] | None = None
     prepayment_required: bool = False
 
 
