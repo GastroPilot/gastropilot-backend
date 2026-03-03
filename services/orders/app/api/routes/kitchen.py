@@ -67,9 +67,7 @@ async def get_kitchen_queue(
             "order_number": o.order_number,
             "status": o.status,
             "table_id": str(o.table_id) if o.table_id else None,
-            "table_number": table_numbers.get(str(o.table_id), None)
-            if o.table_id
-            else None,
+            "table_number": table_numbers.get(str(o.table_id), None) if o.table_id else None,
             "items": items_by_order.get(str(o.id), []),
             "guest_allergens": o.guest_allergens or [],
             "source": "qr" if (o.order_number or "").startswith("PUB-") else "service",

@@ -31,9 +31,7 @@ async def list_devices(
     current_user: User = Depends(require_owner_or_above),
 ):
     """List all KDS devices for the current tenant."""
-    result = await db.execute(
-        select(Device).order_by(Device.created_at.desc())
-    )
+    result = await db.execute(select(Device).order_by(Device.created_at.desc()))
     return result.scalars().all()
 
 
@@ -49,9 +47,7 @@ async def create_device(
     current_user: User = Depends(require_owner_or_above),
 ):
     """Create a new KDS device and return its token."""
-    effective_tenant_id = (
-        getattr(request.state, "tenant_id", None) or current_user.tenant_id
-    )
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
 
     device = Device(
         tenant_id=effective_tenant_id,
@@ -72,9 +68,7 @@ async def delete_device(
     current_user: User = Depends(require_owner_or_above),
 ):
     """Delete / revoke a KDS device."""
-    result = await db.execute(
-        select(Device).where(Device.id == device_id)
-    )
+    result = await db.execute(select(Device).where(Device.id == device_id))
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -94,9 +88,7 @@ async def regenerate_device_token(
     current_user: User = Depends(require_owner_or_above),
 ):
     """Regenerate the token for a KDS device (invalidates old token)."""
-    result = await db.execute(
-        select(Device).where(Device.id == device_id)
-    )
+    result = await db.execute(select(Device).where(Device.id == device_id))
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")

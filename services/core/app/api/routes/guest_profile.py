@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import logging
 import uuid
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from zoneinfo import ZoneInfo
 
 from app.core.deps import get_db
 from app.core.guest_deps import get_current_guest
@@ -56,9 +55,7 @@ async def update_guest_profile(
 
     session_factory_app, _ = get_session_factories()
     async with session_factory_app() as session:
-        result = await session.execute(
-            select(GuestProfile).where(GuestProfile.id == guest.id)
-        )
+        result = await session.execute(select(GuestProfile).where(GuestProfile.id == guest.id))
         db_guest = result.scalar_one()
 
         if body.first_name is not None:
@@ -90,8 +87,9 @@ async def update_push_token(
     guest: GuestProfile = Depends(get_current_guest),
 ):
     """Register or update push notification token."""
-    from app.core.database import get_session_factories
     from pydantic import BaseModel
+
+    from app.core.database import get_session_factories
 
     token = body.get("push_token")
     if not token or not isinstance(token, str):
@@ -99,9 +97,7 @@ async def update_push_token(
 
     session_factory_app, _ = get_session_factories()
     async with session_factory_app() as session:
-        result = await session.execute(
-            select(GuestProfile).where(GuestProfile.id == guest.id)
-        )
+        result = await session.execute(select(GuestProfile).where(GuestProfile.id == guest.id))
         db_guest = result.scalar_one()
         db_guest.push_token = token
         await session.commit()
@@ -116,11 +112,7 @@ async def get_guest_reservations(
 ):
     """Get booking history across all restaurants."""
     # Find all tenant-level guest records linked to this profile
-    guest_records = await db.execute(
-        select(Guest).where(
-            Guest.guest_profile_id == guest.id
-        )
-    )
+    guest_records = await db.execute(select(Guest).where(Guest.guest_profile_id == guest.id))
     guests = guest_records.scalars().all()
     guest_ids = [g.id for g in guests]
 
@@ -142,12 +134,10 @@ async def get_guest_reservations(
             "restaurant_name": rest.name,
             "restaurant_slug": rest.slug or "",
             "date": (
-                r.start_at.astimezone(RESTAURANT_TZ).date().isoformat()
-                if r.start_at else None
+                r.start_at.astimezone(RESTAURANT_TZ).date().isoformat() if r.start_at else None
             ),
             "time": (
-                r.start_at.astimezone(RESTAURANT_TZ).strftime("%H:%M")
-                if r.start_at else None
+                r.start_at.astimezone(RESTAURANT_TZ).strftime("%H:%M") if r.start_at else None
             ),
             "party_size": r.party_size,
             "status": r.status,
@@ -178,9 +168,7 @@ async def cancel_guest_reservation(
         raise HTTPException(status_code=400, detail="Invalid reservation ID")
 
     # Find guest records linked to this profile
-    guest_records = await db.execute(
-        select(Guest).where(Guest.guest_profile_id == guest.id)
-    )
+    guest_records = await db.execute(select(Guest).where(Guest.guest_profile_id == guest.id))
     guest_ids = [g.id for g in guest_records.scalars().all()]
 
     if not guest_ids:
@@ -223,9 +211,7 @@ async def delete_guest_account(
 
     session_factory_app, _ = get_session_factories()
     async with session_factory_app() as session:
-        result = await session.execute(
-            select(GuestProfile).where(GuestProfile.id == guest.id)
-        )
+        result = await session.execute(select(GuestProfile).where(GuestProfile.id == guest.id))
         db_guest = result.scalar_one_or_none()
         if db_guest:
             await session.delete(db_guest)
@@ -254,8 +240,7 @@ async def list_favorites(
     items = []
     for fav, rest in rows:
         avg_result = await db.execute(
-            select(func.avg(Review.rating), func.count(Review.id))
-            .where(
+            select(func.avg(Review.rating), func.count(Review.id)).where(
                 and_(
                     Review.tenant_id == rest.id,
                     Review.is_visible.is_(True),
@@ -263,23 +248,23 @@ async def list_favorites(
             )
         )
         avg_row = avg_result.one()
-        avg_rating = (
-            round(float(avg_row[0]), 2) if avg_row[0] else None
-        )
+        avg_rating = round(float(avg_row[0]), 2) if avg_row[0] else None
         review_count = avg_row[1] or 0
 
-        items.append({
-            "id": str(rest.id),
-            "name": rest.name,
-            "slug": rest.slug,
-            "address": rest.address,
-            "description": rest.description,
-            "cuisine_type": (rest.settings or {}).get("cuisine_type"),
-            "image_url": (rest.settings or {}).get("image_url"),
-            "average_rating": avg_rating,
-            "review_count": review_count,
-            "favorited_at": fav.created_at.isoformat(),
-        })
+        items.append(
+            {
+                "id": str(rest.id),
+                "name": rest.name,
+                "slug": rest.slug,
+                "address": rest.address,
+                "description": rest.description,
+                "cuisine_type": (rest.settings or {}).get("cuisine_type"),
+                "image_url": (rest.settings or {}).get("image_url"),
+                "average_rating": avg_rating,
+                "review_count": review_count,
+                "favorited_at": fav.created_at.isoformat(),
+            }
+        )
 
     return items
 
@@ -291,9 +276,7 @@ async def list_favorite_ids(
 ):
     """Return only restaurant IDs of favorites (for fast heart-icon rendering)."""
     result = await db.execute(
-        select(GuestFavorite.restaurant_id).where(
-            GuestFavorite.guest_profile_id == guest.id
-        )
+        select(GuestFavorite.restaurant_id).where(GuestFavorite.guest_profile_id == guest.id)
     )
     ids = [str(row[0]) for row in result.all()]
     return ids
@@ -310,9 +293,7 @@ async def add_favorite(
 ):
     """Add a restaurant to favorites."""
     # Check restaurant exists
-    rest = await db.execute(
-        select(Restaurant).where(Restaurant.id == restaurant_id)
-    )
+    rest = await db.execute(select(Restaurant).where(Restaurant.id == restaurant_id))
     if not rest.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Restaurant not found")
 
@@ -326,9 +307,7 @@ async def add_favorite(
         )
     )
     if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=409, detail="Already in favorites"
-        )
+        raise HTTPException(status_code=409, detail="Already in favorites")
 
     fav = GuestFavorite(
         guest_profile_id=guest.id,
@@ -383,9 +362,7 @@ async def get_guest_reservation_detail(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid reservation ID")
 
-    guest_records = await db.execute(
-        select(Guest).where(Guest.guest_profile_id == guest.id)
-    )
+    guest_records = await db.execute(select(Guest).where(Guest.guest_profile_id == guest.id))
     guest_ids = [g.id for g in guest_records.scalars().all()]
 
     if not guest_ids:
@@ -411,14 +388,8 @@ async def get_guest_reservation_detail(
         "restaurant_id": str(r.tenant_id),
         "restaurant_name": rest.name,
         "restaurant_slug": rest.slug or "",
-        "date": (
-            r.start_at.astimezone(RESTAURANT_TZ).date().isoformat()
-            if r.start_at else None
-        ),
-        "time": (
-            r.start_at.astimezone(RESTAURANT_TZ).strftime("%H:%M")
-            if r.start_at else None
-        ),
+        "date": (r.start_at.astimezone(RESTAURANT_TZ).date().isoformat() if r.start_at else None),
+        "time": (r.start_at.astimezone(RESTAURANT_TZ).strftime("%H:%M") if r.start_at else None),
         "party_size": r.party_size,
         "status": r.status,
         "guest_name": r.guest_name,

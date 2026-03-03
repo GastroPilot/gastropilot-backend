@@ -51,9 +51,7 @@ def _extract_guest_token(
 
 
 async def get_current_guest(
-    credentials: HTTPAuthorizationCredentials | None = Depends(
-        security
-    ),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     access_token: str | None = Cookie(default=None),
     session: AsyncSession = Depends(_get_guest_db),
 ):
@@ -70,28 +68,20 @@ async def get_current_guest(
 
     guest_id = payload.get("sub")
     if not guest_id:
-        raise HTTPException(
-            status_code=401, detail="Token missing subject"
-        )
+        raise HTTPException(status_code=401, detail="Token missing subject")
 
     result = await session.execute(
-        select(GuestProfile).where(
-            GuestProfile.id == uuid.UUID(guest_id)
-        )
+        select(GuestProfile).where(GuestProfile.id == uuid.UUID(guest_id))
     )
     guest = result.scalar_one_or_none()
     if not guest:
-        raise HTTPException(
-            status_code=401, detail="Guest not found"
-        )
+        raise HTTPException(status_code=401, detail="Guest not found")
 
     return guest
 
 
 async def get_optional_guest(
-    credentials: HTTPAuthorizationCredentials | None = Depends(
-        security
-    ),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     access_token: str | None = Cookie(default=None),
     session: AsyncSession = Depends(_get_guest_db),
 ):
@@ -107,8 +97,6 @@ async def get_optional_guest(
         return None
 
     result = await session.execute(
-        select(GuestProfile).where(
-            GuestProfile.id == uuid.UUID(guest_id)
-        )
+        select(GuestProfile).where(GuestProfile.id == uuid.UUID(guest_id))
     )
     return result.scalar_one_or_none()

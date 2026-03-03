@@ -28,9 +28,7 @@ async def _generate_short_token(db: AsyncSession) -> str:
     """Generate a unique 5-char token, retrying on collision."""
     for _ in range(20):
         token = "".join(secrets.choice(_TOKEN_ALPHABET) for _ in range(_TOKEN_LENGTH))
-        exists = await db.execute(
-            select(Table.id).where(Table.table_token == token)
-        )
+        exists = await db.execute(select(Table.id).where(Table.table_token == token))
         if not exists.scalar_one_or_none():
             return token
     raise HTTPException(status_code=500, detail="Could not generate unique token")
@@ -55,14 +53,10 @@ async def get_table_qr_code(
     current_user=Depends(require_manager_or_above),
 ):
     """Generate QR code SVG with table token URL."""
-    result = await db.execute(
-        select(Table).where(Table.id == table_id)
-    )
+    result = await db.execute(select(Table).where(Table.id == table_id))
     table = result.scalar_one_or_none()
     if not table:
-        raise HTTPException(
-            status_code=404, detail="Table not found"
-        )
+        raise HTTPException(status_code=404, detail="Table not found")
 
     if not table.table_token:
         # Auto-generate short 5-char token
@@ -72,17 +66,11 @@ async def get_table_qr_code(
         await db.refresh(table)
 
     # Get restaurant slug for URL
-    rest_result = await db.execute(
-        select(Restaurant).where(
-            Restaurant.id == table.tenant_id
-        )
-    )
+    rest_result = await db.execute(select(Restaurant).where(Restaurant.id == table.tenant_id))
     restaurant = rest_result.scalar_one_or_none()
     slug = restaurant.slug if restaurant else "unknown"
 
-    order_url = (
-        f"/order/{slug}/table/{table.table_token}"
-    )
+    order_url = f"/order/{slug}/table/{table.table_token}"
 
     svg = _generate_qr_svg(order_url)
 
@@ -102,14 +90,10 @@ async def regenerate_table_token(
     current_user=Depends(require_manager_or_above),
 ):
     """Regenerate table token (invalidates old QR codes)."""
-    result = await db.execute(
-        select(Table).where(Table.id == table_id)
-    )
+    result = await db.execute(select(Table).where(Table.id == table_id))
     table = result.scalar_one_or_none()
     if not table:
-        raise HTTPException(
-            status_code=404, detail="Table not found"
-        )
+        raise HTTPException(status_code=404, detail="Table not found")
 
     table.table_token = await _generate_short_token(db)
     table.token_created_at = datetime.now(UTC)

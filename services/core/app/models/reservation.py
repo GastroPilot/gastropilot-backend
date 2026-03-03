@@ -59,7 +59,12 @@ class Reservation(Base):
     party_size: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(
         Enum(
-            "pending", "confirmed", "seated", "completed", "canceled", "no_show",
+            "pending",
+            "confirmed",
+            "seated",
+            "completed",
+            "canceled",
+            "no_show",
             name="reservation_status",
             create_type=False,
         ),
@@ -84,9 +89,7 @@ class Reservation(Base):
     voucher_discount_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     prepayment_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     prepayment_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
-    reminder_sent: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
-    )
+    reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -14,14 +14,10 @@ from app.core.database import Base
 class GuestFavorite(Base):
     __tablename__ = "guest_favorites"
     __table_args__ = (
-        UniqueConstraint(
-            "guest_profile_id", "restaurant_id", name="uq_guest_favorites"
-        ),
+        UniqueConstraint("guest_profile_id", "restaurant_id", name="uq_guest_favorites"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     guest_profile_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("guest_profiles.id", ondelete="CASCADE"),

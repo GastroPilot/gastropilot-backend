@@ -47,9 +47,7 @@ async def upload_restaurant_image(
     content_type = file.content_type or "image/jpeg"
 
     try:
-        url = await upload_image(
-            file_data, content_type, "restaurants", str(tenant_id)
-        )
+        url = await upload_image(file_data, content_type, "restaurants", str(tenant_id))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

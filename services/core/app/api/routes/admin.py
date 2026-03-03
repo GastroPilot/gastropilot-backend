@@ -368,9 +368,7 @@ async def get_guest(
     current_user=Depends(require_platform_admin),
     session: AsyncSession = Depends(get_db),
 ):
-    result = await session.execute(
-        select(GuestProfile).where(GuestProfile.id == guest_id)
-    )
+    result = await session.execute(select(GuestProfile).where(GuestProfile.id == guest_id))
     guest = result.scalar_one_or_none()
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
@@ -397,16 +395,20 @@ async def update_guest(
     current_user=Depends(require_platform_admin),
     session: AsyncSession = Depends(get_db),
 ):
-    result = await session.execute(
-        select(GuestProfile).where(GuestProfile.id == guest_id)
-    )
+    result = await session.execute(select(GuestProfile).where(GuestProfile.id == guest_id))
     guest = result.scalar_one_or_none()
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
 
     for field in (
-        "first_name", "last_name", "email", "phone",
-        "language", "notes", "allergen_profile", "email_verified",
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "language",
+        "notes",
+        "allergen_profile",
+        "email_verified",
     ):
         value = getattr(data, field)
         if value is not None:
@@ -441,9 +443,7 @@ async def delete_guest(
     current_user=Depends(require_platform_admin),
     session: AsyncSession = Depends(get_db),
 ):
-    result = await session.execute(
-        select(GuestProfile).where(GuestProfile.id == guest_id)
-    )
+    result = await session.execute(select(GuestProfile).where(GuestProfile.id == guest_id))
     guest = result.scalar_one_or_none()
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
@@ -475,14 +475,12 @@ async def list_reservations(
     query = query.order_by(Reservation.created_at.desc())
 
     count_q = select(func.count()).select_from(
-        select(Reservation.id).where(
-            *(
-                [Reservation.status == status] if status else []
-            ),
-            *(
-                [Reservation.tenant_id == restaurant_id] if restaurant_id else []
-            ),
-        ).subquery()
+        select(Reservation.id)
+        .where(
+            *([Reservation.status == status] if status else []),
+            *([Reservation.tenant_id == restaurant_id] if restaurant_id else []),
+        )
+        .subquery()
     )
     total = (await session.execute(count_q)).scalar() or 0
 
@@ -522,9 +520,9 @@ async def get_reservation(
     session: AsyncSession = Depends(get_db),
 ):
     result = await session.execute(
-        select(Reservation, Restaurant.name.label("restaurant_name")).join(
-            Restaurant, Reservation.tenant_id == Restaurant.id
-        ).where(Reservation.id == reservation_id)
+        select(Reservation, Restaurant.name.label("restaurant_name"))
+        .join(Restaurant, Reservation.tenant_id == Restaurant.id)
+        .where(Reservation.id == reservation_id)
     )
     row = result.one_or_none()
     if not row:
@@ -558,18 +556,14 @@ async def update_reservation_status(
     current_user=Depends(require_platform_admin),
     session: AsyncSession = Depends(get_db),
 ):
-    VALID_STATUSES = {
-        "pending", "confirmed", "seated", "completed", "canceled", "no_show"
-    }
+    VALID_STATUSES = {"pending", "confirmed", "seated", "completed", "canceled", "no_show"}
     if data.status not in VALID_STATUSES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid status. Must be one of: {', '.join(sorted(VALID_STATUSES))}",
         )
 
-    result = await session.execute(
-        select(Reservation).where(Reservation.id == reservation_id)
-    )
+    result = await session.execute(select(Reservation).where(Reservation.id == reservation_id))
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservation not found")
@@ -640,18 +634,14 @@ async def list_reviews(
                 "id": str(rv.id),
                 "tenant_id": str(rv.tenant_id),
                 "restaurant_name": rname,
-                "guest_profile_id": str(rv.guest_profile_id)
-                if rv.guest_profile_id
-                else None,
+                "guest_profile_id": str(rv.guest_profile_id) if rv.guest_profile_id else None,
                 "guest_name": f"{gfn or ''} {gln or ''}".strip() or None,
                 "rating": rv.rating,
                 "title": rv.title,
                 "text": rv.text,
                 "is_visible": rv.is_visible,
                 "is_verified": rv.is_verified,
-                "created_at": rv.created_at.isoformat()
-                if rv.created_at
-                else None,
+                "created_at": rv.created_at.isoformat() if rv.created_at else None,
             }
             for rv, rname, gfn, gln in rows
         ],
@@ -668,9 +658,7 @@ async def update_review_visibility(
     current_user=Depends(require_platform_admin),
     session: AsyncSession = Depends(get_db),
 ):
-    result = await session.execute(
-        select(Review).where(Review.id == review_id)
-    )
+    result = await session.execute(select(Review).where(Review.id == review_id))
     review = result.scalar_one_or_none()
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
@@ -686,9 +674,7 @@ async def delete_review(
     current_user=Depends(require_platform_admin),
     session: AsyncSession = Depends(get_db),
 ):
-    result = await session.execute(
-        select(Review).where(Review.id == review_id)
-    )
+    result = await session.execute(select(Review).where(Review.id == review_id))
     review = result.scalar_one_or_none()
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
@@ -708,45 +694,31 @@ async def get_stats(
 ):
     thirty_days_ago = datetime.now(UTC) - timedelta(days=30)
 
-    total_guests = (
-        await session.execute(select(func.count(GuestProfile.id)))
-    ).scalar() or 0
+    total_guests = (await session.execute(select(func.count(GuestProfile.id)))).scalar() or 0
 
-    total_reservations = (
-        await session.execute(select(func.count(Reservation.id)))
-    ).scalar() or 0
+    total_reservations = (await session.execute(select(func.count(Reservation.id)))).scalar() or 0
 
-    total_reviews = (
-        await session.execute(select(func.count(Review.id)))
-    ).scalar() or 0
+    total_reviews = (await session.execute(select(func.count(Review.id)))).scalar() or 0
 
-    total_restaurants = (
-        await session.execute(select(func.count(Restaurant.id)))
-    ).scalar() or 0
+    total_restaurants = (await session.execute(select(func.count(Restaurant.id)))).scalar() or 0
 
     # Reservations by status
     status_rows = (
         await session.execute(
-            select(
-                Reservation.status, func.count(Reservation.id)
-            ).group_by(Reservation.status)
+            select(Reservation.status, func.count(Reservation.id)).group_by(Reservation.status)
         )
     ).all()
     reservations_by_status = {row[0]: row[1] for row in status_rows}
 
     recent_guests_30d = (
         await session.execute(
-            select(func.count(GuestProfile.id)).where(
-                GuestProfile.created_at >= thirty_days_ago
-            )
+            select(func.count(GuestProfile.id)).where(GuestProfile.created_at >= thirty_days_ago)
         )
     ).scalar() or 0
 
     recent_reservations_30d = (
         await session.execute(
-            select(func.count(Reservation.id)).where(
-                Reservation.created_at >= thirty_days_ago
-            )
+            select(func.count(Reservation.id)).where(Reservation.created_at >= thirty_days_ago)
         )
     ).scalar() or 0
 

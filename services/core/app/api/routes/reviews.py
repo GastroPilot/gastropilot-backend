@@ -31,17 +31,11 @@ router = APIRouter(tags=["reviews"])
 # --- Helpers ---
 
 
-async def _get_restaurant_by_slug(
-    slug: str, db: AsyncSession
-) -> Restaurant:
-    result = await db.execute(
-        select(Restaurant).where(Restaurant.slug == slug)
-    )
+async def _get_restaurant_by_slug(slug: str, db: AsyncSession) -> Restaurant:
+    result = await db.execute(select(Restaurant).where(Restaurant.slug == slug))
     restaurant = result.scalar_one_or_none()
     if not restaurant:
-        raise HTTPException(
-            status_code=404, detail="Restaurant not found"
-        )
+        raise HTTPException(status_code=404, detail="Restaurant not found")
     return restaurant
 
 
@@ -97,11 +91,13 @@ async def create_review(
     # Weg 2: Ueber E-Mail-Abgleich (Fallback)
     if not is_verified and guest.email:
         verified_via_email = await db.execute(
-            select(Reservation.id).where(
+            select(Reservation.id)
+            .where(
                 Reservation.tenant_id == restaurant.id,
                 Reservation.guest_email == guest.email,
                 Reservation.status.in_(verified_statuses),
-            ).limit(1)
+            )
+            .limit(1)
         )
         is_verified = verified_via_email.scalar_one_or_none() is not None
 
@@ -144,14 +140,10 @@ async def moderate_review(
     current_user=Depends(require_manager_or_above),
 ):
     """Toggle review visibility (manager+)."""
-    result = await db.execute(
-        select(Review).where(Review.id == review_id)
-    )
+    result = await db.execute(select(Review).where(Review.id == review_id))
     review = result.scalar_one_or_none()
     if not review:
-        raise HTTPException(
-            status_code=404, detail="Review not found"
-        )
+        raise HTTPException(status_code=404, detail="Review not found")
 
     review.is_visible = body.is_visible
     await db.commit()
@@ -174,22 +166,16 @@ async def list_tenant_reviews(
 
     # Total count
     count_result = await db.execute(
-        select(func.count(Review.id)).where(
-            Review.tenant_id == tenant_id
-        )
+        select(func.count(Review.id)).where(Review.tenant_id == tenant_id)
     )
     total = count_result.scalar() or 0
 
     # Average rating
     avg_result = await db.execute(
-        select(func.avg(Review.rating)).where(
-            Review.tenant_id == tenant_id
-        )
+        select(func.avg(Review.rating)).where(Review.tenant_id == tenant_id)
     )
     avg_rating = avg_result.scalar()
-    avg_rating = (
-        round(float(avg_rating), 2) if avg_rating else None
-    )
+    avg_rating = round(float(avg_rating), 2) if avg_rating else None
 
     # Paginated reviews
     offset = (page - 1) * per_page
@@ -212,16 +198,12 @@ async def list_tenant_reviews(
             "rating": review.rating,
             "title": review.title,
             "text": review.text,
-            "author_name": (
-                f"{guest.first_name} {guest.last_name}"
-            ),
+            "author_name": (f"{guest.first_name} {guest.last_name}"),
             "author_email": guest.email,
             "is_visible": review.is_visible,
             "staff_reply": review.staff_reply,
             "staff_reply_at": (
-                review.staff_reply_at.isoformat()
-                if review.staff_reply_at
-                else None
+                review.staff_reply_at.isoformat() if review.staff_reply_at else None
             ),
             "created_at": review.created_at.isoformat(),
         }
@@ -247,14 +229,10 @@ async def reply_to_review(
     """Reply to a review (manager+)."""
     from datetime import UTC, datetime
 
-    result = await db.execute(
-        select(Review).where(Review.id == review_id)
-    )
+    result = await db.execute(select(Review).where(Review.id == review_id))
     review = result.scalar_one_or_none()
     if not review:
-        raise HTTPException(
-            status_code=404, detail="Review not found"
-        )
+        raise HTTPException(status_code=404, detail="Review not found")
 
     review.staff_reply = body.text
     review.staff_reply_at = datetime.now(UTC)

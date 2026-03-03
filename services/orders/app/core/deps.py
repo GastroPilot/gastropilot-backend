@@ -16,8 +16,9 @@ _shared_path = Path(__file__).parent.parent.parent.parent.parent / "packages"
 if str(_shared_path) not in sys.path:
     sys.path.insert(0, str(_shared_path))
 
-from shared.auth import configure, verify_token
 from dataclasses import dataclass
+
+from shared.auth import configure, verify_token
 
 configure(
     jwt_secret=settings.JWT_SECRET,

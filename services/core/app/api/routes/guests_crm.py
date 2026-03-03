@@ -73,9 +73,7 @@ async def list_guests(
             select(func.count(Reservation.id)).where(
                 and_(
                     Reservation.guest_id == g.id,
-                    Reservation.status.in_(
-                        ["completed", "seated"]
-                    ),
+                    Reservation.status.in_(["completed", "seated"]),
                 )
             )
         )
@@ -87,9 +85,7 @@ async def list_guests(
             .where(
                 and_(
                     Reservation.guest_id == g.id,
-                    Reservation.status.in_(
-                        ["completed", "seated"]
-                    ),
+                    Reservation.status.in_(["completed", "seated"]),
                 )
             )
             .order_by(Reservation.start_at.desc())
@@ -127,17 +123,13 @@ async def get_guest_stats(
 
     # Total guests
     total_result = await db.execute(
-        select(func.count(Guest.id)).where(
-            Guest.tenant_id == tenant_id
-        )
+        select(func.count(Guest.id)).where(Guest.tenant_id == tenant_id)
     )
     total = total_result.scalar() or 0
 
     # New this month
     now = datetime.now(UTC)
-    month_start = now.replace(
-        day=1, hour=0, minute=0, second=0, microsecond=0
-    )
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     new_result = await db.execute(
         select(func.count(Guest.id)).where(
             and_(
@@ -154,19 +146,13 @@ async def get_guest_stats(
         .where(
             and_(
                 Reservation.tenant_id == tenant_id,
-                Reservation.status.in_(
-                    ["completed", "seated"]
-                ),
+                Reservation.status.in_(["completed", "seated"]),
             )
         )
         .group_by(Reservation.guest_id)
         .having(func.count(Reservation.id) >= 5)
     )
-    regulars_result = await db.execute(
-        select(func.count()).select_from(
-            regulars_subq.subquery()
-        )
-    )
+    regulars_result = await db.execute(select(func.count()).select_from(regulars_subq.subquery()))
     regulars = regulars_result.scalar() or 0
 
     return GuestStatsResponse(
@@ -183,14 +169,10 @@ async def get_guest_detail(
     current_user=Depends(require_manager_or_above),
 ):
     """Guest detail with reservation history."""
-    result = await db.execute(
-        select(Guest).where(Guest.id == guest_id)
-    )
+    result = await db.execute(select(Guest).where(Guest.id == guest_id))
     guest = result.scalar_one_or_none()
     if not guest:
-        raise HTTPException(
-            status_code=404, detail="Guest not found"
-        )
+        raise HTTPException(status_code=404, detail="Guest not found")
 
     # Reservation history
     res_result = await db.execute(
@@ -201,11 +183,7 @@ async def get_guest_detail(
     )
     reservations = res_result.scalars().all()
 
-    visit_count = sum(
-        1
-        for r in reservations
-        if r.status in ("completed", "seated")
-    )
+    visit_count = sum(1 for r in reservations if r.status in ("completed", "seated"))
 
     last_visit = None
     for r in reservations:
@@ -273,14 +251,10 @@ async def get_guest_history(
     current_user=Depends(require_manager_or_above),
 ):
     """Reservation + order history for a guest."""
-    result = await db.execute(
-        select(Guest).where(Guest.id == guest_id)
-    )
+    result = await db.execute(select(Guest).where(Guest.id == guest_id))
     guest = result.scalar_one_or_none()
     if not guest:
-        raise HTTPException(
-            status_code=404, detail="Guest not found"
-        )
+        raise HTTPException(status_code=404, detail="Guest not found")
 
     res_result = await db.execute(
         select(Reservation)
@@ -294,11 +268,7 @@ async def get_guest_history(
         "reservations": [
             {
                 "id": str(r.id),
-                "date": (
-                    r.start_at.isoformat()
-                    if r.start_at
-                    else None
-                ),
+                "date": (r.start_at.isoformat() if r.start_at else None),
                 "party_size": r.party_size,
                 "status": r.status,
                 "special_requests": r.special_requests,
@@ -335,14 +305,10 @@ async def update_guest(
     current_user=Depends(require_manager_or_above),
 ):
     """Update guest notes/tags."""
-    result = await db.execute(
-        select(Guest).where(Guest.id == guest_id)
-    )
+    result = await db.execute(select(Guest).where(Guest.id == guest_id))
     guest = result.scalar_one_or_none()
     if not guest:
-        raise HTTPException(
-            status_code=404, detail="Guest not found"
-        )
+        raise HTTPException(status_code=404, detail="Guest not found")
 
     if body.notes is not None:
         guest.notes = body.notes

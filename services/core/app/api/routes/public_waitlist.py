@@ -15,9 +15,7 @@ from app.models.waitlist import Waitlist
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(
-    prefix="/public/waitlist", tags=["public-waitlist"]
-)
+router = APIRouter(prefix="/public/waitlist", tags=["public-waitlist"])
 
 
 @router.get("/{token}")
@@ -26,11 +24,7 @@ async def get_waitlist_position(
     db: AsyncSession = Depends(get_db),
 ):
     """Get waitlist position and estimated wait time."""
-    result = await db.execute(
-        select(Waitlist).where(
-            Waitlist.tracking_token == token
-        )
-    )
+    result = await db.execute(select(Waitlist).where(Waitlist.tracking_token == token))
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(
@@ -76,11 +70,7 @@ async def waitlist_position_stream(
 ):
     """SSE endpoint for live waitlist position updates."""
     # Validate token exists
-    result = await db.execute(
-        select(Waitlist).where(
-            Waitlist.tracking_token == token
-        )
-    )
+    result = await db.execute(select(Waitlist).where(Waitlist.tracking_token == token))
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(
@@ -100,37 +90,24 @@ async def waitlist_position_stream(
                 factory, _ = get_session_factories()
                 async with factory() as session:
                     res = await session.execute(
-                        select(Waitlist).where(
-                            Waitlist.tracking_token == token
-                        )
+                        select(Waitlist).where(Waitlist.tracking_token == token)
                     )
                     current = res.scalar_one_or_none()
 
                     if not current:
-                        yield (
-                            "data: "
-                            '{"status": "removed"}\n\n'
-                        )
+                        yield ("data: " '{"status": "removed"}\n\n')
                         break
 
                     if current.status != "waiting":
-                        yield (
-                            f"data: "
-                            f'{{"status": "{current.status}",'
-                            f' "position": 0}}\n\n'
-                        )
+                        yield (f"data: " f'{{"status": "{current.status}",' f' "position": 0}}\n\n')
                         break
 
                     ahead = await session.execute(
-                        select(
-                            func.count(Waitlist.id)
-                        ).where(
+                        select(func.count(Waitlist.id)).where(
                             and_(
-                                Waitlist.tenant_id
-                                == current.tenant_id,
+                                Waitlist.tenant_id == current.tenant_id,
                                 Waitlist.status == "waiting",
-                                Waitlist.created_at
-                                < current.created_at,
+                                Waitlist.created_at < current.created_at,
                             )
                         )
                     )
@@ -150,9 +127,7 @@ async def waitlist_position_stream(
             except asyncio.CancelledError:
                 break
             except Exception:
-                logger.exception(
-                    "Error in waitlist SSE stream"
-                )
+                logger.exception("Error in waitlist SSE stream")
                 break
 
     return StreamingResponse(

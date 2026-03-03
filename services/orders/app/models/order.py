@@ -23,8 +23,13 @@ class Order(Base):
     order_number: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     status: Mapped[str] = mapped_column(
         Enum(
-            "open", "sent_to_kitchen", "in_preparation", "ready",
-            "served", "paid", "canceled",
+            "open",
+            "sent_to_kitchen",
+            "in_preparation",
+            "ready",
+            "served",
+            "paid",
+            "canceled",
             name="order_status",
             create_type=False,
         ),
@@ -79,7 +84,12 @@ class OrderItem(Base):
     tax_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.19)
     status: Mapped[str] = mapped_column(
         Enum(
-            "pending", "sent", "in_preparation", "ready", "served", "canceled",
+            "pending",
+            "sent",
+            "in_preparation",
+            "ready",
+            "served",
+            "canceled",
             name="order_item_status",
             create_type=False,
         ),

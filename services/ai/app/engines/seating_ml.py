@@ -258,15 +258,11 @@ class SeatingMLEngine:
 
         # Fallback: rule-based from guest stats
         if not self._is_trained or self.model is None:
-            return self._rule_based_preferences(
-                guest_id, available_tables, party_size
-            )
+            return self._rule_based_preferences(guest_id, available_tables, party_size)
 
         # Check if guest is known to the model
         if guest_id not in self.guest_encoder.classes_:
-            return self._rule_based_preferences(
-                guest_id, available_tables, party_size
-            )
+            return self._rule_based_preferences(guest_id, available_tables, party_size)
 
         guest_enc = self.guest_encoder.transform([guest_id])[0]
         guest_stats = self._guest_stats.get(guest_id, {})
@@ -289,17 +285,19 @@ class SeatingMLEngine:
             avg_sat = guest_stats.get("avg_satisfaction", 3.0) or 3.0
 
             features = np.array(
-                [[
-                    guest_enc,
-                    party_size,
-                    hour,
-                    day_of_week,
-                    area_enc,
-                    freq_ratio,
-                    freq,
-                    avg_sat,
-                    60,  # default duration for prediction
-                ]],
+                [
+                    [
+                        guest_enc,
+                        party_size,
+                        hour,
+                        day_of_week,
+                        area_enc,
+                        freq_ratio,
+                        freq,
+                        avg_sat,
+                        60,  # default duration for prediction
+                    ]
+                ],
                 dtype=np.float64,
             )
 
@@ -315,11 +313,13 @@ class SeatingMLEngine:
                 # Unknown table — give neutral score
                 ml_score = 10.0
 
-            results.append({
-                "table_id": tid,
-                "ml_score": round(ml_score, 2),
-                "source": "ml",
-            })
+            results.append(
+                {
+                    "table_id": tid,
+                    "ml_score": round(ml_score, 2),
+                    "source": "ml",
+                }
+            )
 
         results.sort(key=lambda x: x["ml_score"], reverse=True)
         return results
@@ -356,11 +356,13 @@ class SeatingMLEngine:
                         area_pref = area_counts.get(table_area, 0) / total_area_visits
                         score += area_pref * 10
 
-            results.append({
-                "table_id": tid,
-                "ml_score": round(score, 2),
-                "source": "rule_based",
-            })
+            results.append(
+                {
+                    "table_id": tid,
+                    "ml_score": round(score, 2),
+                    "source": "rule_based",
+                }
+            )
 
         results.sort(key=lambda x: x["ml_score"], reverse=True)
         return results

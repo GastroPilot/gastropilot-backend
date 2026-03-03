@@ -46,8 +46,7 @@ async def send_reminders(
         .where(
             and_(
                 Reservation.start_at >= tomorrow,
-                Reservation.start_at
-                < tomorrow + timedelta(days=1),
+                Reservation.start_at < tomorrow + timedelta(days=1),
                 Reservation.status.in_(["pending", "confirmed"]),
                 Reservation.reminder_sent.is_(False),
                 Reservation.guest_email.isnot(None),
@@ -65,12 +64,9 @@ async def send_reminders(
                 "reservation.reminder",
                 {
                     "guest_email": reservation.guest_email,
-                    "guest_name": reservation.guest_name
-                    or "Gast",
+                    "guest_name": reservation.guest_name or "Gast",
                     "restaurant_name": restaurant.name,
-                    "reservation_time": reservation.start_at.strftime(
-                        "%H:%M"
-                    ),
+                    "reservation_time": reservation.start_at.strftime("%H:%M"),
                     "party_size": reservation.party_size,
                 },
                 tenant_id=str(reservation.tenant_id),

@@ -38,15 +38,11 @@ class Restaurant(Base):
         DateTime(timezone=True), nullable=True
     )
     billing_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    subscription_tier: Mapped[str | None] = mapped_column(
-        String(32), nullable=True, default="free"
-    )
+    subscription_tier: Mapped[str | None] = mapped_column(String(32), nullable=True, default="free")
     is_suspended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Premium placement
     is_featured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    featured_until: Mapped[DateTime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    featured_until: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -97,9 +93,7 @@ class Table(Base):
     is_outdoor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     rotation: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    table_token: Mapped[str | None] = mapped_column(
-        String(64), unique=True, nullable=True
-    )
+    table_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     token_created_at: Mapped[DateTime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

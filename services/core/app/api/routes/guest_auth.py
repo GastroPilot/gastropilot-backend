@@ -37,9 +37,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 def _build_guest_tokens(guest_id: str) -> GuestTokenResponse:
     """Build access + refresh token pair for a guest."""
-    access_token = create_access_token(
-        {"sub": guest_id, "role": "guest"}
-    )
+    access_token = create_access_token({"sub": guest_id, "role": "guest"})
     refresh_token = create_refresh_token(guest_id)
     return GuestTokenResponse(
         access_token=access_token,
@@ -60,11 +58,7 @@ async def register_guest(
 ):
     """Create a new guest account and return JWT tokens."""
     # Check if email already exists
-    result = await db.execute(
-        select(GuestProfile).where(
-            GuestProfile.email == body.email
-        )
-    )
+    result = await db.execute(select(GuestProfile).where(GuestProfile.email == body.email))
     existing = result.scalar_one_or_none()
     if existing:
         raise HTTPException(
@@ -88,9 +82,7 @@ async def register_guest(
     await db.refresh(guest)
 
     # TODO: Send verification email via notifications service
-    logger.info(
-        "Guest registered: %s (verification pending)", body.email
-    )
+    logger.info("Guest registered: %s (verification pending)", body.email)
 
     return _build_guest_tokens(str(guest.id))
 
@@ -101,22 +93,14 @@ async def login_guest(
     db: AsyncSession = Depends(get_db),
 ):
     """Login with email and password, return JWT tokens."""
-    result = await db.execute(
-        select(GuestProfile).where(
-            GuestProfile.email == body.email
-        )
-    )
+    result = await db.execute(select(GuestProfile).where(GuestProfile.email == body.email))
     guest = result.scalar_one_or_none()
 
     if not guest or not guest.password_hash:
-        raise HTTPException(
-            status_code=401, detail="Invalid credentials"
-        )
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not verify_password(body.password, guest.password_hash):
-        raise HTTPException(
-            status_code=401, detail="Invalid credentials"
-        )
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     return _build_guest_tokens(str(guest.id))
 
@@ -128,16 +112,12 @@ async def verify_email(
 ):
     """Verify guest email with token."""
     result = await db.execute(
-        select(GuestProfile).where(
-            GuestProfile.email_verification_token == body.token
-        )
+        select(GuestProfile).where(GuestProfile.email_verification_token == body.token)
     )
     guest = result.scalar_one_or_none()
 
     if not guest:
-        raise HTTPException(
-            status_code=400, detail="Invalid verification token"
-        )
+        raise HTTPException(status_code=400, detail="Invalid verification token")
 
     guest.email_verified = True
     guest.email_verification_token = None
@@ -154,32 +134,20 @@ async def refresh_guest_token(
     """Refresh guest access token."""
     token = body.get("refresh_token")
     if not token:
-        raise HTTPException(
-            status_code=400, detail="refresh_token required"
-        )
+        raise HTTPException(status_code=400, detail="refresh_token required")
 
     payload = verify_token(token, token_type="refresh")
     if not payload:
-        raise HTTPException(
-            status_code=401, detail="Invalid or expired refresh token"
-        )
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
     guest_id = payload.get("user_id") or payload.get("sub")
     if not guest_id:
-        raise HTTPException(
-            status_code=401, detail="Token missing subject"
-        )
+        raise HTTPException(status_code=401, detail="Token missing subject")
 
-    result = await db.execute(
-        select(GuestProfile).where(
-            GuestProfile.id == guest_id
-        )
-    )
+    result = await db.execute(select(GuestProfile).where(GuestProfile.id == guest_id))
     guest = result.scalar_one_or_none()
     if not guest:
-        raise HTTPException(
-            status_code=401, detail="Guest not found"
-        )
+        raise HTTPException(status_code=401, detail="Guest not found")
 
     return _build_guest_tokens(str(guest.id))
 
@@ -190,11 +158,7 @@ async def forgot_password(
     db: AsyncSession = Depends(get_db),
 ):
     """Send password reset email."""
-    result = await db.execute(
-        select(GuestProfile).where(
-            GuestProfile.email == body.email
-        )
-    )
+    result = await db.execute(select(GuestProfile).where(GuestProfile.email == body.email))
     guest = result.scalar_one_or_none()
 
     # Always return success to prevent email enumeration
@@ -208,10 +172,7 @@ async def forgot_password(
         try:
             from shared.events import event_publisher
 
-            reset_url = (
-                f"{settings.GUEST_PORTAL_URL}"
-                f"/auth/reset-password?token={reset_token}"
-            )
+            reset_url = f"{settings.GUEST_PORTAL_URL}" f"/auth/reset-password?token={reset_token}"
             await event_publisher.publish(
                 "password_reset.requested",
                 {
@@ -237,16 +198,12 @@ async def reset_password(
 ):
     """Reset password with token."""
     result = await db.execute(
-        select(GuestProfile).where(
-            GuestProfile.email_verification_token == body.token
-        )
+        select(GuestProfile).where(GuestProfile.email_verification_token == body.token)
     )
     guest = result.scalar_one_or_none()
 
     if not guest:
-        raise HTTPException(
-            status_code=400, detail="Invalid reset token"
-        )
+        raise HTTPException(status_code=400, detail="Invalid reset token")
 
     guest.password_hash = hash_password(body.new_password)
     guest.email_verification_token = None

@@ -21,29 +21,19 @@ from app.schemas.review import ReviewListResponse, ReviewResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(
-    prefix="/public/restaurants", tags=["restaurant-search"]
-)
+router = APIRouter(prefix="/public/restaurants", tags=["restaurant-search"])
 
 
-async def _get_public_restaurant(
-    slug: str, db: AsyncSession
-) -> Restaurant:
+async def _get_public_restaurant(slug: str, db: AsyncSession) -> Restaurant:
     """Get a restaurant by slug, only if public booking is enabled."""
-    result = await db.execute(
-        select(Restaurant).where(Restaurant.slug == slug)
-    )
+    result = await db.execute(select(Restaurant).where(Restaurant.slug == slug))
     restaurant = result.scalar_one_or_none()
     if not restaurant:
-        raise HTTPException(
-            status_code=404, detail="Restaurant not found"
-        )
+        raise HTTPException(status_code=404, detail="Restaurant not found")
     return restaurant
 
 
-async def _get_rating_stats(
-    db: AsyncSession, tenant_id: UUID
-) -> tuple[float | None, int]:
+async def _get_rating_stats(db: AsyncSession, tenant_id: UUID) -> tuple[float | None, int]:
     """Get average rating and count for a restaurant."""
     result = await db.execute(
         select(
@@ -68,9 +58,7 @@ async def list_cuisines(
 ):
     """Return distinct cuisine types from public restaurants."""
     result = await db.execute(
-        select(
-            Restaurant.settings["cuisine_type"].astext
-        )
+        select(Restaurant.settings["cuisine_type"].astext)
         .where(
             and_(
                 Restaurant.public_booking_enabled.is_(True),
@@ -88,18 +76,12 @@ async def list_cuisines(
 @router.get("/")
 async def search_restaurants(
     q: str | None = Query(None, alias="query", description="Search query"),
-    allergens: str | None = Query(
-        None, description="Comma-separated allergen IDs"
-    ),
+    allergens: str | None = Query(None, description="Comma-separated allergen IDs"),
     cuisine: str | None = Query(None, description="Cuisine type"),
-    price_range: int | None = Query(
-        None, ge=1, le=4, description="Price range 1-4"
-    ),
+    price_range: int | None = Query(None, ge=1, le=4, description="Price range 1-4"),
     lat: float | None = Query(None, description="Latitude"),
     lng: float | None = Query(None, description="Longitude"),
-    radius: float | None = Query(
-        None, description="Search radius in km"
-    ),
+    radius: float | None = Query(None, description="Search radius in km"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     limit: int | None = Query(None, ge=1, le=100),
@@ -112,9 +94,7 @@ async def search_restaurants(
     """
     actual_limit = limit or per_page
 
-    base_query = select(Restaurant).where(
-        Restaurant.public_booking_enabled.is_(True)
-    )
+    base_query = select(Restaurant).where(Restaurant.public_booking_enabled.is_(True))
 
     if q:
         search_term = f"%{q}%"
@@ -125,24 +105,17 @@ async def search_restaurants(
         )
 
     if cuisine:
-        base_query = base_query.where(
-            Restaurant.settings["cuisine_type"].astext == cuisine
-        )
+        base_query = base_query.where(Restaurant.settings["cuisine_type"].astext == cuisine)
 
     if price_range:
         from sqlalchemy import Integer as SAInteger
 
         base_query = base_query.where(
-            Restaurant.settings["price_range"].astext.cast(
-                SAInteger
-            )
-            == price_range
+            Restaurant.settings["price_range"].astext.cast(SAInteger) == price_range
         )
 
     # Total count
-    count_result = await db.execute(
-        select(func.count()).select_from(base_query.subquery())
-    )
+    count_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
     total = count_result.scalar() or 0
 
     # Pagination
@@ -159,9 +132,7 @@ async def search_restaurants(
     # Build response with ratings
     items = []
     for r in restaurants:
-        avg_rating, rating_count = await _get_rating_stats(
-            db, r.id
-        )
+        avg_rating, rating_count = await _get_rating_stats(db, r.id)
         s = r.settings or {}
         cuisine_type = s.get("cuisine_type")
         image_url = s.get("image_url")
@@ -183,9 +154,7 @@ async def search_restaurants(
                 "longitude": s.get("longitude"),
                 "allergen_safe": [],
                 "public_booking_enabled": True,
-                "booking_max_party_size": s.get(
-                    "max_party_size", 10
-                ),
+                "booking_max_party_size": s.get("max_party_size", 10),
                 "is_featured": bool(r.is_featured),
             }
         )
@@ -209,9 +178,7 @@ async def get_restaurant_detail(
     """Full restaurant detail with menu and reviews summary."""
     restaurant = await _get_public_restaurant(slug, db)
 
-    avg_rating, rating_count = await _get_rating_stats(
-        db, restaurant.id
-    )
+    avg_rating, rating_count = await _get_rating_stats(db, restaurant.id)
 
     # Menu summary: category names and item counts
     cat_result = await db.execute(
@@ -237,9 +204,7 @@ async def get_restaurant_detail(
             )
         )
         count = item_count_result.scalar() or 0
-        menu_summary.append(
-            {"category": cat.name, "item_count": count}
-        )
+        menu_summary.append({"category": cat.name, "item_count": count})
 
     s = restaurant.settings or {}
     cuisine_type = s.get("cuisine_type")
@@ -263,9 +228,7 @@ async def get_restaurant_detail(
         "longitude": s.get("longitude"),
         "allergen_safe": [],
         "public_booking_enabled": True,
-        "booking_max_party_size": s.get(
-            "max_party_size", 10
-        ),
+        "booking_max_party_size": s.get("max_party_size", 10),
         "menu_summary": menu_summary,
         "reviews_summary": {
             "average_rating": avg_rating,
@@ -341,9 +304,7 @@ async def list_restaurant_reviews(
 
     from app.models.user import GuestProfile
 
-    avg_rating, total = await _get_rating_stats(
-        db, restaurant.id
-    )
+    avg_rating, total = await _get_rating_stats(db, restaurant.id)
 
     offset = (page - 1) * per_page
     result = await db.execute(

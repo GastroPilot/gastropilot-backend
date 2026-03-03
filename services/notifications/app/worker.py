@@ -53,6 +53,7 @@ def _store_inbox_notification(
     except Exception as exc:
         logger.warning("Failed to store inbox notification: %s", exc)
 
+
 celery_app = Celery(
     "notifications",
     broker=settings.CELERY_BROKER_URL,
@@ -119,10 +120,7 @@ def send_reservation_confirmation(
         tenant_id=tenant_id,
         notification_type="reservation_confirmed",
         title=f"Reservierung bestätigt – {restaurant_name}",
-        body=(
-            f"{reservation_date} um {reservation_time} Uhr · "
-            f"{party_size} Personen"
-        ),
+        body=(f"{reservation_date} um {reservation_time} Uhr · " f"{party_size} Personen"),
         data={"type": "reservation_confirmed"},
     )
 
@@ -243,9 +241,7 @@ def send_reservation_reminder(
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(
-    name="notifications.send_password_reset", bind=True, max_retries=3
-)
+@celery_app.task(name="notifications.send_password_reset", bind=True, max_retries=3)
 def send_password_reset(
     self,
     *,

@@ -236,9 +236,7 @@ class SubscriptionService:
         self.session = session
 
     async def _get_restaurant(self, tenant_id) -> Restaurant:
-        result = await self.session.execute(
-            select(Restaurant).where(Restaurant.id == tenant_id)
-        )
+        result = await self.session.execute(select(Restaurant).where(Restaurant.id == tenant_id))
         restaurant = result.scalar_one_or_none()
         if not restaurant:
             raise ValueError("Restaurant not found")
@@ -301,8 +299,8 @@ class SubscriptionService:
         sub = stripe.Subscription.retrieve(restaurant.stripe_subscription_id)
         restaurant.subscription_status = sub.status
         if sub.current_period_end:
-            restaurant.subscription_current_period_end = (
-                datetime.fromtimestamp(sub.current_period_end, tz=UTC)
+            restaurant.subscription_current_period_end = datetime.fromtimestamp(
+                sub.current_period_end, tz=UTC
             )
         await self.session.flush()
         return {
@@ -323,9 +321,7 @@ class SubscriptionService:
         if not tenant_id:
             logger.warning("Checkout without tenant_id")
             return
-        result = await self.session.execute(
-            select(Restaurant).where(Restaurant.id == tenant_id)
-        )
+        result = await self.session.execute(select(Restaurant).where(Restaurant.id == tenant_id))
         restaurant = result.scalar_one_or_none()
         if not restaurant:
             return
@@ -339,28 +335,22 @@ class SubscriptionService:
     async def handle_subscription_updated(self, sub_data: dict):
         sub_id = sub_data.get("id")
         result = await self.session.execute(
-            select(Restaurant).where(
-                Restaurant.stripe_subscription_id == sub_id
-            )
+            select(Restaurant).where(Restaurant.stripe_subscription_id == sub_id)
         )
         restaurant = result.scalar_one_or_none()
         if not restaurant:
             return
         restaurant.subscription_status = sub_data.get("status", "active")
         if sub_data.get("current_period_end"):
-            restaurant.subscription_current_period_end = (
-                datetime.fromtimestamp(
-                    sub_data["current_period_end"], tz=UTC
-                )
+            restaurant.subscription_current_period_end = datetime.fromtimestamp(
+                sub_data["current_period_end"], tz=UTC
             )
         await self.session.flush()
 
     async def handle_subscription_deleted(self, sub_data: dict):
         sub_id = sub_data.get("id")
         result = await self.session.execute(
-            select(Restaurant).where(
-                Restaurant.stripe_subscription_id == sub_id
-            )
+            select(Restaurant).where(Restaurant.stripe_subscription_id == sub_id)
         )
         restaurant = result.scalar_one_or_none()
         if not restaurant:
@@ -373,9 +363,7 @@ class SubscriptionService:
     async def handle_payment_failed(self, invoice_data: dict):
         customer_id = invoice_data.get("customer")
         result = await self.session.execute(
-            select(Restaurant).where(
-                Restaurant.stripe_customer_id == customer_id
-            )
+            select(Restaurant).where(Restaurant.stripe_customer_id == customer_id)
         )
         restaurant = result.scalar_one_or_none()
         if not restaurant:

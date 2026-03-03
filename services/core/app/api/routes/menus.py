@@ -123,7 +123,12 @@ async def create_item(
 ):
     effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
     # Only pass fields that exist on the MenuItem model
-    valid_fields = {c.key for c in MenuItem.__table__.columns} - {"id", "tenant_id", "created_at", "updated_at"}
+    valid_fields = {c.key for c in MenuItem.__table__.columns} - {
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
+    }
     data = {k: v for k, v in body.model_dump().items() if k in valid_fields}
     item = MenuItem(
         tenant_id=effective_tenant_id,
@@ -160,7 +165,12 @@ async def update_item(
     if not item:
         raise HTTPException(status_code=404, detail="Gericht nicht gefunden")
 
-    valid_fields = {c.key for c in MenuItem.__table__.columns} - {"id", "tenant_id", "created_at", "updated_at"}
+    valid_fields = {c.key for c in MenuItem.__table__.columns} - {
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
+    }
     for field, value in body.model_dump(exclude_none=True).items():
         if field in valid_fields:
             setattr(item, field, value)

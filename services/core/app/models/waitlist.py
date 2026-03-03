@@ -30,9 +30,7 @@ class Waitlist(Base):
     notified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     confirmed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    tracking_token: Mapped[str | None] = mapped_column(
-        String(64), unique=True, nullable=True
-    )
+    tracking_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

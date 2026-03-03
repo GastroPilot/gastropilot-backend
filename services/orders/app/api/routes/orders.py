@@ -108,9 +108,7 @@ async def create_order(
 
     # Resolve menu item allergens in bulk
     menu_item_ids = [
-        item_data.get("menu_item_id")
-        for item_data in data.items
-        if item_data.get("menu_item_id")
+        item_data.get("menu_item_id") for item_data in data.items if item_data.get("menu_item_id")
     ]
     allergens_map: dict[str, list] = {}
     if menu_item_ids:
@@ -254,15 +252,17 @@ async def update_order(
     from datetime import datetime as dt
 
     valid_fields = {c.key for c in Order.__table__.columns} - {
-        "id", "tenant_id", "created_at", "updated_at", "opened_at",
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
+        "opened_at",
     }
     update_data = data.model_dump(exclude_unset=True)
 
     if "status" in update_data and update_data["status"]:
         if update_data["status"] not in ORDER_STATUSES:
-            raise HTTPException(
-                status_code=400, detail=f"Invalid status: {update_data['status']}"
-            )
+            raise HTTPException(status_code=400, detail=f"Invalid status: {update_data['status']}")
 
     # Parse datetime strings to datetime objects
     for date_field in ("paid_at", "closed_at"):

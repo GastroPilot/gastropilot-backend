@@ -350,7 +350,10 @@ async def create_table(
     session: AsyncSession = Depends(get_db),
 ):
     valid_fields = {c.key for c in Table.__table__.columns} - {
-        "id", "tenant_id", "created_at", "updated_at",
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
     }
     data = {k: v for k, v in body.items() if k in valid_fields}
     table = Table(tenant_id=restaurant_id, **data)
@@ -375,7 +378,10 @@ async def update_table(
     if not table:
         raise HTTPException(status_code=404, detail="Table not found")
     valid_fields = {c.key for c in Table.__table__.columns} - {
-        "id", "tenant_id", "created_at", "updated_at",
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
     }
     for field, value in body.items():
         if field in valid_fields:
@@ -515,7 +521,10 @@ async def create_obstacle(
     session: AsyncSession = Depends(get_db),
 ):
     valid_fields = {c.key for c in Obstacle.__table__.columns} - {
-        "id", "tenant_id", "created_at", "updated_at",
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
     }
     data = {k: v for k, v in body.items() if k in valid_fields}
     obstacle = Obstacle(tenant_id=restaurant_id, **data)
@@ -540,7 +549,10 @@ async def update_obstacle(
     if not obstacle:
         raise HTTPException(status_code=404, detail="Obstacle not found")
     valid_fields = {c.key for c in Obstacle.__table__.columns} - {
-        "id", "tenant_id", "created_at", "updated_at",
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
     }
     for field, value in body.items():
         if field in valid_fields:

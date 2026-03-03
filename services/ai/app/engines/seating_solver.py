@@ -110,8 +110,7 @@ def _get_ml_scores(
 
         engine = get_engine(request.tenant_id)
         tables_for_ml = [
-            {"table_id": t.id, "area": t.area, "capacity": t.capacity}
-            for t in available_tables
+            {"table_id": t.id, "area": t.area, "capacity": t.capacity} for t in available_tables
         ]
         context = {
             "party_size": request.party_size,

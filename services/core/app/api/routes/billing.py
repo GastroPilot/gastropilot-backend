@@ -102,9 +102,7 @@ async def create_checkout(
 
     svc = SubscriptionService(db)
     try:
-        url = await svc.create_checkout(
-            tenant_id, body.plan_id, body.success_url, body.cancel_url
-        )
+        url = await svc.create_checkout(tenant_id, body.plan_id, body.success_url, body.cancel_url)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -128,8 +126,7 @@ async def get_subscription(
         data = await svc.sync_subscription(tenant_id)
     except Exception:
         logger.exception("Failed to sync subscription")
-        data = {"id": None, "plan": "free", "status": "inactive",
-                "current_period_end": None}
+        data = {"id": None, "plan": "free", "status": "inactive", "current_period_end": None}
 
     await db.commit()
     return SubscriptionResponse(

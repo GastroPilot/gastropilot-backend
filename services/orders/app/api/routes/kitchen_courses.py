@@ -30,19 +30,13 @@ async def get_order_courses(
     current_user=Depends(get_current_user_or_device),
 ):
     """Get course breakdown for an order."""
-    result = await session.execute(
-        select(Order).where(Order.id == order_id)
-    )
+    result = await session.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
-        raise HTTPException(
-            status_code=404, detail="Order not found"
-        )
+        raise HTTPException(status_code=404, detail="Order not found")
 
     items_result = await session.execute(
-        select(OrderItem)
-        .where(OrderItem.order_id == order_id)
-        .order_by(OrderItem.sort_order)
+        select(OrderItem).where(OrderItem.order_id == order_id).order_by(OrderItem.sort_order)
     )
     items = items_result.scalars().all()
 
@@ -71,9 +65,7 @@ async def get_order_courses(
     }
 
 
-@router.patch(
-    "/{order_id}/release-course/{course_number}"
-)
+@router.patch("/{order_id}/release-course/{course_number}")
 async def release_course(
     order_id: uuid.UUID,
     course_number: int,
@@ -86,14 +78,10 @@ async def release_course(
     Sets all items in the specified course to
     'sent' status.
     """
-    result = await session.execute(
-        select(Order).where(Order.id == order_id)
-    )
+    result = await session.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
-        raise HTTPException(
-            status_code=404, detail="Order not found"
-        )
+        raise HTTPException(status_code=404, detail="Order not found")
 
     items_result = await session.execute(
         select(OrderItem).where(
@@ -105,18 +93,12 @@ async def release_course(
     items = items_result.scalars().all()
 
     # Filter items for the specified course
-    course_items = [
-        i
-        for i in items
-        if (getattr(i, "course", 1) or 1) == course_number
-    ]
+    course_items = [i for i in items if (getattr(i, "course", 1) or 1) == course_number]
 
     if not course_items:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"No items found for course {course_number}"
-            ),
+            detail=(f"No items found for course {course_number}"),
         )
 
     updated = []
@@ -148,9 +130,7 @@ async def release_course(
     }
 
 
-@router.patch(
-    "/orders/{order_id}/items/{item_id}/status"
-)
+@router.patch("/orders/{order_id}/items/{item_id}/status")
 async def update_item_status(
     order_id: uuid.UUID,
     item_id: uuid.UUID,
@@ -184,9 +164,7 @@ async def update_item_status(
     )
     item = result.scalar_one_or_none()
     if not item:
-        raise HTTPException(
-            status_code=404, detail="Order item not found"
-        )
+        raise HTTPException(status_code=404, detail="Order item not found")
 
     item.status = body.status
     await session.commit()

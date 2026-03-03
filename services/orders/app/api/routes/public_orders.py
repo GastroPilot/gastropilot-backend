@@ -27,9 +27,7 @@ from app.schemas.public_order import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(
-    prefix="/public/order", tags=["public-orders"]
-)
+router = APIRouter(prefix="/public/order", tags=["public-orders"])
 
 # Map internal order statuses to guest-facing statuses
 _ORDER_STATUS_MAP = {
@@ -60,9 +58,7 @@ def _public_item_status(status: str) -> str:
     return _ITEM_STATUS_MAP.get(status, status)
 
 
-async def _validate_table_token(
-    slug: str, token: str, db: AsyncSession
-) -> tuple:
+async def _validate_table_token(slug: str, token: str, db: AsyncSession) -> tuple:
     """Validate table token and return restaurant + table info.
 
     Since the orders service does not have direct access to
@@ -121,9 +117,7 @@ async def get_table_menu(
     """
     from sqlalchemy import text
 
-    restaurant, table = await _validate_table_token(
-        slug, token, db
-    )
+    restaurant, table = await _validate_table_token(slug, token, db)
 
     # Get menu categories and items
     cats = await db.execute(
@@ -196,17 +190,13 @@ async def create_public_order(
     """
     from sqlalchemy import text
 
-    restaurant, table = await _validate_table_token(
-        slug, token, db
-    )
+    restaurant, table = await _validate_table_token(slug, token, db)
 
     # Generate or reuse session ID
     if not session_id:
         session_id = secrets.token_urlsafe(16)
 
-    order_number = (
-        f"PUB-{secrets.token_hex(4).upper()}"
-    )
+    order_number = f"PUB-{secrets.token_hex(4).upper()}"
 
     order = Order(
         tenant_id=restaurant[0],
@@ -224,20 +214,14 @@ async def create_public_order(
     for item_req in body.items:
         # Look up menu item for price
         mi_result = await db.execute(
-            text(
-                "SELECT name, price, tax_rate "
-                "FROM menu_items WHERE id = :id"
-            ),
+            text("SELECT name, price, tax_rate " "FROM menu_items WHERE id = :id"),
             {"id": str(item_req.menu_item_id)},
         )
         mi = mi_result.first()
         if not mi:
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"Menu item {item_req.menu_item_id}"
-                    f" not found"
-                ),
+                detail=(f"Menu item {item_req.menu_item_id}" f" not found"),
             )
 
         item_total = mi[1] * item_req.quantity
@@ -276,9 +260,7 @@ async def create_public_order(
         "order_number": order.order_number,
         "status": _public_order_status(order.status),
         "total": order.total,
-        "created_at": (
-            order.created_at.isoformat() if order.created_at else None
-        ),
+        "created_at": (order.created_at.isoformat() if order.created_at else None),
         "items": [
             {
                 "id": str(oi.id),
@@ -303,9 +285,7 @@ async def get_public_order_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Get order status for a session."""
-    restaurant, table = await _validate_table_token(
-        slug, token, db
-    )
+    restaurant, table = await _validate_table_token(slug, token, db)
 
     result = await db.execute(
         select(Order).where(
@@ -318,15 +298,9 @@ async def get_public_order_status(
     )
     order = result.scalar_one_or_none()
     if not order:
-        raise HTTPException(
-            status_code=404, detail="Order not found"
-        )
+        raise HTTPException(status_code=404, detail="Order not found")
 
-    items_result = await db.execute(
-        select(OrderItem).where(
-            OrderItem.order_id == order.id
-        )
-    )
+    items_result = await db.execute(select(OrderItem).where(OrderItem.order_id == order.id))
     items = items_result.scalars().all()
 
     return {
@@ -345,16 +319,8 @@ async def get_public_order_status(
             for i in items
         ],
         "total": order.total,
-        "created_at": (
-            order.created_at.isoformat()
-            if order.created_at
-            else None
-        ),
-        "updated_at": (
-            order.updated_at.isoformat()
-            if order.updated_at
-            else None
-        ),
+        "created_at": (order.created_at.isoformat() if order.created_at else None),
+        "updated_at": (order.updated_at.isoformat() if order.updated_at else None),
     }
 
 
@@ -369,9 +335,7 @@ async def initiate_payment(
     db: AsyncSession = Depends(get_db),
 ):
     """Initiate payment for a public order."""
-    restaurant, table = await _validate_table_token(
-        slug, token, db
-    )
+    restaurant, table = await _validate_table_token(slug, token, db)
 
     result = await db.execute(
         select(Order).where(
@@ -384,9 +348,7 @@ async def initiate_payment(
     )
     order = result.scalar_one_or_none()
     if not order:
-        raise HTTPException(
-            status_code=404, detail="Order not found"
-        )
+        raise HTTPException(status_code=404, detail="Order not found")
 
     if order.payment_status == "paid":
         raise HTTPException(
@@ -446,9 +408,7 @@ async def order_status_stream(
     db: AsyncSession = Depends(get_db),
 ):
     """SSE endpoint for live order status updates."""
-    restaurant, table = await _validate_table_token(
-        slug, token, db
-    )
+    restaurant, table = await _validate_table_token(slug, token, db)
 
     async def event_generator():
         """Generate SSE events for order status."""
@@ -463,27 +423,20 @@ async def order_status_stream(
                     result = await sess.execute(
                         select(Order).where(
                             and_(
-                                Order.tenant_id
-                                == restaurant[0],
+                                Order.tenant_id == restaurant[0],
                                 Order.table_id == table[0],
-                                Order.special_requests
-                                == session,
+                                Order.special_requests == session,
                             )
                         )
                     )
                     order = result.scalar_one_or_none()
 
                     if not order:
-                        yield (
-                            "data: "
-                            '{"status": "not_found"}\n\n'
-                        )
+                        yield ("data: " '{"status": "not_found"}\n\n')
                         break
 
                     items_res = await sess.execute(
-                        select(OrderItem).where(
-                            OrderItem.order_id == order.id
-                        )
+                        select(OrderItem).where(OrderItem.order_id == order.id)
                     )
                     items = items_res.scalars().all()
 
@@ -494,10 +447,7 @@ async def order_status_stream(
                         f' "{order.payment_status}",'
                         f' "items": ['
                         + ",".join(
-                            f'{{"name":'
-                            f' "{i.item_name}",'
-                            f' "status":'
-                            f' "{i.status}"}}'
+                            f'{{"name":' f' "{i.item_name}",' f' "status":' f' "{i.status}"}}'
                             for i in items
                         )
                         + "]}}\n\n"
@@ -514,9 +464,7 @@ async def order_status_stream(
             except asyncio.CancelledError:
                 break
             except Exception:
-                logger.exception(
-                    "Error in order SSE stream"
-                )
+                logger.exception("Error in order SSE stream")
                 break
 
     return StreamingResponse(

@@ -66,9 +66,7 @@ async def get_preferences(guest_id: str, tenant_id: str):
 
     return GuestPreference(
         guest_id=pref["guest_id"],
-        preferred_tables=[
-            TablePreference(**t) for t in pref["preferred_tables"]
-        ],
+        preferred_tables=[TablePreference(**t) for t in pref["preferred_tables"]],
         preferred_areas=pref["preferred_areas"],
         avg_party_size=pref["avg_party_size"],
         avg_satisfaction=pref["avg_satisfaction"],
@@ -89,9 +87,7 @@ async def revpash_report(data: RevPASHReportRequest):
         raise HTTPException(status_code=400, detail="No table data to analyze")
 
     avg_revpash = (
-        sum(r["revpash"] for r in table_results) / len(table_results)
-        if table_results
-        else 0.0
+        sum(r["revpash"] for r in table_results) / len(table_results) if table_results else 0.0
     )
 
     best = table_results[0]["table_id"] if table_results else None

@@ -53,22 +53,20 @@ def calculate_revpash(
         revpash = total_rev / seat_hours if seat_hours > 0 else 0.0
 
         # Occupancy rate
-        occupancy = (
-            total_occupied_hours / hours_available
-            if hours_available > 0
-            else 0.0
-        )
+        occupancy = total_occupied_hours / hours_available if hours_available > 0 else 0.0
 
-        results.append({
-            "table_id": tid,
-            "capacity": capacity,
-            "total_revenue": round(total_rev, 2),
-            "total_hours_available": round(hours_available, 2),
-            "total_hours_occupied": round(total_occupied_hours, 2),
-            "revpash": round(revpash, 2),
-            "occupancy_rate": round(min(1.0, occupancy), 4),
-            "avg_turnover_minutes": round(avg_turnover, 1),
-        })
+        results.append(
+            {
+                "table_id": tid,
+                "capacity": capacity,
+                "total_revenue": round(total_rev, 2),
+                "total_hours_available": round(hours_available, 2),
+                "total_hours_occupied": round(total_occupied_hours, 2),
+                "revpash": round(revpash, 2),
+                "occupancy_rate": round(min(1.0, occupancy), 4),
+                "avg_turnover_minutes": round(avg_turnover, 1),
+            }
+        )
 
     # Normalize to 0-100 score
     max_revpash = max((r["revpash"] for r in results), default=1.0) or 1.0

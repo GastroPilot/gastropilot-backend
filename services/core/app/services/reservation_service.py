@@ -83,9 +83,7 @@ async def get_available_timeslots(
             for res in existing_reservations:
                 if res.table_id != table.id:
                     continue
-                res_end = res.end_at or (
-                    res.start_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)
-                )
+                res_end = res.end_at or (res.start_at + timedelta(minutes=DEFAULT_DURATION_MINUTES))
                 # Überlappungs-Check
                 if not (slot_end_time <= res.start_at or current_time >= res_end):
                     conflict = True
