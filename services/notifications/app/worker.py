@@ -15,6 +15,44 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _store_inbox_notification(
+    *,
+    guest_profile_id: str | None,
+    tenant_id: str | None,
+    notification_type: str,
+    title: str,
+    body: str | None = None,
+    data: dict | None = None,
+) -> None:
+    """Write a notification row to the inbox (sync, best-effort)."""
+    if not guest_profile_id or not settings.DATABASE_URL:
+        return
+    try:
+        import psycopg2
+
+        conn = psycopg2.connect(settings.DATABASE_URL)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO notifications "
+                    "(guest_profile_id, tenant_id, type, title, body, data) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (
+                        guest_profile_id,
+                        tenant_id,
+                        notification_type,
+                        title,
+                        body,
+                        json.dumps(data or {}),
+                    ),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("Failed to store inbox notification: %s", exc)
+
 celery_app = Celery(
     "notifications",
     broker=settings.CELERY_BROKER_URL,
@@ -61,6 +99,8 @@ def send_reservation_confirmation(
     notes: str | None = None,
     guest_push_token: str | None = None,
     guest_phone: str | None = None,
+    guest_profile_id: str | None = None,
+    tenant_id: str | None = None,
 ) -> dict:
     results: dict = {}
 
@@ -73,6 +113,18 @@ def send_reservation_confirmation(
         "table_name": table_name,
         "notes": notes,
     }
+
+    _store_inbox_notification(
+        guest_profile_id=guest_profile_id,
+        tenant_id=tenant_id,
+        notification_type="reservation_confirmed",
+        title=f"Reservierung bestätigt – {restaurant_name}",
+        body=(
+            f"{reservation_date} um {reservation_time} Uhr · "
+            f"{party_size} Personen"
+        ),
+        data={"type": "reservation_confirmed"},
+    )
 
     # E-Mail
     try:
@@ -187,6 +239,46 @@ def send_reservation_reminder(
 
 
 # ---------------------------------------------------------------------------
+# Passwort-Reset
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(
+    name="notifications.send_password_reset", bind=True, max_retries=3
+)
+def send_password_reset(
+    self,
+    *,
+    guest_email: str,
+    guest_name: str,
+    reset_url: str,
+) -> dict:
+    results: dict = {}
+
+    context = {
+        "guest_name": guest_name,
+        "reset_url": reset_url,
+    }
+
+    try:
+        html = render_template("password_reset.html", context)
+        success = _run_async(
+            send_email(
+                to=guest_email,
+                subject="Passwort zurücksetzen – GastroPilot",
+                html_body=html,
+            )
+        )
+        results["email"] = success
+    except Exception as exc:
+        logger.error("E-Mail-Fehler bei Passwort-Reset: %s", exc)
+        results["email"] = False
+        raise self.retry(exc=exc, countdown=60)
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Bestell-Benachrichtigungen
 # ---------------------------------------------------------------------------
 
@@ -203,8 +295,19 @@ def send_order_ready(
     total: str | None = None,
     guest_push_token: str | None = None,
     guest_phone: str | None = None,
+    guest_profile_id: str | None = None,
+    tenant_id: str | None = None,
 ) -> dict:
     results: dict = {}
+
+    _store_inbox_notification(
+        guest_profile_id=guest_profile_id,
+        tenant_id=tenant_id,
+        notification_type="order_ready",
+        title=f"Bestellung #{order_number} ist fertig!",
+        body=f"Ihre Bestellung bei {restaurant_name} ist bereit.",
+        data={"type": "order_ready", "order_number": order_number},
+    )
 
     if guest_email:
         context = {
@@ -273,8 +376,22 @@ def send_reservation_canceled(
     party_size: int,
     guest_push_token: str | None = None,
     guest_phone: str | None = None,
+    guest_profile_id: str | None = None,
+    tenant_id: str | None = None,
 ) -> dict:
     results: dict = {}
+
+    _store_inbox_notification(
+        guest_profile_id=guest_profile_id,
+        tenant_id=tenant_id,
+        notification_type="reservation_canceled",
+        title=f"Reservierung storniert – {restaurant_name}",
+        body=(
+            f"Ihre Reservierung am {reservation_date} um "
+            f"{reservation_time} Uhr wurde storniert."
+        ),
+        data={"type": "reservation_canceled"},
+    )
 
     context = {
         "guest_name": guest_name,
@@ -448,6 +565,7 @@ def process_redis_event(event_name: str, payload_json: str) -> None:
         "order.ready": send_order_ready,
         "waitlist.notified": send_waitlist_notification,
         "prepayment.completed": send_prepayment_confirmation,
+        "password_reset.requested": send_password_reset,
     }
 
     handler = handler_map.get(event_name)

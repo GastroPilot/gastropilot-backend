@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -57,7 +57,15 @@ class Reservation(Base):
     start_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     end_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
     party_size: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    status: Mapped[str] = mapped_column(
+        Enum(
+            "pending", "confirmed", "seated", "completed", "canceled", "no_show",
+            name="reservation_status",
+            create_type=False,
+        ),
+        nullable=False,
+        default="pending",
+    )
     channel: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
     guest_name: Mapped[str | None] = mapped_column(String(240), nullable=True)
     guest_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -76,6 +84,9 @@ class Reservation(Base):
     voucher_discount_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     prepayment_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     prepayment_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reminder_sent: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

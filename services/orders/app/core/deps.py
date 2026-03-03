@@ -17,6 +17,7 @@ if str(_shared_path) not in sys.path:
     sys.path.insert(0, str(_shared_path))
 
 from shared.auth import configure, verify_token
+from dataclasses import dataclass
 
 configure(
     jwt_secret=settings.JWT_SECRET,
@@ -67,6 +68,62 @@ async def get_current_user(
     payload = verify_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.get("sub") or payload.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token missing user_id")
+    result = await session.execute(select(User).where(User.id == uuid.UUID(user_id)))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+    return user
+
+
+@dataclass
+class DeviceIdentity:
+    """Lightweight identity for KDS device tokens (no DB user lookup)."""
+
+    id: uuid.UUID
+    tenant_id: str
+    role: str
+    station: str
+    is_device: bool = True
+    is_active: bool = True
+
+
+async def get_current_user_or_device(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    access_token: str | None = Cookie(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    """Authenticate either a regular user or a KDS device.
+
+    Device JWTs carry ``"device": True`` and use the device ID as ``sub``.
+    Instead of querying the users table we return a ``DeviceIdentity``.
+    """
+    from app.models.user import User
+
+    header_token = credentials.credentials if credentials else None
+    token = access_token or header_token
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    payload = verify_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Device token path — skip user DB lookup
+    if payload.get("device"):
+        sub = payload.get("sub")
+        if not sub:
+            raise HTTPException(status_code=401, detail="Token missing subject")
+        return DeviceIdentity(
+            id=uuid.UUID(sub),
+            tenant_id=payload.get("tenant_id", ""),
+            role=payload.get("role", "kitchen"),
+            station=payload.get("station", "alle"),
+        )
+
+    # Regular user path
     user_id = payload.get("sub") or payload.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Token missing user_id")

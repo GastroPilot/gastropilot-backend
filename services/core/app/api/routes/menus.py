@@ -122,9 +122,12 @@ async def create_item(
     current_user: User = Depends(require_manager_or_above),
 ):
     effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    # Only pass fields that exist on the MenuItem model
+    valid_fields = {c.key for c in MenuItem.__table__.columns} - {"id", "tenant_id", "created_at", "updated_at"}
+    data = {k: v for k, v in body.model_dump().items() if k in valid_fields}
     item = MenuItem(
         tenant_id=effective_tenant_id,
-        **body.model_dump(),
+        **data,
     )
     db.add(item)
     await db.commit()
@@ -157,8 +160,10 @@ async def update_item(
     if not item:
         raise HTTPException(status_code=404, detail="Gericht nicht gefunden")
 
+    valid_fields = {c.key for c in MenuItem.__table__.columns} - {"id", "tenant_id", "created_at", "updated_at"}
     for field, value in body.model_dump(exclude_none=True).items():
-        setattr(item, field, value)
+        if field in valid_fields:
+            setattr(item, field, value)
 
     await db.commit()
     await db.refresh(item)

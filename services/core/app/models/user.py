@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import ENUM, UUID
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 user_role_enum = ENUM(
@@ -76,6 +76,13 @@ class GuestProfile(Base):
     last_name: Mapped[str] = mapped_column(String(120), nullable=False)
     language: Mapped[str | None] = mapped_column(String(10), default="de")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    email_verification_token: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    allergen_profile: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    push_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
