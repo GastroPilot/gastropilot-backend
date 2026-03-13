@@ -74,6 +74,8 @@ class Settings(BaseSettings):
 
     PUBLIC_BOOKING_ENABLED: bool = False
     RESERVATION_WIDGET_URL: str = "http://localhost:3002"
+    GUEST_PORTAL_URL: str = "http://localhost:3002"
+    INTERNAL_API_KEY: str = "internal-secret-change-in-production"
 
     @property
     def cors_origins_list(self) -> list[str]:

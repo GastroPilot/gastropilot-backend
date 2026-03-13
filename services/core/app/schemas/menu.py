@@ -84,4 +84,6 @@ class AllergenCheckResult(BaseModel):
     item_name: str
     is_safe: bool
     matched_allergens: list[str]
+    risk_level: str = "safe"  # "safe" | "warning" | "danger"
+    may_contain: list[str] = []
     ingredients: list[dict]

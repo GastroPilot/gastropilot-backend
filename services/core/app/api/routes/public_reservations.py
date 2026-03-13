@@ -21,6 +21,7 @@ from app.models.reservation import Guest, Reservation
 from app.models.restaurant import Restaurant, Table
 from app.models.table_config import ReservationTable, TableDayConfig
 from app.models.upsell import ReservationUpsellPackage, UpsellPackage
+from app.models.user import GuestProfile
 from app.models.voucher import Voucher, VoucherUsage
 from app.utils.ics_generator import generate_ics_file
 
@@ -43,7 +44,7 @@ class NotificationChannels(BaseModel):
 class PublicReservationCreate(BaseModel):
     guest_name: str
     guest_email: EmailStr
-    guest_phone: str
+    guest_phone: str | None = None
     party_size: int
     desired_date: date
     desired_time: str  # HH:MM
@@ -332,6 +333,13 @@ async def create_reservation(
         select(Guest).where(and_(Guest.tenant_id == restaurant.id, Guest.email == body.guest_email))
     )
     guest = guest_result.scalar_one_or_none()
+
+    # Look up global guest profile by email to link reservation to profile
+    profile_result = await db.execute(
+        select(GuestProfile).where(GuestProfile.email == body.guest_email)
+    )
+    guest_profile = profile_result.scalar_one_or_none()
+
     if not guest:
         name_parts = body.guest_name.strip().split(" ", 1)
         guest = Guest(
@@ -340,9 +348,13 @@ async def create_reservation(
             last_name=name_parts[1] if len(name_parts) > 1 else "",
             email=body.guest_email,
             phone=body.guest_phone,
+            guest_profile_id=guest_profile.id if guest_profile else None,
         )
         db.add(guest)
         await db.flush()
+    elif guest_profile and not guest.guest_profile_id:
+        # Link existing guest to profile if not yet linked
+        guest.guest_profile_id = guest_profile.id
 
     confirmation_code = secrets.token_urlsafe(6).upper()[:8]
 
@@ -357,7 +369,7 @@ async def create_reservation(
         channel=body.channel,
         guest_name=body.guest_name,
         guest_email=body.guest_email,
-        guest_phone=body.guest_phone,
+        guest_phone=body.guest_phone or "",
         confirmation_code=confirmation_code,
         special_requests=body.special_requests,
         confirmed_at=datetime.now(UTC),

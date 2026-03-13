@@ -304,23 +304,108 @@ async def list_tables(
         select(Table).where(Table.tenant_id == restaurant_id, Table.is_active == True)
     )
     tables = result.scalars().all()
-    return [
-        {
-            "id": str(t.id),
-            "number": t.number,
-            "capacity": t.capacity,
-            "shape": t.shape,
-            "position_x": t.position_x,
-            "position_y": t.position_y,
-            "width": t.width,
-            "height": t.height,
-            "is_active": t.is_active,
-            "is_joinable": t.is_joinable,
-            "is_outdoor": t.is_outdoor,
-            "area_id": str(t.area_id) if t.area_id else None,
-        }
-        for t in tables
-    ]
+    return [_table_to_dict(t) for t in tables]
+
+
+@router.get("/{restaurant_id}/tables/{table_id}")
+async def get_table(
+    restaurant_id: uuid.UUID,
+    table_id: uuid.UUID,
+    current_user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Table).where(Table.id == table_id, Table.tenant_id == restaurant_id)
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Table not found")
+    return _table_to_dict(t)
+
+
+def _table_to_dict(t: Table) -> dict:
+    return {
+        "id": str(t.id),
+        "number": t.number,
+        "capacity": t.capacity,
+        "shape": t.shape,
+        "position_x": t.position_x,
+        "position_y": t.position_y,
+        "width": t.width,
+        "height": t.height,
+        "is_active": t.is_active,
+        "is_joinable": t.is_joinable,
+        "is_outdoor": t.is_outdoor,
+        "rotation": t.rotation,
+        "area_id": str(t.area_id) if t.area_id else None,
+        "notes": t.notes,
+    }
+
+
+@router.post("/{restaurant_id}/tables", status_code=201)
+async def create_table(
+    restaurant_id: uuid.UUID,
+    body: dict,
+    current_user=Depends(require_manager_or_above),
+    session: AsyncSession = Depends(get_db),
+):
+    valid_fields = {c.key for c in Table.__table__.columns} - {
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
+    }
+    data = {k: v for k, v in body.items() if k in valid_fields}
+    table = Table(tenant_id=restaurant_id, **data)
+    session.add(table)
+    await session.commit()
+    await session.refresh(table)
+    return _table_to_dict(table)
+
+
+@router.patch("/{restaurant_id}/tables/{table_id}")
+async def update_table(
+    restaurant_id: uuid.UUID,
+    table_id: uuid.UUID,
+    body: dict,
+    current_user=Depends(require_manager_or_above),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Table).where(Table.id == table_id, Table.tenant_id == restaurant_id)
+    )
+    table = result.scalar_one_or_none()
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+    valid_fields = {c.key for c in Table.__table__.columns} - {
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
+    }
+    for field, value in body.items():
+        if field in valid_fields:
+            setattr(table, field, value)
+    await session.commit()
+    await session.refresh(table)
+    return _table_to_dict(table)
+
+
+@router.delete("/{restaurant_id}/tables/{table_id}", status_code=204)
+async def delete_table(
+    restaurant_id: uuid.UUID,
+    table_id: uuid.UUID,
+    current_user=Depends(require_manager_or_above),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Table).where(Table.id == table_id, Table.tenant_id == restaurant_id)
+    )
+    table = result.scalar_one_or_none()
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+    await session.delete(table)
+    await session.commit()
 
 
 @router.get("/{restaurant_id}/areas")
@@ -332,6 +417,58 @@ async def list_areas(
     result = await session.execute(select(Area).where(Area.tenant_id == restaurant_id))
     areas = result.scalars().all()
     return [{"id": str(a.id), "name": a.name} for a in areas]
+
+
+@router.post("/{restaurant_id}/areas", status_code=201)
+async def create_area(
+    restaurant_id: uuid.UUID,
+    body: dict,
+    current_user=Depends(require_manager_or_above),
+    session: AsyncSession = Depends(get_db),
+):
+    area = Area(tenant_id=restaurant_id, name=body["name"])
+    session.add(area)
+    await session.commit()
+    await session.refresh(area)
+    return {"id": str(area.id), "name": area.name}
+
+
+@router.patch("/{restaurant_id}/areas/{area_id}")
+async def update_area(
+    restaurant_id: uuid.UUID,
+    area_id: uuid.UUID,
+    body: dict,
+    current_user=Depends(require_manager_or_above),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Area).where(Area.id == area_id, Area.tenant_id == restaurant_id)
+    )
+    area = result.scalar_one_or_none()
+    if not area:
+        raise HTTPException(status_code=404, detail="Area not found")
+    if "name" in body:
+        area.name = body["name"]
+    await session.commit()
+    await session.refresh(area)
+    return {"id": str(area.id), "name": area.name}
+
+
+@router.delete("/{restaurant_id}/areas/{area_id}", status_code=204)
+async def delete_area(
+    restaurant_id: uuid.UUID,
+    area_id: uuid.UUID,
+    current_user=Depends(require_manager_or_above),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Area).where(Area.id == area_id, Area.tenant_id == restaurant_id)
+    )
+    area = result.scalar_one_or_none()
+    if not area:
+        raise HTTPException(status_code=404, detail="Area not found")
+    await session.delete(area)
+    await session.commit()
 
 
 @router.get("/{restaurant_id}/obstacles")
@@ -358,6 +495,88 @@ async def list_obstacles(
         }
         for o in obstacles
     ]
+
+
+def _obstacle_to_dict(o: Obstacle) -> dict:
+    return {
+        "id": str(o.id),
+        "type": o.type,
+        "name": o.name,
+        "x": o.x,
+        "y": o.y,
+        "width": o.width,
+        "height": o.height,
+        "rotation": o.rotation,
+        "blocking": o.blocking,
+        "color": o.color,
+        "area_id": str(o.area_id) if o.area_id else None,
+    }
+
+
+@router.post("/{restaurant_id}/obstacles", status_code=201)
+async def create_obstacle(
+    restaurant_id: uuid.UUID,
+    body: dict,
+    current_user=Depends(require_manager_or_above),
+    session: AsyncSession = Depends(get_db),
+):
+    valid_fields = {c.key for c in Obstacle.__table__.columns} - {
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
+    }
+    data = {k: v for k, v in body.items() if k in valid_fields}
+    obstacle = Obstacle(tenant_id=restaurant_id, **data)
+    session.add(obstacle)
+    await session.commit()
+    await session.refresh(obstacle)
+    return _obstacle_to_dict(obstacle)
+
+
+@router.patch("/{restaurant_id}/obstacles/{obstacle_id}")
+async def update_obstacle(
+    restaurant_id: uuid.UUID,
+    obstacle_id: uuid.UUID,
+    body: dict,
+    current_user=Depends(require_manager_or_above),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Obstacle).where(Obstacle.id == obstacle_id, Obstacle.tenant_id == restaurant_id)
+    )
+    obstacle = result.scalar_one_or_none()
+    if not obstacle:
+        raise HTTPException(status_code=404, detail="Obstacle not found")
+    valid_fields = {c.key for c in Obstacle.__table__.columns} - {
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
+    }
+    for field, value in body.items():
+        if field in valid_fields:
+            setattr(obstacle, field, value)
+    await session.commit()
+    await session.refresh(obstacle)
+    return _obstacle_to_dict(obstacle)
+
+
+@router.delete("/{restaurant_id}/obstacles/{obstacle_id}", status_code=204)
+async def delete_obstacle(
+    restaurant_id: uuid.UUID,
+    obstacle_id: uuid.UUID,
+    current_user=Depends(require_manager_or_above),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(Obstacle).where(Obstacle.id == obstacle_id, Obstacle.tenant_id == restaurant_id)
+    )
+    obstacle = result.scalar_one_or_none()
+    if not obstacle:
+        raise HTTPException(status_code=404, detail="Obstacle not found")
+    await session.delete(obstacle)
+    await session.commit()
 
 
 @router.get("/{restaurant_id}/audit-logs/")

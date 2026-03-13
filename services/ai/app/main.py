@@ -24,9 +24,10 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-from app.api.routes import health, predictions, recommendations, seating
+from app.api.routes import health, predictions, recommendations, seating, seating_ml
 
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(seating.router, prefix="/api/v1")
+app.include_router(seating_ml.router, prefix="/api/v1")
 app.include_router(predictions.router, prefix="/api/v1")
 app.include_router(recommendations.router, prefix="/api/v1")

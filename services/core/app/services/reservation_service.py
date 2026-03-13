@@ -55,8 +55,8 @@ async def get_available_timeslots(
         select(Reservation).where(
             and_(
                 Reservation.table_id.in_(table_ids),
-                Reservation.starts_at >= day_start,
-                Reservation.starts_at < day_end,
+                Reservation.start_at >= day_start,
+                Reservation.start_at < day_end,
                 Reservation.status.in_(["pending", "confirmed", "seated"]),
             )
         )
@@ -83,11 +83,9 @@ async def get_available_timeslots(
             for res in existing_reservations:
                 if res.table_id != table.id:
                     continue
-                res_end = res.ends_at or (
-                    res.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)
-                )
+                res_end = res.end_at or (res.start_at + timedelta(minutes=DEFAULT_DURATION_MINUTES))
                 # Überlappungs-Check
-                if not (slot_end_time <= res.starts_at or current_time >= res_end):
+                if not (slot_end_time <= res.start_at or current_time >= res_end):
                     conflict = True
                     break
             if not conflict:
@@ -133,11 +131,11 @@ async def find_available_table(
                 and_(
                     Reservation.table_id == table.id,
                     Reservation.status.in_(["pending", "confirmed", "seated"]),
-                    Reservation.starts_at < ends_at,
+                    Reservation.start_at < ends_at,
                     (
-                        Reservation.ends_at > starts_at
-                        if Reservation.ends_at is not None
-                        else Reservation.starts_at >= starts_at
+                        Reservation.end_at > starts_at
+                        if Reservation.end_at is not None
+                        else Reservation.start_at >= starts_at
                     ),
                 )
             )

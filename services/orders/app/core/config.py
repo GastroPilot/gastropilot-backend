@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3001"
     CORS_ORIGIN_REGEX: str = r"https://([a-zA-Z0-9-]+\.)?gpilot\.app"
     CORS_ALLOW_CREDENTIALS: bool = True
+    STRIPE_SECRET_KEY: str = ""
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -43,6 +43,8 @@ VOUCHER_REDEEMED = "voucher.redeemed"
 PREPAYMENT_COMPLETED = "prepayment.completed"
 PREPAYMENT_FAILED = "prepayment.failed"
 
+PASSWORD_RESET_REQUESTED = "password_reset.requested"
+
 MESSAGE_SENT = "message.sent"
 
 

@@ -51,7 +51,10 @@ from app.api.routes import (
     health,
     invoices,
     kitchen,
+    kitchen_courses,
+    kitchen_device,
     orders,
+    public_orders,
     statistics,
     sumup,
     waitlist,
@@ -66,10 +69,13 @@ app.include_router(webhook_sumup.router, prefix="/api/v1")
 for prefix in ("/api/v1", "/v1"):
     app.include_router(orders.router, prefix=prefix)
     app.include_router(kitchen.router, prefix=prefix)
+    app.include_router(kitchen_courses.router, prefix=prefix)
     app.include_router(waitlist.router, prefix=prefix)
     app.include_router(statistics.router, prefix=prefix)
     app.include_router(invoices.router, prefix=prefix)
     app.include_router(sumup.router, prefix=prefix)
+    app.include_router(public_orders.router, prefix=prefix)
+    app.include_router(kitchen_device.router, prefix=prefix)
 
 
 @app.websocket("/ws/{tenant_id}")
