@@ -21,12 +21,12 @@ from app.models.user import GuestProfile
 from app.schemas.guest_auth import (
     EmailVerifyRequest,
     GuestLoginRequest,
-    GuestProfileResponse,
     GuestRegisterRequest,
     GuestTokenResponse,
     PasswordResetConfirm,
     PasswordResetRequest,
 )
+
 
 logger = logging.getLogger(__name__)
 
