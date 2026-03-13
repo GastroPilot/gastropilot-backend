@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_staff_or_above
@@ -17,6 +19,7 @@ from app.models.restaurant import Area, Obstacle, Restaurant, Table
 from app.models.table_config import ReservationTableDayConfig, TableDayConfig
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen
@@ -147,7 +150,15 @@ async def get_dashboard_batch(
                     o[k] = str(v)
                 elif isinstance(v, datetime):
                     o[k] = v.isoformat()
-    except Exception:
+    except SQLAlchemyError:
+        logger.exception(
+            "Orders konnten fuer Dashboard-Batch nicht geladen werden",
+            extra={
+                "restaurant_id": str(rid),
+                "day_start": day_start.isoformat(),
+                "day_end": day_end.isoformat(),
+            },
+        )
         orders = []
 
     # Table day configs (inkl. temporäre Tische) für den gewählten Tag
@@ -253,7 +264,11 @@ async def get_kitchen_data(
                     elif isinstance(v, datetime):
                         row[k] = v.isoformat()
 
-    except Exception:
+    except SQLAlchemyError:
+        logger.exception(
+            "Orders/Kitchen-Items konnten fuer Kitchen-Batch nicht geladen werden",
+            extra={"restaurant_id": str(rid)},
+        )
         orders = []
         order_items = []
 
@@ -384,7 +399,15 @@ async def get_insights_data(
             for row in popular_result
         ]
 
-    except Exception:
+    except SQLAlchemyError:
+        logger.exception(
+            "Orders-Insights konnten nicht berechnet werden",
+            extra={
+                "restaurant_id": str(rid),
+                "from_dt": period_start.isoformat(),
+                "to_dt": period_end.isoformat(),
+            },
+        )
         orders_count = 0
         total_revenue = 0.0
         avg_order_value = 0.0
