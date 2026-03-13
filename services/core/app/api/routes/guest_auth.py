@@ -27,7 +27,6 @@ from app.schemas.guest_auth import (
     PasswordResetRequest,
 )
 
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/public/auth", tags=["guest-auth"])

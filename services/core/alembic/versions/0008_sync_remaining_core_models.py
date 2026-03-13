@@ -18,7 +18,9 @@ depends_on = None
 def upgrade() -> None:
     # Waitlist: public tracking endpoints use this token
     op.execute("ALTER TABLE waitlist ADD COLUMN IF NOT EXISTS tracking_token VARCHAR(64)")
-    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_tracking_token ON waitlist(tracking_token)")
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_tracking_token ON waitlist(tracking_token)"
+    )
 
     # Devices
     op.execute("""
@@ -34,7 +36,9 @@ def upgrade() -> None:
     )
     """)
     op.execute("CREATE INDEX IF NOT EXISTS idx_devices_tenant_id ON devices(tenant_id)")
-    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_device_token ON devices(device_token)")
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_device_token ON devices(device_token)"
+    )
 
     # Reviews
     op.execute("""
@@ -55,7 +59,9 @@ def upgrade() -> None:
     )
     """)
     op.execute("CREATE INDEX IF NOT EXISTS idx_reviews_tenant_id ON reviews(tenant_id)")
-    op.execute("CREATE INDEX IF NOT EXISTS idx_reviews_guest_profile_id ON reviews(guest_profile_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_reviews_guest_profile_id ON reviews(guest_profile_id)"
+    )
 
     # Guest favorites
     op.execute("""

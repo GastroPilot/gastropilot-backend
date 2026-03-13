@@ -22,7 +22,6 @@ from app.schemas.review import (
     ReviewResponse,
 )
 
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["reviews"])

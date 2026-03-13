@@ -18,7 +18,9 @@ depends_on = None
 def upgrade() -> None:
     # Keep this migration idempotent across local DB variants (init.sql, partial Alembic states).
     op.execute("ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(128)")
-    op.execute("ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(128)")
+    op.execute(
+        "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(128)"
+    )
     op.execute("ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS stripe_price_id VARCHAR(128)")
     op.execute(
         "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(32) DEFAULT 'inactive'"

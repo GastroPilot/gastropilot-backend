@@ -289,7 +289,9 @@ async def impersonate_user(
     if not user.is_active:
         raise HTTPException(status_code=400, detail="User is inactive")
     if user.role in {"platform_admin", "platform_support", "platform_analyst"}:
-        raise HTTPException(status_code=400, detail="Servecta-User können nicht impersoniert werden")
+        raise HTTPException(
+            status_code=400, detail="Servecta-User können nicht impersoniert werden"
+        )
 
     token_data = {
         "sub": str(user.id),
