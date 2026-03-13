@@ -17,6 +17,7 @@ from app.schemas.user import UserCreate, UserMeResponse, UserResponse, UserUpdat
 router = APIRouter(prefix="/users", tags=["users"])
 
 PLATFORM_ROLES = {"platform_admin", "platform_support"}
+_MEMORY_USER_SETTINGS: dict[str, str] = {}
 
 
 def _effective_tenant_id(request: Request, current_user: User) -> UUID | None:
@@ -50,13 +51,32 @@ class UserSettingsUpdate(BaseModel):
 
 
 async def _get_redis():
+    class _MemoryRedis:
+        async def get(self, key: str):
+            return _MEMORY_USER_SETTINGS.get(key)
+
+        async def set(self, key: str, value: str):
+            _MEMORY_USER_SETTINGS[key] = value
+            return True
+
+        async def aclose(self):
+            return None
+
+    if not settings.REDIS_URL:
+        yield _MemoryRedis()
+        return
+
     import redis.asyncio as aioredis
 
-    r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
         yield r
+    except ValueError:
+        # Invalid URL in local dev: gracefully fall back to in-memory storage.
+        yield _MemoryRedis()
     finally:
-        await r.aclose()
+        if "r" in locals():
+            await r.aclose()
 
 
 @router.get("/me/settings/")

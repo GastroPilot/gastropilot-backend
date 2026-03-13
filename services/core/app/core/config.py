@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 env_path = Path(__file__).parent.parent.parent.parent / ".env"
@@ -44,6 +45,16 @@ class Settings(BaseSettings):
     USE_HTTPONLY_COOKIES: bool = True
 
     REDIS_URL: str | None = None
+
+    @field_validator("REDIS_URL", mode="before")
+    @classmethod
+    def normalize_redis_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v
 
     CORS_ORIGINS: str = "http://localhost:3001,http://127.0.0.1:3001"
     CORS_ORIGIN_REGEX: str = r"https://([a-zA-Z0-9-]+\.)?gpilot\.app"
