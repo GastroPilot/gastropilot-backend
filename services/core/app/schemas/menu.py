@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class MenuCategoryBase(BaseModel):
@@ -39,11 +39,18 @@ class MenuItemBase(BaseModel):
     is_available: bool = True
     is_vegetarian: bool = False
     is_vegan: bool = False
-    allergens: list[str] = []
-    ingredients: list[dict] = []
-    tags: list[str] = []
+    allergens: list[str] = Field(default_factory=list)
+    ingredients: list[dict] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     image_url: str | None = None
     sort_order: int = 0
+
+    @field_validator("allergens", "ingredients", "tags", mode="before")
+    @classmethod
+    def normalize_nullable_lists(cls, value):
+        if value is None:
+            return []
+        return value
 
 
 class MenuItemCreate(MenuItemBase):
@@ -85,5 +92,5 @@ class AllergenCheckResult(BaseModel):
     is_safe: bool
     matched_allergens: list[str]
     risk_level: str = "safe"  # "safe" | "warning" | "danger"
-    may_contain: list[str] = []
+    may_contain: list[str] = Field(default_factory=list)
     ingredients: list[dict]

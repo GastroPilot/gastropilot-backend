@@ -174,7 +174,7 @@ async def refresh(
     refresh_token_cookie: str | None = Cookie(default=None, alias="refresh_token"),
 ):
     header_token = credentials.credentials if credentials else None
-    token = refresh_token_cookie or header_token
+    token = header_token or refresh_token_cookie
 
     if not token:
         raise HTTPException(status_code=401, detail="Refresh token required")
@@ -255,7 +255,7 @@ async def logout(
     session: AsyncSession = Depends(get_db),
 ):
     header_token = credentials.credentials if credentials else None
-    token = access_token_cookie or header_token
+    token = header_token or access_token_cookie
 
     if token:
         payload = verify_token(token)
