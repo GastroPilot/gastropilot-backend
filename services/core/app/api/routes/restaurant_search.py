@@ -14,9 +14,9 @@ from app.models.menu import MenuCategory, MenuItem
 from app.models.restaurant import Restaurant
 from app.models.review import Review
 from app.schemas.restaurant_search import (
-    RestaurantDetailResponse,
     RestaurantSearchResponse,
 )
+
 from app.schemas.review import ReviewListResponse, ReviewResponse
 
 logger = logging.getLogger(__name__)
