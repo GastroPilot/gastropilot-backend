@@ -18,10 +18,10 @@ from app.models.review import Review
 from app.models.user import GuestProfile
 from app.schemas.review import (
     ReviewCreateRequest,
-    ReviewListResponse,
     ReviewReplyRequest,
     ReviewResponse,
 )
+
 
 logger = logging.getLogger(__name__)
 
