@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from uuid import UUID
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
