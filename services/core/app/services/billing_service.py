@@ -2,12 +2,27 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID
 
 import httpx
+import stripe
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings as app_settings
+from app.models.restaurant import Restaurant
 
 logger = logging.getLogger(__name__)
+
+stripe.api_key = getattr(app_settings, "STRIPE_SECRET_KEY", "")
+
+SUBSCRIPTION_PRICE_MAP = {
+    "starter": getattr(app_settings, "STRIPE_PRICE_STARTER", ""),
+    "professional": getattr(app_settings, "STRIPE_PRICE_PROFESSIONAL", ""),
+    "enterprise": getattr(app_settings, "STRIPE_PRICE_ENTERPRISE", ""),
+}
 
 
 class PaymentProvider(StrEnum):
@@ -212,3 +227,146 @@ class BillingService:
             "EXPIRED": "expired",
         }
         return status_map.get(data.get("status", ""), "unknown")
+
+
+class SubscriptionService:
+    """Stripe subscription management for restaurant tiers."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def _get_restaurant(self, tenant_id) -> Restaurant:
+        result = await self.session.execute(select(Restaurant).where(Restaurant.id == tenant_id))
+        restaurant = result.scalar_one_or_none()
+        if not restaurant:
+            raise ValueError("Restaurant not found")
+        return restaurant
+
+    async def ensure_customer(self, tenant_id, email: str) -> str:
+        restaurant = await self._get_restaurant(tenant_id)
+        if restaurant.stripe_customer_id:
+            return restaurant.stripe_customer_id
+
+        customer = stripe.Customer.create(
+            email=email,
+            name=restaurant.name,
+            metadata={"tenant_id": str(tenant_id)},
+        )
+        restaurant.stripe_customer_id = customer.id
+        restaurant.billing_email = email
+        await self.session.flush()
+        return customer.id
+
+    async def create_checkout(
+        self, tenant_id, plan_id: str, success_url: str, cancel_url: str
+    ) -> str:
+        restaurant = await self._get_restaurant(tenant_id)
+        customer_id = await self.ensure_customer(
+            tenant_id, restaurant.billing_email or restaurant.email or ""
+        )
+        price_id = SUBSCRIPTION_PRICE_MAP.get(plan_id)
+        if not price_id:
+            raise ValueError(f"Unknown plan: {plan_id}")
+
+        checkout = stripe.checkout.Session.create(
+            customer=customer_id,
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={"tenant_id": str(tenant_id), "plan_id": plan_id},
+        )
+        return checkout.url
+
+    async def create_portal(self, tenant_id) -> str:
+        restaurant = await self._get_restaurant(tenant_id)
+        if not restaurant.stripe_customer_id:
+            raise ValueError("No Stripe customer found")
+        portal = stripe.billing_portal.Session.create(
+            customer=restaurant.stripe_customer_id,
+        )
+        return portal.url
+
+    async def sync_subscription(self, tenant_id) -> dict:
+        restaurant = await self._get_restaurant(tenant_id)
+        if not restaurant.stripe_subscription_id:
+            return {
+                "id": None,
+                "plan": restaurant.subscription_tier or "free",
+                "status": restaurant.subscription_status or "inactive",
+                "current_period_end": None,
+            }
+        sub = stripe.Subscription.retrieve(restaurant.stripe_subscription_id)
+        restaurant.subscription_status = sub.status
+        if sub.current_period_end:
+            restaurant.subscription_current_period_end = datetime.fromtimestamp(
+                sub.current_period_end, tz=UTC
+            )
+        await self.session.flush()
+        return {
+            "id": sub.id,
+            "plan": restaurant.subscription_tier or "free",
+            "status": sub.status,
+            "current_period_end": (
+                restaurant.subscription_current_period_end.isoformat()
+                if restaurant.subscription_current_period_end
+                else None
+            ),
+        }
+
+    async def handle_checkout_completed(self, session_data: dict):
+        metadata = session_data.get("metadata", {})
+        tenant_id = metadata.get("tenant_id")
+        plan_id = metadata.get("plan_id", "starter")
+        if not tenant_id:
+            logger.warning("Checkout without tenant_id")
+            return
+        result = await self.session.execute(select(Restaurant).where(Restaurant.id == tenant_id))
+        restaurant = result.scalar_one_or_none()
+        if not restaurant:
+            return
+        restaurant.stripe_customer_id = session_data.get("customer")
+        restaurant.stripe_subscription_id = session_data.get("subscription")
+        restaurant.subscription_tier = plan_id
+        restaurant.subscription_status = "active"
+        restaurant.is_suspended = False
+        await self.session.flush()
+
+    async def handle_subscription_updated(self, sub_data: dict):
+        sub_id = sub_data.get("id")
+        result = await self.session.execute(
+            select(Restaurant).where(Restaurant.stripe_subscription_id == sub_id)
+        )
+        restaurant = result.scalar_one_or_none()
+        if not restaurant:
+            return
+        restaurant.subscription_status = sub_data.get("status", "active")
+        if sub_data.get("current_period_end"):
+            restaurant.subscription_current_period_end = datetime.fromtimestamp(
+                sub_data["current_period_end"], tz=UTC
+            )
+        await self.session.flush()
+
+    async def handle_subscription_deleted(self, sub_data: dict):
+        sub_id = sub_data.get("id")
+        result = await self.session.execute(
+            select(Restaurant).where(Restaurant.stripe_subscription_id == sub_id)
+        )
+        restaurant = result.scalar_one_or_none()
+        if not restaurant:
+            return
+        restaurant.subscription_status = "canceled"
+        restaurant.subscription_tier = "free"
+        restaurant.stripe_subscription_id = None
+        await self.session.flush()
+
+    async def handle_payment_failed(self, invoice_data: dict):
+        customer_id = invoice_data.get("customer")
+        result = await self.session.execute(
+            select(Restaurant).where(Restaurant.stripe_customer_id == customer_id)
+        )
+        restaurant = result.scalar_one_or_none()
+        if not restaurant:
+            return
+        restaurant.subscription_status = "past_due"
+        await self.session.flush()

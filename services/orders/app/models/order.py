@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,7 +21,21 @@ class Order(Base):
     guest_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     reservation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     order_number: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="open")
+    status: Mapped[str] = mapped_column(
+        Enum(
+            "open",
+            "sent_to_kitchen",
+            "in_preparation",
+            "ready",
+            "served",
+            "paid",
+            "canceled",
+            name="order_status",
+            create_type=False,
+        ),
+        nullable=False,
+        default="open",
+    )
     party_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     subtotal: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     tax_amount_7: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -31,7 +45,11 @@ class Order(Base):
     tip_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     total: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     payment_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    payment_status: Mapped[str] = mapped_column(String(16), nullable=False, default="unpaid")
+    payment_status: Mapped[str] = mapped_column(
+        Enum("unpaid", "partial", "paid", name="payment_status", create_type=False),
+        nullable=False,
+        default="unpaid",
+    )
     split_payments: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     special_requests: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -47,6 +65,7 @@ class Order(Base):
     )
 
     discount_percentage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    guest_allergens: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
 
 
 class OrderItem(Base):
@@ -63,9 +82,24 @@ class OrderItem(Base):
     unit_price: Mapped[float] = mapped_column(Float, nullable=False)
     total_price: Mapped[float] = mapped_column(Float, nullable=False)
     tax_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.19)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    status: Mapped[str] = mapped_column(
+        Enum(
+            "pending",
+            "sent",
+            "in_preparation",
+            "ready",
+            "served",
+            "canceled",
+            name="order_item_status",
+            create_type=False,
+        ),
+        nullable=False,
+        default="pending",
+    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    course: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
+    allergens: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

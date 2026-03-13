@@ -26,36 +26,72 @@ from app.services.reservation_service import (
 router = APIRouter(prefix="/reservations", tags=["reservations"])
 
 
-@router.get("/", response_model=list[ReservationResponse])
+def _reservation_to_dict(r: Reservation) -> dict:
+    return {
+        "id": str(r.id),
+        "tenant_id": str(r.tenant_id),
+        "guest_id": str(r.guest_id) if r.guest_id else None,
+        "table_id": str(r.table_id) if r.table_id else None,
+        "party_size": r.party_size,
+        "starts_at": r.start_at.isoformat() if r.start_at else None,
+        "ends_at": r.end_at.isoformat() if r.end_at else None,
+        "start_at": r.start_at.isoformat() if r.start_at else None,
+        "end_at": r.end_at.isoformat() if r.end_at else None,
+        "status": r.status,
+        "notes": r.notes,
+        "special_requests": r.special_requests,
+        "guest_name": r.guest_name,
+        "guest_email": r.guest_email,
+        "guest_phone": r.guest_phone,
+        "confirmation_code": r.confirmation_code,
+        "channel": r.channel,
+        "tags": r.tags or [],
+        "source": r.channel,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+    }
+
+
+@router.get("/")
 async def list_reservations(
     date: str | None = Query(None, description="YYYY-MM-DD"),
-    status: str | None = Query(None),
+    from_dt: str | None = Query(None, alias="from", description="ISO datetime"),
+    to_dt: str | None = Query(None, alias="to", description="ISO datetime"),
+    status_filter: str | None = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
+    from datetime import UTC
+    from datetime import datetime as dt
+
     query = select(Reservation)
     filters = []
 
-    if date:
-        from datetime import UTC, datetime
-
-        day_start = datetime.fromisoformat(date).replace(tzinfo=UTC)
+    if from_dt and to_dt:
+        start = dt.fromisoformat(from_dt.replace("Z", "+00:00"))
+        end = dt.fromisoformat(to_dt.replace("Z", "+00:00"))
+        filters.append(Reservation.start_at >= start)
+        filters.append(Reservation.start_at <= end)
+    elif date:
+        day_start = dt.fromisoformat(date).replace(tzinfo=UTC)
         day_end = day_start + timedelta(days=1)
-        filters.append(Reservation.starts_at >= day_start)
-        filters.append(Reservation.starts_at < day_end)
+        filters.append(Reservation.start_at >= day_start)
+        filters.append(Reservation.start_at < day_end)
 
-    if status:
-        filters.append(Reservation.status == status)
+    if status_filter:
+        filters.append(Reservation.status == status_filter)
 
     if filters:
         query = query.where(and_(*filters))
 
-    query = query.order_by(Reservation.starts_at)
+    query = query.order_by(Reservation.start_at)
     result = await db.execute(query)
-    return result.scalars().all()
+    reservations = result.scalars().all()
+
+    return [_reservation_to_dict(r) for r in reservations]
 
 
-@router.post("/", response_model=ReservationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_reservation(
     request: Request,
     body: ReservationCreate,
@@ -94,16 +130,16 @@ async def create_reservation(
         guest_id=guest_id,
         table_id=table_id,
         party_size=body.party_size,
-        starts_at=body.starts_at,
-        ends_at=body.ends_at,
+        start_at=body.starts_at,
+        end_at=body.ends_at or (body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)),
         notes=body.notes,
-        source=body.source,
+        channel=body.source,
         status="confirmed",
     )
     db.add(reservation)
     await db.commit()
     await db.refresh(reservation)
-    return reservation
+    return _reservation_to_dict(reservation)
 
 
 @router.get("/timeslots", response_model=list[TimeSlot])
@@ -128,7 +164,7 @@ async def get_timeslots(
     )
 
 
-@router.get("/{reservation_id}", response_model=ReservationResponse)
+@router.get("/{reservation_id}")
 async def get_reservation(
     reservation_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -138,10 +174,10 @@ async def get_reservation(
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
-    return reservation
+    return _reservation_to_dict(reservation)
 
 
-@router.patch("/{reservation_id}", response_model=ReservationResponse)
+@router.patch("/{reservation_id}")
 async def update_reservation(
     reservation_id: UUID,
     body: ReservationUpdate,
@@ -153,12 +189,16 @@ async def update_reservation(
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
 
-    for field, value in body.model_dump(exclude_none=True).items():
-        setattr(reservation, field, value)
+    update_data = body.model_dump(exclude_none=True)
+    # Map schema field names to model field names
+    field_map = {"starts_at": "start_at", "ends_at": "end_at"}
+    for field, value in update_data.items():
+        model_field = field_map.get(field, field)
+        setattr(reservation, model_field, value)
 
     await db.commit()
     await db.refresh(reservation)
-    return reservation
+    return _reservation_to_dict(reservation)
 
 
 @router.delete("/{reservation_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -65,10 +65,11 @@ def check_item_safety(
     item_allergens: list[str],
     item_ingredients: list[dict],
     guest_allergens: list[str],
-) -> tuple[bool, list[str]]:
+) -> tuple[bool, list[str], str, list[str]]:
     """
     Prüft ob ein Gericht sicher für die angegebenen Gast-Allergene ist.
-    Gibt (is_safe, matched_allergens) zurück.
+    Gibt (is_safe, matched_allergens, risk_level, may_contain) zurück.
+    risk_level: "safe" | "warning" | "danger"
     """
     normalized_guest = {_normalize_allergen(a) for a in guest_allergens}
 
@@ -76,12 +77,24 @@ def check_item_safety(
     item_allergen_set = {_normalize_allergen(a) for a in item_allergens}
 
     # Auch in Zutaten suchen (ingredients ist JSONB: [{name, allergens: []}])
+    may_contain: set[str] = set()
     for ingredient in item_ingredients:
         for allergen in ingredient.get("allergens", []):
             item_allergen_set.add(_normalize_allergen(allergen))
+        for allergen in ingredient.get("may_contain", []):
+            may_contain.add(_normalize_allergen(allergen))
 
     matches = list(normalized_guest & item_allergen_set)
-    return len(matches) == 0, matches
+    may_contain_matches = list(normalized_guest & may_contain)
+
+    if matches:
+        risk_level = "danger"
+    elif may_contain_matches:
+        risk_level = "warning"
+    else:
+        risk_level = "safe"
+
+    return len(matches) == 0, matches, risk_level, list(may_contain_matches)
 
 
 async def check_menu_items(
@@ -97,7 +110,7 @@ async def check_menu_items(
 
     results = []
     for item in items:
-        is_safe, matched = check_item_safety(
+        is_safe, matched, risk_level, may_contain = check_item_safety(
             item.allergens or [],
             item.ingredients or [],
             guest_allergens,
@@ -108,6 +121,8 @@ async def check_menu_items(
                 item_name=item.name,
                 is_safe=is_safe,
                 matched_allergens=matched,
+                risk_level=risk_level,
+                may_contain=may_contain,
                 ingredients=item.ingredients or [],
             )
         )
