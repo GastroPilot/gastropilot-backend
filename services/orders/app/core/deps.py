@@ -63,7 +63,7 @@ async def get_current_user(
     from app.models.user import User
 
     header_token = credentials.credentials if credentials else None
-    token = access_token or header_token
+    token = header_token or access_token
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     payload = verify_token(token)
@@ -105,7 +105,7 @@ async def get_current_user_or_device(
     from app.models.user import User
 
     header_token = credentials.credentials if credentials else None
-    token = access_token or header_token
+    token = header_token or access_token
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     payload = verify_token(token)

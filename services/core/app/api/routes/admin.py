@@ -70,6 +70,13 @@ class TenantUpdate(BaseModel):
     settings: dict | None = None
 
 
+class UserImpersonateResponse(BaseModel):
+    impersonation_token: str
+    user_id: str
+    user_name: str
+    tenant_id: str | None = None
+
+
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
 
@@ -263,6 +270,58 @@ async def impersonate_tenant(
         "tenant_id": str(tenant_id),
         "tenant_name": tenant.name,
     }
+
+
+@router.get("/users/{user_id}/impersonate", response_model=UserImpersonateResponse)
+async def impersonate_user(
+    user_id: uuid.UUID,
+    request: Request,
+    current_user=Depends(require_platform_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Selbst-Impersonation ist nicht erlaubt")
+
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="User is inactive")
+    if user.role in {"platform_admin", "platform_support", "platform_analyst"}:
+        raise HTTPException(status_code=400, detail="Servecta-User können nicht impersoniert werden")
+
+    token_data = {
+        "sub": str(user.id),
+        "role": user.role,
+        "tenant_id": str(user.tenant_id) if user.tenant_id else None,
+    }
+    impersonation_token = create_access_token(token_data)
+
+    session.add(
+        PlatformAuditLog(
+            admin_user_id=current_user.id,
+            target_tenant_id=user.tenant_id,
+            action="user.impersonated",
+            entity_type="user",
+            entity_id=user.id,
+            description=f"Admin impersonierte User '{user.first_name} {user.last_name}'",
+            details={
+                "target_user_id": str(user.id),
+                "target_user_role": user.role,
+                "target_tenant_id": str(user.tenant_id) if user.tenant_id else None,
+            },
+            ip_address=request.client.host if request.client else None,
+        )
+    )
+    await session.commit()
+
+    return UserImpersonateResponse(
+        impersonation_token=impersonation_token,
+        user_id=str(user.id),
+        user_name=f"{user.first_name} {user.last_name}".strip(),
+        tenant_id=str(user.tenant_id) if user.tenant_id else None,
+    )
 
 
 @router.get("/audit-log")

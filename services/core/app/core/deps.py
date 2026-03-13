@@ -54,7 +54,8 @@ async def get_current_user(
     from app.models.user import User
 
     header_token = credentials.credentials if credentials else None
-    token = access_token or header_token
+    # Header muss Vorrang haben (wichtig für Impersonation mit Bearer-Token).
+    token = header_token or access_token
 
     if not token:
         raise HTTPException(

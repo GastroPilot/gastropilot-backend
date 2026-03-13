@@ -19,7 +19,7 @@ from app.core.config import settings
 from app.core.database import Base, _connect_args_for_sslmode, _strip_sslmode
 
 # Import all models to register them with Base.metadata
-from app.models import audit, menu, reservation, restaurant, user  # noqa: F401
+import app.models  # noqa: F401
 
 config = context.config
 _clean_admin_url, _admin_sslmode = _strip_sslmode(settings.DATABASE_ADMIN_URL)

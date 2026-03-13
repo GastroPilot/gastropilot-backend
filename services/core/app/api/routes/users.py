@@ -166,11 +166,19 @@ async def list_users(
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: UserCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_owner_or_above),
 ):
+    tenant_id = _effective_tenant_id(request, current_user)
+    if tenant_id is None and current_user.role != "platform_admin":
+        raise HTTPException(
+            status_code=400,
+            detail="Kein aktiver Tenant-Kontext. Bitte zuerst Tenant impersonieren.",
+        )
+
     user = User(
-        tenant_id=current_user.tenant_id,
+        tenant_id=tenant_id,
         first_name=body.first_name,
         last_name=body.last_name,
         role=body.role,
