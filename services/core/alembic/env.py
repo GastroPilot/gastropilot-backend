@@ -16,13 +16,14 @@ for p in [str(_base), str(_shared)]:
         sys.path.insert(0, p)
 
 from app.core.config import settings
-from app.core.database import Base
+from app.core.database import Base, _connect_args_for_sslmode, _strip_sslmode
 
 # Import all models to register them with Base.metadata
 from app.models import audit, menu, reservation, restaurant, user  # noqa: F401
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_ADMIN_URL)
+_clean_admin_url, _admin_sslmode = _strip_sslmode(settings.DATABASE_ADMIN_URL)
+config.set_main_option("sqlalchemy.url", _clean_admin_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -53,6 +54,7 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=_connect_args_for_sslmode(_admin_sslmode),
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
