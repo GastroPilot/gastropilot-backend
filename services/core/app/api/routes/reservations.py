@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -24,6 +24,16 @@ from app.services.reservation_service import (
 )
 
 router = APIRouter(prefix="/reservations", tags=["reservations"])
+
+
+def _split_guest_name(name: str | None) -> tuple[str, str]:
+    cleaned = (name or "").strip()
+    if not cleaned:
+        return "Gast", ""
+    parts = cleaned.split(" ", 1)
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], parts[1]
 
 
 def _reservation_to_dict(r: Reservation) -> dict:
@@ -102,8 +112,11 @@ async def create_reservation(
     # Gast erstellen oder finden
     guest_id = body.guest_id
     if not guest_id and body.guest_name:
+        first_name, last_name = _split_guest_name(body.guest_name)
         guest = Guest(
-            name=body.guest_name,
+            tenant_id=effective_tenant_id,
+            first_name=first_name,
+            last_name=last_name,
             email=body.guest_email,
             phone=body.guest_phone,
         )
@@ -134,6 +147,9 @@ async def create_reservation(
         end_at=body.ends_at or (body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)),
         notes=body.notes,
         channel=body.source,
+        guest_name=body.guest_name,
+        guest_email=body.guest_email,
+        guest_phone=body.guest_phone,
         status="confirmed",
     )
     db.add(reservation)
@@ -212,5 +228,6 @@ async def cancel_reservation(
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
 
-    reservation.status = "cancelled"
+    reservation.status = "canceled"
+    reservation.canceled_at = datetime.now(UTC)
     await db.commit()

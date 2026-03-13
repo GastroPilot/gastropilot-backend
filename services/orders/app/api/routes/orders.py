@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db
 from app.models.order import Order, OrderItem
+from app.services.tax_service import calculate_totals
 from app.websocket.manager import manager
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -54,6 +55,68 @@ class OrderUpdate(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: str
+
+
+class OrderItemCreate(BaseModel):
+    menu_item_id: uuid.UUID | None = None
+    item_name: str
+    item_description: str | None = None
+    category: str | None = None
+    quantity: int = 1
+    unit_price: float
+    tax_rate: float = 0.19
+    notes: str | None = None
+    sort_order: int | None = None
+
+
+class OrderItemUpdate(BaseModel):
+    item_name: str | None = None
+    item_description: str | None = None
+    category: str | None = None
+    quantity: int | None = None
+    unit_price: float | None = None
+    tax_rate: float | None = None
+    status: str | None = None
+    notes: str | None = None
+    sort_order: int | None = None
+
+
+async def _recalculate_order_totals(order: Order, session: AsyncSession) -> None:
+    item_result = await session.execute(select(OrderItem).where(OrderItem.order_id == order.id))
+    items = item_result.scalars().all()
+    totals = calculate_totals(
+        [{"total_price": i.total_price, "tax_rate": i.tax_rate} for i in items],
+        discount_amount=order.discount_amount or 0.0,
+        discount_percentage=order.discount_percentage,
+        tip_amount=order.tip_amount or 0.0,
+    )
+    order.subtotal = totals["subtotal"]
+    order.tax_amount_7 = totals["tax_amount_7"]
+    order.tax_amount_19 = totals["tax_amount_19"]
+    order.tax_amount = totals["tax_amount"]
+    order.discount_amount = totals["discount_amount"]
+    order.tip_amount = totals["tip_amount"]
+    order.total = totals["total"]
+
+
+def _serialize_item(item: OrderItem) -> dict:
+    return {
+        "id": str(item.id),
+        "order_id": str(item.order_id),
+        "menu_item_id": str(item.menu_item_id) if item.menu_item_id else None,
+        "item_name": item.item_name,
+        "item_description": item.item_description,
+        "category": item.category,
+        "quantity": item.quantity,
+        "unit_price": item.unit_price,
+        "total_price": item.total_price,
+        "tax_rate": item.tax_rate,
+        "status": item.status,
+        "notes": item.notes,
+        "sort_order": item.sort_order,
+        "created_at_utc": item.created_at.isoformat() if item.created_at else None,
+        "updated_at_utc": item.updated_at.isoformat() if item.updated_at else None,
+    }
 
 
 @router.get("/")
@@ -297,3 +360,121 @@ async def update_order(
         "total": order.total,
         "payment_status": order.payment_status,
     }
+
+
+@router.post("/{order_id}/items", status_code=201)
+async def add_order_item(
+    order_id: uuid.UUID,
+    data: OrderItemCreate,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await session.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    item = OrderItem(
+        order_id=order.id,
+        menu_item_id=data.menu_item_id,
+        item_name=data.item_name,
+        item_description=data.item_description,
+        category=data.category,
+        quantity=max(1, data.quantity),
+        unit_price=data.unit_price,
+        total_price=max(1, data.quantity) * data.unit_price,
+        tax_rate=data.tax_rate,
+        notes=data.notes,
+        sort_order=data.sort_order or 0,
+    )
+    session.add(item)
+    await session.flush()
+
+    await _recalculate_order_totals(order, session)
+    await session.commit()
+    await session.refresh(item)
+
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if tenant_id:
+        await manager.broadcast_to_tenant(
+            str(tenant_id),
+            {"type": "order_updated", "data": {"id": str(order_id)}},
+        )
+
+    return _serialize_item(item)
+
+
+@router.patch("/{order_id}/items/{item_id}")
+async def update_order_item(
+    order_id: uuid.UUID,
+    item_id: uuid.UUID,
+    data: OrderItemUpdate,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await session.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    item_result = await session.execute(
+        select(OrderItem).where(OrderItem.id == item_id, OrderItem.order_id == order_id)
+    )
+    item = item_result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Order item not found")
+
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(item, key, value)
+
+    if "quantity" in update_data or "unit_price" in update_data:
+        item.quantity = max(1, item.quantity)
+        item.total_price = item.quantity * item.unit_price
+
+    await _recalculate_order_totals(order, session)
+    await session.commit()
+    await session.refresh(item)
+
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if tenant_id:
+        await manager.broadcast_to_tenant(
+            str(tenant_id),
+            {"type": "order_updated", "data": {"id": str(order_id)}},
+        )
+
+    return _serialize_item(item)
+
+
+@router.delete("/{order_id}/items/{item_id}", status_code=204)
+async def delete_order_item(
+    order_id: uuid.UUID,
+    item_id: uuid.UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await session.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    item_result = await session.execute(
+        select(OrderItem).where(OrderItem.id == item_id, OrderItem.order_id == order_id)
+    )
+    item = item_result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Order item not found")
+
+    await session.delete(item)
+    await _recalculate_order_totals(order, session)
+    await session.commit()
+
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if tenant_id:
+        await manager.broadcast_to_tenant(
+            str(tenant_id),
+            {"type": "order_updated", "data": {"id": str(order_id)}},
+        )

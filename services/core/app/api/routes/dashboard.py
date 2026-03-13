@@ -11,8 +11,10 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_staff_or_above
+from app.models.block import Block, BlockAssignment
 from app.models.reservation import Guest, Reservation
 from app.models.restaurant import Area, Obstacle, Restaurant, Table
+from app.models.table_config import ReservationTableDayConfig, TableDayConfig
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -102,6 +104,25 @@ async def get_dashboard_batch(
     )
     reservations = [_serialize(r) for r in reservations_result.scalars().all()]
 
+    # Blocks (inkl. Überlappung mit dem Tag)
+    blocks_result = await session.execute(
+        select(Block).where(
+            Block.tenant_id == rid,
+            Block.start_at < day_end,
+            Block.end_at > day_start,
+        )
+    )
+    block_rows = blocks_result.scalars().all()
+    blocks = [_serialize(b) for b in block_rows]
+
+    block_assignments: list[dict[str, Any]] = []
+    if block_rows:
+        block_ids = [b.id for b in block_rows]
+        assignments_result = await session.execute(
+            select(BlockAssignment).where(BlockAssignment.block_id.in_(block_ids))
+        )
+        block_assignments = [_serialize(a) for a in assignments_result.scalars().all()]
+
     # Orders – aktive Orders für heute (status != closed/cancelled)
     try:
         orders_result = await session.execute(
@@ -129,17 +150,43 @@ async def get_dashboard_batch(
     except Exception:
         orders = []
 
+    # Table day configs (inkl. temporäre Tische) für den gewählten Tag
+    tdc_result = await session.execute(
+        select(TableDayConfig).where(
+            TableDayConfig.tenant_id == rid,
+            TableDayConfig.date == target_date,
+        )
+    )
+    table_day_config_rows = tdc_result.scalars().all()
+    table_day_configs = [_serialize(cfg) for cfg in table_day_config_rows]
+
+    # Zuordnungen Reservierung <-> temporäre Tisch-Configs (tagesüberlappend)
+    reservation_table_day_configs: list[dict[str, Any]] = []
+    if table_day_config_rows:
+        tdc_ids = [cfg.id for cfg in table_day_config_rows]
+        rtdc_result = await session.execute(
+            select(ReservationTableDayConfig).where(
+                ReservationTableDayConfig.tenant_id == rid,
+                ReservationTableDayConfig.table_day_config_id.in_(tdc_ids),
+                ReservationTableDayConfig.start_at < day_end,
+                ReservationTableDayConfig.end_at > day_start,
+            )
+        )
+        reservation_table_day_configs = [
+            _serialize(mapping) for mapping in rtdc_result.scalars().all()
+        ]
+
     return {
         "restaurant": _serialize(restaurant),
         "areas": areas,
         "tables": tables,
         "obstacles": obstacles,
         "reservations": reservations,
-        "blocks": [],
-        "block_assignments": [],
+        "blocks": blocks,
+        "block_assignments": block_assignments,
         "orders": orders,
-        "table_day_configs": [],
-        "reservation_table_day_configs": [],
+        "table_day_configs": table_day_configs,
+        "reservation_table_day_configs": reservation_table_day_configs,
     }
 
 
