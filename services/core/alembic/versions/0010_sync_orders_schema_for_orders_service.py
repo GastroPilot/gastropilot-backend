@@ -24,16 +24,19 @@ def upgrade() -> None:
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS subtotal DOUBLE PRECISION NOT NULL DEFAULT 0"
     )
     op.execute(
-        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_amount_7 DOUBLE PRECISION NOT NULL DEFAULT 0"
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_amount_7 "
+        "DOUBLE PRECISION NOT NULL DEFAULT 0"
     )
     op.execute(
-        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_amount_19 DOUBLE PRECISION NOT NULL DEFAULT 0"
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_amount_19 "
+        "DOUBLE PRECISION NOT NULL DEFAULT 0"
     )
     op.execute(
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_amount DOUBLE PRECISION NOT NULL DEFAULT 0"
     )
     op.execute(
-        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount DOUBLE PRECISION NOT NULL DEFAULT 0"
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount "
+        "DOUBLE PRECISION NOT NULL DEFAULT 0"
     )
     op.execute(
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tip_amount DOUBLE PRECISION NOT NULL DEFAULT 0"
@@ -64,7 +67,8 @@ def upgrade() -> None:
     op.execute("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS unit_price DOUBLE PRECISION")
     op.execute("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS total_price DOUBLE PRECISION")
     op.execute(
-        "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS tax_rate DOUBLE PRECISION NOT NULL DEFAULT 0.19"
+        "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS tax_rate "
+        "DOUBLE PRECISION NOT NULL DEFAULT 0.19"
     )
     op.execute("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS notes TEXT")
     op.execute(
@@ -73,10 +77,12 @@ def upgrade() -> None:
     op.execute("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS course INTEGER DEFAULT 1")
     op.execute("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS allergens JSONB")
     op.execute(
-        "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+        "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS created_at "
+        "TIMESTAMPTZ NOT NULL DEFAULT NOW()"
     )
     op.execute(
-        "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+        "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS updated_at "
+        "TIMESTAMPTZ NOT NULL DEFAULT NOW()"
     )
 
     # legacy column backfill where applicable
@@ -86,7 +92,9 @@ def upgrade() -> None:
         BEGIN
             IF EXISTS (
                 SELECT 1 FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'orders' AND column_name = 'created_by'
+                WHERE table_schema = 'public'
+                  AND table_name = 'orders'
+                  AND column_name = 'created_by'
             ) THEN
                 UPDATE orders
                 SET created_by_user_id = created_by
@@ -103,7 +111,9 @@ def upgrade() -> None:
         BEGIN
             IF EXISTS (
                 SELECT 1 FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'order_items' AND column_name = 'name'
+                WHERE table_schema = 'public'
+                  AND table_name = 'order_items'
+                  AND column_name = 'name'
             ) THEN
                 UPDATE order_items
                 SET item_name = name
@@ -112,7 +122,9 @@ def upgrade() -> None:
 
             IF EXISTS (
                 SELECT 1 FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'order_items' AND column_name = 'price'
+                WHERE table_schema = 'public'
+                  AND table_name = 'order_items'
+                  AND column_name = 'price'
             ) THEN
                 UPDATE order_items
                 SET unit_price = price
