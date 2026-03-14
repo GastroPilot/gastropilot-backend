@@ -223,9 +223,7 @@ async def validate_voucher(
     """Public endpoint to validate a voucher code."""
     effective_tenant_id = getattr(request.state, "tenant_id", None)
 
-    result = await db.execute(
-        select(Voucher).where(Voucher.code == body.code.upper().strip())
-    )
+    result = await db.execute(select(Voucher).where(Voucher.code == body.code.upper().strip()))
     voucher = result.scalar_one_or_none()
 
     if not voucher:

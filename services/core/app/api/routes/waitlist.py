@@ -75,9 +75,7 @@ async def _resolve_tenant_context_for_waitlist(
 
     guest_tenant_id: UUID | None = None
     if guest_id:
-        guest_result = await db.execute(
-            select(Guest.tenant_id).where(Guest.id == guest_id)
-        )
+        guest_result = await db.execute(select(Guest.tenant_id).where(Guest.id == guest_id))
         guest_tenant_id = guest_result.scalar_one_or_none()
         if guest_tenant_id is None:
             raise HTTPException(status_code=404, detail="Guest not found")

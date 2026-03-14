@@ -12,9 +12,7 @@ from app.core.deps import get_db, require_staff_or_above
 from app.models.table_config import ReservationTableDayConfig, TableDayConfig
 from app.models.user import User
 
-router = APIRouter(
-    prefix="/reservation-table-day-configs", tags=["reservation-table-day-configs"]
-)
+router = APIRouter(prefix="/reservation-table-day-configs", tags=["reservation-table-day-configs"])
 
 
 class RTDCCreate(BaseModel):

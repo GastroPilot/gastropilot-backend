@@ -86,8 +86,7 @@ def upgrade() -> None:
     )
 
     # legacy column backfill where applicable
-    op.execute(
-        """
+    op.execute("""
         DO $$
         BEGIN
             IF EXISTS (
@@ -102,11 +101,9 @@ def upgrade() -> None:
             END IF;
         END
         $$;
-        """
-    )
+        """)
 
-    op.execute(
-        """
+    op.execute("""
         DO $$
         BEGIN
             IF EXISTS (
@@ -132,8 +129,7 @@ def upgrade() -> None:
             END IF;
         END
         $$;
-        """
-    )
+        """)
 
     op.execute(
         "UPDATE order_items SET total_price = COALESCE(unit_price, 0) * COALESCE(quantity, 1) "

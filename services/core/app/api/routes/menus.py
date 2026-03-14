@@ -160,9 +160,7 @@ async def list_items(
     return result.scalars().all()
 
 
-@router.post(
-    "/items", response_model=MenuItemResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/items", response_model=MenuItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_item(
     request: Request,
     body: MenuItemCreate,

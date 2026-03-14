@@ -134,9 +134,7 @@ async def _resolve_tenant_context_for_config(
         return requested_tenant_id
 
     if table_id:
-        table_tenant_result = await db.execute(
-            select(Table.tenant_id).where(Table.id == table_id)
-        )
+        table_tenant_result = await db.execute(select(Table.tenant_id).where(Table.id == table_id))
         table_tenant_id = table_tenant_result.scalar_one_or_none()
         if table_tenant_id:
             return table_tenant_id

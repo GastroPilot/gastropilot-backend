@@ -136,9 +136,7 @@ async def list_packages(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(UpsellPackage).order_by(UpsellPackage.display_order)
-    )
+    result = await db.execute(select(UpsellPackage).order_by(UpsellPackage.display_order))
     return result.scalars().all()
 
 
@@ -148,9 +146,7 @@ async def get_package(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(UpsellPackage).where(UpsellPackage.id == package_id)
-    )
+    result = await db.execute(select(UpsellPackage).where(UpsellPackage.id == package_id))
     package = result.scalar_one_or_none()
     if not package:
         raise HTTPException(status_code=404, detail="Package not found")
@@ -164,9 +160,7 @@ async def update_package(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(
-        select(UpsellPackage).where(UpsellPackage.id == package_id)
-    )
+    result = await db.execute(select(UpsellPackage).where(UpsellPackage.id == package_id))
     package = result.scalar_one_or_none()
     if not package:
         raise HTTPException(status_code=404, detail="Package not found")
@@ -185,9 +179,7 @@ async def delete_package(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(
-        select(UpsellPackage).where(UpsellPackage.id == package_id)
-    )
+    result = await db.execute(select(UpsellPackage).where(UpsellPackage.id == package_id))
     package = result.scalar_one_or_none()
     if not package:
         raise HTTPException(status_code=404, detail="Package not found")
