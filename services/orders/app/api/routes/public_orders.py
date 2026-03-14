@@ -368,7 +368,7 @@ async def initiate_payment(
                 "tenant_id": str(order.tenant_id),
             },
         )
-        order.payment_status = "pending"
+        order.payment_status = "unpaid"
         await db.commit()
         return {
             "id": str(order.id),
