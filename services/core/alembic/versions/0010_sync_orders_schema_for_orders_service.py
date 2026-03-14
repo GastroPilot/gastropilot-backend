@@ -20,23 +20,33 @@ def upgrade() -> None:
     op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS guest_id UUID")
     op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS reservation_id UUID")
     op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS party_size INTEGER")
-    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS subtotal DOUBLE PRECISION NOT NULL DEFAULT 0")
+    op.execute(
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS subtotal DOUBLE PRECISION NOT NULL DEFAULT 0"
+    )
     op.execute(
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_amount_7 DOUBLE PRECISION NOT NULL DEFAULT 0"
     )
     op.execute(
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_amount_19 DOUBLE PRECISION NOT NULL DEFAULT 0"
     )
-    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_amount DOUBLE PRECISION NOT NULL DEFAULT 0")
+    op.execute(
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_amount DOUBLE PRECISION NOT NULL DEFAULT 0"
+    )
     op.execute(
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount DOUBLE PRECISION NOT NULL DEFAULT 0"
     )
-    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS tip_amount DOUBLE PRECISION NOT NULL DEFAULT 0")
-    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS total DOUBLE PRECISION NOT NULL DEFAULT 0")
+    op.execute(
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS tip_amount DOUBLE PRECISION NOT NULL DEFAULT 0"
+    )
+    op.execute(
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS total DOUBLE PRECISION NOT NULL DEFAULT 0"
+    )
     op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method VARCHAR(32)")
     op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS split_payments JSONB")
     op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS special_requests TEXT")
-    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW()")
+    op.execute(
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+    )
     op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ")
     op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ")
     op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS created_by_user_id UUID")
@@ -114,7 +124,8 @@ def upgrade() -> None:
     )
 
     op.execute(
-        "UPDATE order_items SET total_price = COALESCE(unit_price, 0) * COALESCE(quantity, 1) WHERE total_price IS NULL"
+        "UPDATE order_items SET total_price = COALESCE(unit_price, 0) * COALESCE(quantity, 1) "
+        "WHERE total_price IS NULL"
     )
     op.execute("UPDATE order_items SET tax_rate = 0.19 WHERE tax_rate IS NULL")
     op.execute("UPDATE order_items SET sort_order = 0 WHERE sort_order IS NULL")
