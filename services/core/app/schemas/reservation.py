@@ -15,6 +15,7 @@ class ReservationBase(BaseModel):
 
 
 class ReservationCreate(ReservationBase):
+    restaurant_id: UUID | None = None
     guest_id: UUID | None = None
     table_id: UUID | None = None
     # Wenn kein Gast-Account: Gastdaten direkt
