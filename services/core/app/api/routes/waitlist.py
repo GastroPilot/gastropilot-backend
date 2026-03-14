@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_staff_or_above
+from app.models.reservation import Guest
+from app.models.restaurant import Restaurant
 from app.models.user import User
 from app.models.waitlist import Waitlist
 
@@ -16,6 +18,7 @@ router = APIRouter(prefix="/waitlist", tags=["waitlist"])
 
 
 class WaitlistCreate(BaseModel):
+    restaurant_id: UUID | None = None
     guest_id: UUID | None = None
     party_size: int
     desired_from: datetime | None = None
@@ -61,6 +64,65 @@ def _normalize_utc(dt: datetime | None) -> datetime | None:
     return dt.astimezone(UTC)
 
 
+async def _resolve_tenant_context_for_waitlist(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+    requested_tenant_id: UUID | None,
+    guest_id: UUID | None,
+) -> UUID:
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+
+    guest_tenant_id: UUID | None = None
+    if guest_id:
+        guest_result = await db.execute(
+            select(Guest.tenant_id).where(Guest.id == guest_id)
+        )
+        guest_tenant_id = guest_result.scalar_one_or_none()
+        if guest_tenant_id is None:
+            raise HTTPException(status_code=404, detail="Guest not found")
+
+    if effective_tenant_id:
+        if requested_tenant_id and requested_tenant_id != effective_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Requested restaurant_id does not match tenant context",
+            )
+        if guest_tenant_id and guest_tenant_id != effective_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Guest does not belong to tenant context",
+            )
+        return effective_tenant_id
+
+    if current_user.role != "platform_admin":
+        raise HTTPException(status_code=403, detail="User has no tenant context")
+
+    if requested_tenant_id:
+        restaurant_result = await db.execute(
+            select(Restaurant.id).where(Restaurant.id == requested_tenant_id)
+        )
+        if restaurant_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Restaurant not found")
+        if guest_tenant_id and guest_tenant_id != requested_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Guest does not belong to requested restaurant",
+            )
+        return requested_tenant_id
+
+    if guest_tenant_id:
+        return guest_tenant_id
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Tenant context required (token has no tenant and no guest/restaurant tenant "
+            "could be resolved)"
+        ),
+    )
+
+
 @router.post("/", response_model=WaitlistResponse, status_code=status.HTTP_201_CREATED)
 async def create_entry(
     request: Request,
@@ -68,7 +130,13 @@ async def create_entry(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    effective_tenant_id = await _resolve_tenant_context_for_waitlist(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=body.restaurant_id,
+        guest_id=body.guest_id,
+    )
     entry = Waitlist(
         tenant_id=effective_tenant_id,
         guest_id=body.guest_id,

@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_staff_or_above
+from app.models.reservation import Guest, Reservation
+from app.models.restaurant import Restaurant
 from app.models.user import User
 from app.models.waitlist import Message
 
@@ -16,6 +18,7 @@ router = APIRouter(prefix="/messages", tags=["messages"])
 
 
 class MessageCreate(BaseModel):
+    restaurant_id: UUID | None = None
     reservation_id: UUID | None = None
     guest_id: UUID | None = None
     direction: str
@@ -47,6 +50,80 @@ class MessageResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+async def _resolve_tenant_context_for_message(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+    requested_tenant_id: UUID | None,
+    reservation_id: UUID | None,
+    guest_id: UUID | None,
+) -> UUID:
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+
+    reservation_tenant_id: UUID | None = None
+    if reservation_id:
+        reservation_result = await db.execute(
+            select(Reservation.tenant_id).where(Reservation.id == reservation_id)
+        )
+        reservation_tenant_id = reservation_result.scalar_one_or_none()
+        if reservation_tenant_id is None:
+            raise HTTPException(status_code=404, detail="Reservation not found")
+
+    guest_tenant_id: UUID | None = None
+    if guest_id:
+        guest_result = await db.execute(select(Guest.tenant_id).where(Guest.id == guest_id))
+        guest_tenant_id = guest_result.scalar_one_or_none()
+        if guest_tenant_id is None:
+            raise HTTPException(status_code=404, detail="Guest not found")
+
+    reference_tenant_id = reservation_tenant_id or guest_tenant_id
+    if reservation_tenant_id and guest_tenant_id and reservation_tenant_id != guest_tenant_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Reservation and guest belong to different tenants",
+        )
+
+    if effective_tenant_id:
+        if requested_tenant_id and requested_tenant_id != effective_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Requested restaurant_id does not match tenant context",
+            )
+        if reference_tenant_id and reference_tenant_id != effective_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Referenced entities do not belong to tenant context",
+            )
+        return effective_tenant_id
+
+    if current_user.role != "platform_admin":
+        raise HTTPException(status_code=403, detail="User has no tenant context")
+
+    if requested_tenant_id:
+        restaurant_result = await db.execute(
+            select(Restaurant.id).where(Restaurant.id == requested_tenant_id)
+        )
+        if restaurant_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Restaurant not found")
+        if reference_tenant_id and reference_tenant_id != requested_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Referenced entities do not belong to requested restaurant",
+            )
+        return requested_tenant_id
+
+    if reference_tenant_id:
+        return reference_tenant_id
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Tenant context required (token has no tenant and no entity/restaurant tenant "
+            "could be resolved)"
+        ),
+    )
+
+
 @router.post("/", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 async def create_message(
     request: Request,
@@ -54,7 +131,14 @@ async def create_message(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    effective_tenant_id = await _resolve_tenant_context_for_message(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=body.restaurant_id,
+        reservation_id=body.reservation_id,
+        guest_id=body.guest_id,
+    )
     msg = Message(
         tenant_id=effective_tenant_id,
         reservation_id=body.reservation_id,

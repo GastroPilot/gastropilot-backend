@@ -8,8 +8,13 @@ from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user, get_db, require_manager_or_above, require_staff_or_above
-from app.models.restaurant import Table
+from app.core.deps import (
+    get_current_user,
+    get_db,
+    require_manager_or_above,
+    require_staff_or_above,
+)
+from app.models.restaurant import Restaurant, Table
 from app.models.table_config import ReservationTableDayConfig, TableDayConfig
 from app.models.user import User
 
@@ -20,6 +25,7 @@ router = APIRouter(prefix="/table-day-configs", tags=["table-day-configs"])
 
 
 class TableDayConfigCreate(BaseModel):
+    restaurant_id: UUID | None = None
     table_id: UUID | None = None
     date: date_type
     is_hidden: bool = False
@@ -80,6 +86,70 @@ class TableDayConfigResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+async def _resolve_tenant_context_for_config(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+    requested_tenant_id: UUID | None,
+    table_id: UUID | None,
+) -> UUID:
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    if effective_tenant_id:
+        if requested_tenant_id and requested_tenant_id != effective_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Requested restaurant_id does not match tenant context",
+            )
+        if table_id:
+            table_tenant_result = await db.execute(
+                select(Table.tenant_id).where(Table.id == table_id)
+            )
+            table_tenant_id = table_tenant_result.scalar_one_or_none()
+            if table_tenant_id and table_tenant_id != effective_tenant_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Table does not belong to tenant context",
+                )
+        return effective_tenant_id
+
+    if current_user.role != "platform_admin":
+        raise HTTPException(status_code=403, detail="User has no tenant context")
+
+    if requested_tenant_id:
+        restaurant_result = await db.execute(
+            select(Restaurant.id).where(Restaurant.id == requested_tenant_id)
+        )
+        if restaurant_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Restaurant not found")
+        if table_id:
+            table_tenant_result = await db.execute(
+                select(Table.tenant_id).where(Table.id == table_id)
+            )
+            table_tenant_id = table_tenant_result.scalar_one_or_none()
+            if table_tenant_id and table_tenant_id != requested_tenant_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Table does not belong to requested restaurant",
+                )
+        return requested_tenant_id
+
+    if table_id:
+        table_tenant_result = await db.execute(
+            select(Table.tenant_id).where(Table.id == table_id)
+        )
+        table_tenant_id = table_tenant_result.scalar_one_or_none()
+        if table_tenant_id:
+            return table_tenant_id
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Tenant context required (token has no tenant and no table/restaurant tenant "
+            "could be resolved)"
+        ),
+    )
+
+
 @router.get("/by-date/{date}", response_model=list[TableDayConfigResponse])
 async def list_configs_by_date(
     date: date_type,
@@ -110,7 +180,13 @@ async def create_or_update_config(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    effective_tenant_id = await _resolve_tenant_context_for_config(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=body.restaurant_id,
+        table_id=body.table_id,
+    )
 
     if body.is_temporary and not body.number:
         raise HTTPException(status_code=400, detail="Temporary tables require a number")
@@ -131,7 +207,7 @@ async def create_or_update_config(
         existing = result.scalar_one_or_none()
         if existing:
             for field, value in body.model_dump(
-                exclude_none=True, exclude={"table_id", "date"}
+                exclude_none=True, exclude={"restaurant_id", "table_id", "date"}
             ).items():
                 setattr(existing, field, value)
             await db.commit()
@@ -139,7 +215,7 @@ async def create_or_update_config(
             return existing
 
     # Inherit properties from permanent table if linking to one
-    config_data = body.model_dump(exclude_none=True)
+    config_data = body.model_dump(exclude_none=True, exclude={"restaurant_id"})
     if body.table_id and not body.is_temporary:
         table_result = await db.execute(select(Table).where(Table.id == body.table_id))
         table = table_result.scalar_one_or_none()

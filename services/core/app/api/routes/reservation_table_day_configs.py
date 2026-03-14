@@ -12,7 +12,9 @@ from app.core.deps import get_db, require_staff_or_above
 from app.models.table_config import ReservationTableDayConfig, TableDayConfig
 from app.models.user import User
 
-router = APIRouter(prefix="/reservation-table-day-configs", tags=["reservation-table-day-configs"])
+router = APIRouter(
+    prefix="/reservation-table-day-configs", tags=["reservation-table-day-configs"]
+)
 
 
 class RTDCCreate(BaseModel):
@@ -60,6 +62,14 @@ async def create_or_update(
     if not tdc.is_temporary:
         raise HTTPException(status_code=400, detail="Only temporary table configs can be linked")
 
+    # Prefer tenant from linked table-day-config when request context has no tenant
+    resolved_tenant_id = effective_tenant_id or tdc.tenant_id
+    if resolved_tenant_id != tdc.tenant_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Tenant context does not match table-day-config tenant",
+        )
+
     # Upsert
     result = await db.execute(
         select(ReservationTableDayConfig).where(
@@ -80,7 +90,7 @@ async def create_or_update(
     rtdc = ReservationTableDayConfig(
         reservation_id=body.reservation_id,
         table_day_config_id=body.table_day_config_id,
-        tenant_id=effective_tenant_id,
+        tenant_id=resolved_tenant_id,
         start_at=start,
         end_at=end,
     )

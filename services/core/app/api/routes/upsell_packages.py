@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_manager_or_above, require_staff_or_above
+from app.models.restaurant import Restaurant
 from app.models.upsell import UpsellPackage
 from app.models.user import User
 
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/upsell-packages", tags=["upsell-packages"])
 
 
 class UpsellPackageCreate(BaseModel):
+    restaurant_id: UUID | None = None
     name: str
     description: str | None = None
     price: float
@@ -71,6 +73,41 @@ class AvailabilityRequest(BaseModel):
     time: str | None = None
 
 
+async def _resolve_tenant_context_for_upsell(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+    requested_tenant_id: UUID | None,
+) -> UUID:
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    if effective_tenant_id:
+        if requested_tenant_id and requested_tenant_id != effective_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Requested restaurant_id does not match tenant context",
+            )
+        return effective_tenant_id
+
+    if current_user.role != "platform_admin":
+        raise HTTPException(status_code=403, detail="User has no tenant context")
+
+    if requested_tenant_id:
+        restaurant_result = await db.execute(
+            select(Restaurant.id).where(Restaurant.id == requested_tenant_id)
+        )
+        if restaurant_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Restaurant not found")
+        return requested_tenant_id
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Tenant context required (token has no tenant and no restaurant tenant "
+            "could be resolved)"
+        ),
+    )
+
+
 @router.post("/", response_model=UpsellPackageResponse, status_code=status.HTTP_201_CREATED)
 async def create_package(
     request: Request,
@@ -78,8 +115,16 @@ async def create_package(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
-    package = UpsellPackage(tenant_id=effective_tenant_id, **body.model_dump())
+    effective_tenant_id = await _resolve_tenant_context_for_upsell(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=body.restaurant_id,
+    )
+    package = UpsellPackage(
+        tenant_id=effective_tenant_id,
+        **body.model_dump(exclude={"restaurant_id"}),
+    )
     db.add(package)
     await db.commit()
     await db.refresh(package)
@@ -91,7 +136,9 @@ async def list_packages(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(UpsellPackage).order_by(UpsellPackage.display_order))
+    result = await db.execute(
+        select(UpsellPackage).order_by(UpsellPackage.display_order)
+    )
     return result.scalars().all()
 
 
@@ -101,7 +148,9 @@ async def get_package(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(UpsellPackage).where(UpsellPackage.id == package_id))
+    result = await db.execute(
+        select(UpsellPackage).where(UpsellPackage.id == package_id)
+    )
     package = result.scalar_one_or_none()
     if not package:
         raise HTTPException(status_code=404, detail="Package not found")
@@ -115,7 +164,9 @@ async def update_package(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(UpsellPackage).where(UpsellPackage.id == package_id))
+    result = await db.execute(
+        select(UpsellPackage).where(UpsellPackage.id == package_id)
+    )
     package = result.scalar_one_or_none()
     if not package:
         raise HTTPException(status_code=404, detail="Package not found")
@@ -134,7 +185,9 @@ async def delete_package(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(UpsellPackage).where(UpsellPackage.id == package_id))
+    result = await db.execute(
+        select(UpsellPackage).where(UpsellPackage.id == package_id)
+    )
     package = result.scalar_one_or_none()
     if not package:
         raise HTTPException(status_code=404, detail="Package not found")

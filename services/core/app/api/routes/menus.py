@@ -6,8 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user, get_db, require_manager_or_above, require_staff_or_above
+from app.core.deps import (
+    get_current_user,
+    get_db,
+    require_manager_or_above,
+    require_staff_or_above,
+)
 from app.models.menu import MenuCategory, MenuItem
+from app.models.restaurant import Restaurant
 from app.models.user import User
 from app.schemas.menu import (
     MenuCategoryCreate,
@@ -19,6 +25,41 @@ from app.schemas.menu import (
 )
 
 router = APIRouter(prefix="/menus", tags=["menus"])
+
+
+async def _resolve_tenant_context_for_menu(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+    requested_tenant_id: UUID | None,
+) -> UUID:
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    if effective_tenant_id:
+        if requested_tenant_id and requested_tenant_id != effective_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Requested restaurant_id does not match tenant context",
+            )
+        return effective_tenant_id
+
+    if current_user.role != "platform_admin":
+        raise HTTPException(status_code=403, detail="User has no tenant context")
+
+    if requested_tenant_id:
+        restaurant_result = await db.execute(
+            select(Restaurant.id).where(Restaurant.id == requested_tenant_id)
+        )
+        if restaurant_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Restaurant not found")
+        return requested_tenant_id
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Tenant context required (token has no tenant and no restaurant tenant "
+            "could be resolved)"
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -46,10 +87,15 @@ async def create_category(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    effective_tenant_id = await _resolve_tenant_context_for_menu(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=body.restaurant_id,
+    )
     category = MenuCategory(
         tenant_id=effective_tenant_id,
-        **body.model_dump(),
+        **body.model_dump(exclude={"restaurant_id"}),
     )
     db.add(category)
     await db.commit()
@@ -114,14 +160,33 @@ async def list_items(
     return result.scalars().all()
 
 
-@router.post("/items", response_model=MenuItemResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/items", response_model=MenuItemResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_item(
     request: Request,
     body: MenuItemCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    effective_tenant_id = await _resolve_tenant_context_for_menu(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=body.restaurant_id,
+    )
+    if body.category_id:
+        category_result = await db.execute(
+            select(MenuCategory).where(MenuCategory.id == body.category_id)
+        )
+        category = category_result.scalar_one_or_none()
+        if not category:
+            raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
+        if category.tenant_id != effective_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Kategorie gehört nicht zum Tenant-Kontext",
+            )
     # Only pass fields that exist on the MenuItem model
     valid_fields = {c.key for c in MenuItem.__table__.columns} - {
         "id",
