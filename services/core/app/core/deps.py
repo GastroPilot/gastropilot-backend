@@ -64,7 +64,11 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    payload = verify_token(token)
+    # Fallback: Wenn ein mitgesendeter Header-Token ungültig ist,
+    # verwenden wir den Cookie-Token (wichtig bei veralteten Browser-Headern).
+    payload = verify_token(header_token) if header_token else None
+    if not payload and access_token:
+        payload = verify_token(access_token)
     if not payload:
         raise HTTPException(
             status_code=401,

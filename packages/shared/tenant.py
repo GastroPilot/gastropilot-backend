@@ -73,11 +73,15 @@ class TenantMiddleware(BaseHTTPMiddleware):
             request.state.is_impersonating = False
             return await call_next(request)
 
-        token = self._extract_token(request)
+        header_token, cookie_token = self._extract_tokens(request)
 
-        if token:
-            payload = verify_token(token)
-            if payload:
+        # Header bleibt bevorzugt (wichtig für Impersonation),
+        # aber bei ungültigem Header verwenden wir den Cookie-Token als Fallback.
+        payload = verify_token(header_token) if header_token else None
+        if not payload and cookie_token:
+            payload = verify_token(cookie_token)
+
+        if payload:
                 role_str = payload.get("role")
                 try:
                     role = UserRole(role_str) if role_str else None
@@ -121,12 +125,6 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 request.state.role = role
                 request.state.is_admin = role in PLATFORM_ROLES
                 request.state.is_impersonating = is_impersonating
-            else:
-                request.state.tenant_id = None
-                request.state.user_id = None
-                request.state.role = None
-                request.state.is_admin = False
-                request.state.is_impersonating = False
         else:
             request.state.tenant_id = None
             request.state.user_id = None
@@ -136,8 +134,8 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         return await call_next(request)
 
-    def _extract_token(self, request: Request) -> str | None:
+    def _extract_tokens(self, request: Request) -> tuple[str | None, str | None]:
         auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            return auth_header[7:]
-        return request.cookies.get("access_token")
+        header_token = auth_header[7:] if auth_header.startswith("Bearer ") else None
+        cookie_token = request.cookies.get("access_token")
+        return header_token, cookie_token

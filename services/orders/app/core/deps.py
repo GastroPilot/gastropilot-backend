@@ -66,7 +66,9 @@ async def get_current_user(
     token = header_token or access_token
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    payload = verify_token(token)
+    payload = verify_token(header_token) if header_token else None
+    if not payload and access_token:
+        payload = verify_token(access_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
     user_id = payload.get("sub") or payload.get("user_id")
@@ -108,7 +110,9 @@ async def get_current_user_or_device(
     token = header_token or access_token
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    payload = verify_token(token)
+    payload = verify_token(header_token) if header_token else None
+    if not payload and access_token:
+        payload = verify_token(access_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
 
