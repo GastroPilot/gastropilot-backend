@@ -73,60 +73,58 @@ class TenantMiddleware(BaseHTTPMiddleware):
             request.state.is_impersonating = False
             return await call_next(request)
 
-        token = self._extract_token(request)
+        header_token, cookie_token = self._extract_tokens(request)
 
-        if token:
-            payload = verify_token(token)
-            if payload:
-                role_str = payload.get("role")
+        # Header bleibt bevorzugt (wichtig für Impersonation),
+        # aber bei ungültigem Header verwenden wir den Cookie-Token als Fallback.
+        payload = verify_token(header_token) if header_token else None
+        if not payload and cookie_token:
+            payload = verify_token(cookie_token)
+
+        if payload:
+            role_str = payload.get("role")
+            try:
+                role = UserRole(role_str) if role_str else None
+            except ValueError:
+                role = None
+
+            tenant_id_str = payload.get("tenant_id")
+            impersonating_str = payload.get("impersonating_tenant_id")
+
+            tenant_id = None
+            if tenant_id_str:
                 try:
-                    role = UserRole(role_str) if role_str else None
+                    tenant_id = uuid.UUID(tenant_id_str)
                 except ValueError:
-                    role = None
+                    pass
 
-                tenant_id_str = payload.get("tenant_id")
-                impersonating_str = payload.get("impersonating_tenant_id")
+            impersonating_tenant_id = None
+            if impersonating_str:
+                try:
+                    impersonating_tenant_id = uuid.UUID(impersonating_str)
+                except ValueError:
+                    pass
 
-                tenant_id = None
-                if tenant_id_str:
-                    try:
-                        tenant_id = uuid.UUID(tenant_id_str)
-                    except ValueError:
-                        pass
+            # Determine effective tenant
+            effective_tenant = tenant_id
+            is_impersonating = False
+            if role in PLATFORM_ROLES and impersonating_tenant_id:
+                effective_tenant = impersonating_tenant_id
+                is_impersonating = True
 
-                impersonating_tenant_id = None
-                if impersonating_str:
-                    try:
-                        impersonating_tenant_id = uuid.UUID(impersonating_str)
-                    except ValueError:
-                        pass
+            user_id_str = payload.get("sub") or payload.get("user_id")
+            user_id = None
+            if user_id_str:
+                try:
+                    user_id = uuid.UUID(user_id_str)
+                except ValueError:
+                    pass
 
-                # Determine effective tenant
-                effective_tenant = tenant_id
-                is_impersonating = False
-                if role in PLATFORM_ROLES and impersonating_tenant_id:
-                    effective_tenant = impersonating_tenant_id
-                    is_impersonating = True
-
-                user_id_str = payload.get("sub") or payload.get("user_id")
-                user_id = None
-                if user_id_str:
-                    try:
-                        user_id = uuid.UUID(user_id_str)
-                    except ValueError:
-                        pass
-
-                request.state.tenant_id = effective_tenant
-                request.state.user_id = user_id
-                request.state.role = role
-                request.state.is_admin = role in PLATFORM_ROLES
-                request.state.is_impersonating = is_impersonating
-            else:
-                request.state.tenant_id = None
-                request.state.user_id = None
-                request.state.role = None
-                request.state.is_admin = False
-                request.state.is_impersonating = False
+            request.state.tenant_id = effective_tenant
+            request.state.user_id = user_id
+            request.state.role = role
+            request.state.is_admin = role in PLATFORM_ROLES
+            request.state.is_impersonating = is_impersonating
         else:
             request.state.tenant_id = None
             request.state.user_id = None
@@ -136,8 +134,8 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         return await call_next(request)
 
-    def _extract_token(self, request: Request) -> str | None:
+    def _extract_tokens(self, request: Request) -> tuple[str | None, str | None]:
         auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            return auth_header[7:]
-        return request.cookies.get("access_token")
+        header_token = auth_header[7:] if auth_header.startswith("Bearer ") else None
+        cookie_token = request.cookies.get("access_token")
+        return header_token, cookie_token

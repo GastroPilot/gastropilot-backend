@@ -47,6 +47,14 @@ class TokenResponse(BaseModel):
     user: dict[str, Any]
 
 
+def _refresh_expiry_or_500(refresh_token: str) -> datetime:
+    payload = verify_token(refresh_token, token_type="refresh")
+    exp = payload.get("exp") if payload else None
+    if exp is None:
+        raise HTTPException(status_code=500, detail="Could not issue refresh token")
+    return datetime.fromtimestamp(exp, tz=UTC)
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(
     data: LoginRequest,
@@ -121,7 +129,7 @@ async def login(
     rt = RefreshToken(
         user_id=user.id,
         token_hash=token_hash,
-        expires_at=datetime.now(UTC),
+        expires_at=_refresh_expiry_or_500(refresh_token),
     )
     session.add(rt)
 
@@ -179,7 +187,13 @@ async def refresh(
     if not token:
         raise HTTPException(status_code=401, detail="Refresh token required")
 
-    payload = verify_token(token, token_type="refresh")
+    payload = verify_token(header_token, token_type="refresh") if header_token else None
+    if payload:
+        token = header_token
+    elif refresh_token_cookie:
+        payload = verify_token(refresh_token_cookie, token_type="refresh")
+        if payload:
+            token = refresh_token_cookie
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
@@ -221,7 +235,7 @@ async def refresh(
     rt = RefreshToken(
         user_id=user.id,
         token_hash=new_hash,
-        expires_at=datetime.now(UTC),
+        expires_at=_refresh_expiry_or_500(new_refresh_token),
         rotated_from_id=stored_token.id,
     )
     session.add(rt)
@@ -257,20 +271,26 @@ async def logout(
     header_token = credentials.credentials if credentials else None
     token = header_token or access_token_cookie
 
-    if token:
-        payload = verify_token(token)
+    payload = verify_token(header_token) if header_token else None
+    if payload:
+        token = header_token
+    elif access_token_cookie:
+        payload = verify_token(access_token_cookie)
         if payload:
-            user_id = payload.get("sub") or payload.get("user_id")
-            if user_id:
-                await session.execute(
-                    update(RefreshToken)
-                    .where(
-                        RefreshToken.user_id == uuid.UUID(user_id),
-                        RefreshToken.revoked_at.is_(None),
-                    )
-                    .values(revoked_at=datetime.now(UTC))
+            token = access_token_cookie
+
+    if token and payload:
+        user_id = payload.get("sub") or payload.get("user_id")
+        if user_id:
+            await session.execute(
+                update(RefreshToken)
+                .where(
+                    RefreshToken.user_id == uuid.UUID(user_id),
+                    RefreshToken.revoked_at.is_(None),
                 )
-                await session.commit()
+                .values(revoked_at=datetime.now(UTC))
+            )
+            await session.commit()
 
     response.delete_cookie("access_token")
     response.delete_cookie("refresh_token")

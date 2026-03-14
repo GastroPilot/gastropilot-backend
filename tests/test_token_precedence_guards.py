@@ -20,3 +20,11 @@ def test_orders_auth_prefers_header_over_cookie_tokens() -> None:
     # get_current_user + get_current_user_or_device
     assert source.count("token = header_token or access_token") >= 2
     assert "token = access_token or header_token" not in source
+
+
+def test_tenant_middleware_falls_back_to_cookie_when_header_invalid() -> None:
+    source = _read("packages/shared/tenant.py")
+
+    assert "payload = verify_token(header_token) if header_token else None" in source
+    assert "if not payload and cookie_token:" in source
+    assert "payload = verify_token(cookie_token)" in source
