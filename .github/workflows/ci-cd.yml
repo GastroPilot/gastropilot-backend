@@ -16,8 +16,7 @@ on:
         required: true
         type: choice
         options:
-          - latest
-          - staging
+          - test
 
 env:
   PYTHON_VERSION: '3.11'
@@ -112,11 +111,14 @@ jobs:
 
       - name: Determine tag
         id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+            echo "tag=$INPUT_TAG" >> $GITHUB_OUTPUT
           else
-            echo "tag=latest" >> $GITHUB_OUTPUT
+            echo "tag=test" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push ${{ matrix.service }}
