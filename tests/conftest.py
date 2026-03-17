@@ -2,17 +2,18 @@
 Pytest configuration and fixtures for GastroPilot backend tests.
 """
 
-import pytest
 import asyncio
 from collections.abc import AsyncGenerator, Generator
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from fastapi.testclient import TestClient
-from httpx import AsyncClient, ASGITransport
 
+import pytest
+from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.auth import create_access_token, hash_password
 from app.database import Base
 from app.dependencies import get_session as get_db_session
 from app.main import app
-from app.auth import hash_password, create_access_token
 
 # Test database URL (SQLite in-memory)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"

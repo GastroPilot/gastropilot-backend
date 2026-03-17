@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import text
+
 from app.database.instance import db
 
 # Index definitions - compatible with both SQLite and PostgreSQL

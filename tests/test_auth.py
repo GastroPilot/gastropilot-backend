@@ -248,8 +248,8 @@ class TestOperatorManagement:
         self, client: AsyncClient, db_session, test_admin_user, admin_auth_headers
     ):
         """Test deleting an operator."""
-        from app.database.models import User
         from app.auth import hash_password
+        from app.database.models import User
 
         # Create a user to delete
         user_to_delete = User(

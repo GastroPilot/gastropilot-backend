@@ -2,8 +2,9 @@
 Tests for order endpoints.
 """
 
-import pytest
 from datetime import UTC, datetime
+
+import pytest
 from httpx import AsyncClient
 
 
@@ -130,7 +131,7 @@ class TestOrderItems:
         self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
     ):
         """Test adding an item to an order."""
-        from app.database.models import Order, MenuItem, MenuCategory
+        from app.database.models import MenuCategory, MenuItem, Order
 
         # Create menu category and item
         category = MenuCategory(
@@ -279,8 +280,9 @@ class TestOrderStatistics:
         self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
     ):
         """Test getting order statistics (revenue endpoint)."""
-        from app.database.models import Order
         from datetime import timedelta
+
+        from app.database.models import Order
 
         # Create some paid orders
         now = datetime.now(UTC)

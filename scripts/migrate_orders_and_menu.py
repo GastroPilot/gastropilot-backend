@@ -10,10 +10,12 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import logging
+
 from sqlalchemy import text
+
 from app.database.instance import db
 from app.settings import DATABASE_URL, DB_TYPE
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
