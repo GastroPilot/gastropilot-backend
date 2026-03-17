@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,7 +82,7 @@ async def seed_demo_restaurant(session: AsyncSession) -> None:
         return
 
     logger.info("Creating demo restaurant + full dataset …")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     today = now.date()
 
     # ── Restaurant ──────────────────────────────────────────────
@@ -351,8 +351,8 @@ async def seed_demo_restaurant(session: AsyncSession) -> None:
     for gid, tid, day, start_h, end_h, psize, status, gname, gemail, gphone in reservations:
         sh, sm = map(int, start_h.split(":"))
         eh, em = map(int, end_h.split(":"))
-        start_dt = datetime(day.year, day.month, day.day, sh, sm, tzinfo=timezone.utc)
-        end_dt = datetime(day.year, day.month, day.day, eh, em, tzinfo=timezone.utc)
+        start_dt = datetime(day.year, day.month, day.day, sh, sm, tzinfo=UTC)
+        end_dt = datetime(day.year, day.month, day.day, eh, em, tzinfo=UTC)
         conf_code = uuid.uuid4().hex[:8].upper()
         await session.execute(
             text("""
