@@ -6,6 +6,7 @@ Fügt die neuen Features hinzu:
 - Upsell-Pakete
 - Vorauszahlungen für Reservierungen
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -22,13 +23,13 @@ async def migrate():
     """Führt die Migration aus."""
     print("🔄 Starte Migration: Vouchers, Upsell Packages & Prepayments...")
     await init_db()
-    
+
     async with db.engine.begin() as conn:
         try:
             if DB_TYPE == "sqlite":
                 # SQLite Migration
                 print("Führe SQLite-Migration aus...")
-                
+
                 # Füge neue Spalten zur reservations-Tabelle hinzu
                 print("Füge neue Spalten zur reservations-Tabelle hinzu...")
                 try:
@@ -38,7 +39,7 @@ async def migrate():
                     """))
                 except Exception:
                     print("  Spalte voucher_id existiert bereits")
-                
+
                 try:
                     await conn.execute(text("""
                         ALTER TABLE reservations 
@@ -46,7 +47,7 @@ async def migrate():
                     """))
                 except Exception:
                     print("  Spalte voucher_discount_amount existiert bereits")
-                
+
                 try:
                     await conn.execute(text("""
                         ALTER TABLE reservations 
@@ -54,7 +55,7 @@ async def migrate():
                     """))
                 except Exception:
                     print("  Spalte prepayment_required existiert bereits")
-                
+
                 try:
                     await conn.execute(text("""
                         ALTER TABLE reservations 
@@ -62,7 +63,7 @@ async def migrate():
                     """))
                 except Exception:
                     print("  Spalte prepayment_amount existiert bereits")
-                
+
                 # Erstelle vouchers-Tabelle
                 print("Erstelle vouchers-Tabelle...")
                 await conn.execute(text("""
@@ -88,7 +89,7 @@ async def migrate():
                         UNIQUE(restaurant_id, code)
                     )
                 """))
-                
+
                 # Erstelle voucher_usage-Tabelle
                 print("Erstelle voucher_usage-Tabelle...")
                 await conn.execute(text("""
@@ -103,7 +104,7 @@ async def migrate():
                         FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE SET NULL
                     )
                 """))
-                
+
                 # Erstelle upsell_packages-Tabelle
                 print("Erstelle upsell_packages-Tabelle...")
                 await conn.execute(text("""
@@ -127,7 +128,7 @@ async def migrate():
                         FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
                     )
                 """))
-                
+
                 # Erstelle reservation_prepayments-Tabelle
                 print("Erstelle reservation_prepayments-Tabelle...")
                 await conn.execute(text("""
@@ -149,7 +150,7 @@ async def migrate():
                         FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
                     )
                 """))
-                
+
                 # Erstelle Indizes
                 print("Erstelle Indizes...")
                 await conn.execute(text("""
@@ -176,7 +177,7 @@ async def migrate():
                 await conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS idx_reservation_prepayments_restaurant_id ON reservation_prepayments(restaurant_id)
                 """))
-                
+
                 # Erstelle reservation_upsell_packages-Tabelle
                 print("Erstelle reservation_upsell_packages-Tabelle...")
                 await conn.execute(text("""
@@ -191,18 +192,18 @@ async def migrate():
                         UNIQUE(reservation_id, upsell_package_id)
                     )
                 """))
-                
+
                 await conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS idx_reservation_upsell_packages_reservation_id ON reservation_upsell_packages(reservation_id)
                 """))
                 await conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS idx_reservation_upsell_packages_upsell_package_id ON reservation_upsell_packages(upsell_package_id)
                 """))
-                
+
             elif DB_TYPE in ["postgresql", "neon"]:
                 # PostgreSQL Migration
                 print("Führe PostgreSQL-Migration aus...")
-                
+
                 # Füge neue Spalten zur reservations-Tabelle hinzu
                 print("Füge neue Spalten zur reservations-Tabelle hinzu...")
                 await conn.execute(text("""
@@ -215,7 +216,7 @@ async def migrate():
                         END IF;
                     END $$;
                 """))
-                
+
                 await conn.execute(text("""
                     DO $$
                     BEGIN
@@ -226,7 +227,7 @@ async def migrate():
                         END IF;
                     END $$;
                 """))
-                
+
                 await conn.execute(text("""
                     DO $$
                     BEGIN
@@ -237,7 +238,7 @@ async def migrate():
                         END IF;
                     END $$;
                 """))
-                
+
                 await conn.execute(text("""
                     DO $$
                     BEGIN
@@ -248,7 +249,7 @@ async def migrate():
                         END IF;
                     END $$;
                 """))
-                
+
                 # Erstelle vouchers-Tabelle
                 print("Erstelle vouchers-Tabelle...")
                 await conn.execute(text("""
@@ -274,7 +275,7 @@ async def migrate():
                         UNIQUE(restaurant_id, code)
                     )
                 """))
-                
+
                 # Erstelle voucher_usage-Tabelle
                 print("Erstelle voucher_usage-Tabelle...")
                 await conn.execute(text("""
@@ -289,7 +290,7 @@ async def migrate():
                         FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE SET NULL
                     )
                 """))
-                
+
                 # Erstelle upsell_packages-Tabelle
                 print("Erstelle upsell_packages-Tabelle...")
                 await conn.execute(text("""
@@ -313,7 +314,7 @@ async def migrate():
                         FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
                     )
                 """))
-                
+
                 # Erstelle reservation_prepayments-Tabelle
                 print("Erstelle reservation_prepayments-Tabelle...")
                 await conn.execute(text("""
@@ -335,7 +336,7 @@ async def migrate():
                         FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
                     )
                 """))
-                
+
                 # Füge Foreign Key für voucher_id hinzu (wenn noch nicht existiert)
                 print("Füge Foreign Key Constraints hinzu...")
                 await conn.execute(text("""
@@ -351,7 +352,7 @@ async def migrate():
                         END IF;
                     END $$;
                 """))
-                
+
                 # Erstelle Indizes
                 print("Erstelle Indizes...")
                 await conn.execute(text("""
@@ -378,7 +379,7 @@ async def migrate():
                 await conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS idx_reservation_prepayments_restaurant_id ON reservation_prepayments(restaurant_id)
                 """))
-                
+
                 # Erstelle reservation_upsell_packages-Tabelle
                 print("Erstelle reservation_upsell_packages-Tabelle...")
                 await conn.execute(text("""
@@ -393,7 +394,7 @@ async def migrate():
                         UNIQUE(reservation_id, upsell_package_id)
                     )
                 """))
-                
+
                 await conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS idx_reservation_upsell_packages_reservation_id ON reservation_upsell_packages(reservation_id)
                 """))
@@ -403,12 +404,13 @@ async def migrate():
             else:
                 print(f"❌ Unbekannter DB_TYPE: {DB_TYPE}")
                 return
-            
+
             print("✅ Migration erfolgreich abgeschlossen!")
-            
+
         except Exception as e:
             print(f"❌ Fehler bei der Migration: {e}")
             import traceback
+
             traceback.print_exc()
             raise
 

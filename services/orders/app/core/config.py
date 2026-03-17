@@ -14,9 +14,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     ENV: str = "development"
-    DATABASE_URL: str = (
-        "postgresql+asyncpg://gastropilot:gastropilot@localhost:5432/gastropilot"
-    )
+    DATABASE_URL: str = "postgresql+asyncpg://gastropilot:gastropilot@localhost:5432/gastropilot"
     DATABASE_ADMIN_URL: str = (
         "postgresql+asyncpg://gastropilot:gastropilot@localhost:5432/gastropilot"
     )

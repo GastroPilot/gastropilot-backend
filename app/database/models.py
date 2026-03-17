@@ -49,11 +49,15 @@ class User(Base):
     operator_number = Column(
         String(4), nullable=True, unique=True, index=True
     )  # 4-stellige Bedienernummer (nullable für platform_admin)
-    pin_hash = Column(String(255), nullable=True)  # 6-8 stelliger PIN (gehasht, nullable für E-Mail-Login)
+    pin_hash = Column(
+        String(255), nullable=True
+    )  # 6-8 stelliger PIN (gehasht, nullable für E-Mail-Login)
     nfc_tag_id = Column(
         String(64), nullable=True, unique=True, index=True
     )  # NFC-Tag-ID für Transponder-Login
-    email = Column(String(255), nullable=True, unique=True, index=True)  # E-Mail für Platform-Admin-Login
+    email = Column(
+        String(255), nullable=True, unique=True, index=True
+    )  # E-Mail für Platform-Admin-Login
     password_hash = Column(String(255), nullable=True)  # Passwort-Hash für E-Mail-Login
     first_name = Column(String(120), nullable=False)
     last_name = Column(String(120), nullable=False)

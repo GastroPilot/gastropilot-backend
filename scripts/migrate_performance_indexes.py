@@ -13,6 +13,7 @@ This script adds indexes to improve query performance for:
 - Blocks and Block Assignments
 - Audit Logs
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -22,7 +23,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import text
 from app.database.instance import db
-
 
 # Index definitions - compatible with both SQLite and PostgreSQL
 INDEXES = [
@@ -50,7 +50,6 @@ INDEXES = [
         "columns": "table_id, start_at",
         "where": "table_id IS NOT NULL",
     },
-    
     # ============================================
     # ORDERS
     # ============================================
@@ -76,7 +75,6 @@ INDEXES = [
         "columns": "restaurant_id, paid_at",
         "where": "status = 'paid'",
     },
-    
     # ============================================
     # ORDER ITEMS
     # ============================================
@@ -85,7 +83,6 @@ INDEXES = [
         "table": "order_items",
         "columns": "order_id, status",
     },
-    
     # ============================================
     # TABLES
     # ============================================
@@ -100,7 +97,6 @@ INDEXES = [
         "columns": "area_id",
         "where": "area_id IS NOT NULL",
     },
-    
     # ============================================
     # TABLE_DAY_CONFIGS
     # ============================================
@@ -115,7 +111,6 @@ INDEXES = [
         "columns": "restaurant_id, date",
         "where": "is_temporary = true",
     },
-    
     # ============================================
     # BLOCKS
     # ============================================
@@ -124,7 +119,6 @@ INDEXES = [
         "table": "blocks",
         "columns": "restaurant_id, start_at, end_at",
     },
-    
     # ============================================
     # BLOCK_ASSIGNMENTS
     # ============================================
@@ -133,7 +127,6 @@ INDEXES = [
         "table": "block_assignments",
         "columns": "table_id, block_id",
     },
-    
     # ============================================
     # AUDIT_LOGS
     # ============================================
@@ -147,7 +140,6 @@ INDEXES = [
         "table": "audit_logs",
         "columns": "entity_type, entity_id",
     },
-    
     # ============================================
     # REFRESH_TOKENS
     # ============================================
@@ -165,12 +157,11 @@ async def check_index_exists(conn, index_name: str, db_type: str) -> bool:
     if db_type == "sqlite":
         result = await conn.execute(
             text("SELECT name FROM sqlite_master WHERE type='index' AND name=:name"),
-            {"name": index_name}
+            {"name": index_name},
         )
     else:  # PostgreSQL
         result = await conn.execute(
-            text("SELECT indexname FROM pg_indexes WHERE indexname = :name"),
-            {"name": index_name}
+            text("SELECT indexname FROM pg_indexes WHERE indexname = :name"), {"name": index_name}
         )
     return result.fetchone() is not None
 
@@ -180,12 +171,11 @@ async def check_table_exists(conn, table_name: str, db_type: str) -> bool:
     if db_type == "sqlite":
         result = await conn.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"),
-            {"name": table_name}
+            {"name": table_name},
         )
     else:  # PostgreSQL
         result = await conn.execute(
-            text("SELECT tablename FROM pg_tables WHERE tablename = :name"),
-            {"name": table_name}
+            text("SELECT tablename FROM pg_tables WHERE tablename = :name"), {"name": table_name}
         )
     return result.fetchone() is not None
 
@@ -196,20 +186,20 @@ async def create_index(conn, index_def: dict, db_type: str) -> tuple[bool, str]:
     table = index_def["table"]
     columns = index_def["columns"]
     where = index_def.get("where")
-    
+
     # Check if table exists
     if not await check_table_exists(conn, table, db_type):
         return False, f"Tabelle '{table}' existiert nicht"
-    
+
     # Check if index already exists
     if await check_index_exists(conn, name, db_type):
         return False, "Index existiert bereits"
-    
+
     # Build CREATE INDEX statement
     sql = f"CREATE INDEX {name} ON {table}({columns})"
     if where:
         sql += f" WHERE {where}"
-    
+
     try:
         await conn.execute(text(sql))
         return True, "Erstellt"
@@ -220,24 +210,24 @@ async def create_index(conn, index_def: dict, db_type: str) -> tuple[bool, str]:
 async def run_migration():
     """Run the performance indexes migration."""
     from app.settings import DB_TYPE
-    
+
     print("=" * 60)
     print("Performance-Indizes Migration")
     print("=" * 60)
     print(f"Datenbank-Typ: {DB_TYPE}")
     print()
-    
+
     created = 0
     skipped = 0
     errors = 0
-    
+
     async with db.engine.begin() as conn:
         for index_def in INDEXES:
             name = index_def["name"]
             table = index_def["table"]
-            
+
             success, message = await create_index(conn, index_def, DB_TYPE)
-            
+
             if success:
                 print(f"✅ {name} ({table}): {message}")
                 created += 1
@@ -247,7 +237,7 @@ async def run_migration():
             else:
                 print(f"❌ {name} ({table}): {message}")
                 errors += 1
-    
+
     print()
     print("=" * 60)
     print("Zusammenfassung:")
@@ -255,7 +245,7 @@ async def run_migration():
     print(f"  Übersprungen: {skipped}")
     print(f"  Fehler: {errors}")
     print("=" * 60)
-    
+
     return errors == 0
 
 

@@ -1,6 +1,7 @@
 """
 Tests for order endpoints.
 """
+
 import pytest
 from datetime import UTC, datetime
 from httpx import AsyncClient
@@ -8,13 +9,9 @@ from httpx import AsyncClient
 
 class TestOrderCRUD:
     """Tests for order CRUD operations."""
-    
+
     async def test_create_order(
-        self,
-        client: AsyncClient,
-        test_restaurant,
-        test_table,
-        admin_auth_headers
+        self, client: AsyncClient, test_restaurant, test_table, admin_auth_headers
     ):
         """Test creating a new order."""
         response = await client.post(
@@ -24,26 +21,21 @@ class TestOrderCRUD:
                 "table_id": test_table.id,
                 "party_size": 4,
                 "notes": "Test order",
-            }
+            },
         )
-        
+
         assert response.status_code == 201
         data = response.json()
         assert data["table_id"] == test_table.id
         assert data["status"] == "open"
         assert data["party_size"] == 4
-    
+
     async def test_list_orders(
-        self,
-        client: AsyncClient,
-        db_session,
-        test_restaurant,
-        test_table,
-        admin_auth_headers
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
     ):
         """Test listing orders."""
         from app.database.models import Order
-        
+
         # Create some orders
         for i in range(3):
             order = Order(
@@ -59,27 +51,21 @@ class TestOrderCRUD:
             )
             db_session.add(order)
         await db_session.commit()
-        
+
         response = await client.get(
-            f"/v1/restaurants/{test_restaurant.id}/orders",
-            headers=admin_auth_headers
+            f"/v1/restaurants/{test_restaurant.id}/orders", headers=admin_auth_headers
         )
-        
+
         assert response.status_code == 200
         data = response.json()
         assert len(data) >= 3
-    
+
     async def test_get_order(
-        self,
-        client: AsyncClient,
-        db_session,
-        test_restaurant,
-        test_table,
-        admin_auth_headers
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
     ):
         """Test getting a single order."""
         from app.database.models import Order
-        
+
         order = Order(
             restaurant_id=test_restaurant.id,
             table_id=test_table.id,
@@ -95,28 +81,22 @@ class TestOrderCRUD:
         db_session.add(order)
         await db_session.commit()
         await db_session.refresh(order)
-        
+
         response = await client.get(
-            f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}",
-            headers=admin_auth_headers
+            f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}", headers=admin_auth_headers
         )
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["party_size"] == 4
         assert data["notes"] == "Test order"
-    
+
     async def test_update_order_status(
-        self,
-        client: AsyncClient,
-        db_session,
-        test_restaurant,
-        test_table,
-        admin_auth_headers
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
     ):
         """Test updating order status."""
         from app.database.models import Order
-        
+
         order = Order(
             restaurant_id=test_restaurant.id,
             table_id=test_table.id,
@@ -131,13 +111,13 @@ class TestOrderCRUD:
         db_session.add(order)
         await db_session.commit()
         await db_session.refresh(order)
-        
+
         response = await client.patch(
             f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}",
             headers=admin_auth_headers,
-            json={"status": "sent_to_kitchen"}
+            json={"status": "sent_to_kitchen"},
         )
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "sent_to_kitchen"
@@ -145,18 +125,13 @@ class TestOrderCRUD:
 
 class TestOrderItems:
     """Tests for order items."""
-    
+
     async def test_add_order_item(
-        self,
-        client: AsyncClient,
-        db_session,
-        test_restaurant,
-        test_table,
-        admin_auth_headers
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
     ):
         """Test adding an item to an order."""
         from app.database.models import Order, MenuItem, MenuCategory
-        
+
         # Create menu category and item
         category = MenuCategory(
             restaurant_id=test_restaurant.id,
@@ -166,7 +141,7 @@ class TestOrderItems:
         db_session.add(category)
         await db_session.commit()
         await db_session.refresh(category)
-        
+
         menu_item = MenuItem(
             restaurant_id=test_restaurant.id,
             category_id=category.id,
@@ -178,7 +153,7 @@ class TestOrderItems:
         db_session.add(menu_item)
         await db_session.commit()
         await db_session.refresh(menu_item)
-        
+
         # Create order
         order = Order(
             restaurant_id=test_restaurant.id,
@@ -194,7 +169,7 @@ class TestOrderItems:
         db_session.add(order)
         await db_session.commit()
         await db_session.refresh(order)
-        
+
         # Add item to order
         response = await client.post(
             f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}/items",
@@ -204,9 +179,9 @@ class TestOrderItems:
                 "quantity": 2,
                 "unit_price": 15.90,
                 "tax_rate": 0.19,
-            }
+            },
         )
-        
+
         assert response.status_code == 201
         data = response.json()
         assert data["item_name"] == "Schnitzel"
@@ -216,18 +191,13 @@ class TestOrderItems:
 
 class TestOrderPayment:
     """Tests for order payment."""
-    
+
     async def test_pay_order(
-        self,
-        client: AsyncClient,
-        db_session,
-        test_restaurant,
-        test_table,
-        admin_auth_headers
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
     ):
         """Test paying an order."""
         from app.database.models import Order
-        
+
         order = Order(
             restaurant_id=test_restaurant.id,
             table_id=test_table.id,
@@ -243,7 +213,7 @@ class TestOrderPayment:
         db_session.add(order)
         await db_session.commit()
         await db_session.refresh(order)
-        
+
         response = await client.patch(
             f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}",
             headers=admin_auth_headers,
@@ -251,26 +221,21 @@ class TestOrderPayment:
                 "status": "paid",
                 "payment_status": "paid",
                 "payment_method": "card",
-            }
+            },
         )
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "paid"
         assert data["payment_status"] == "paid"
         assert data["payment_method"] == "card"
-    
+
     async def test_split_payment(
-        self,
-        client: AsyncClient,
-        db_session,
-        test_restaurant,
-        test_table,
-        admin_auth_headers
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
     ):
         """Test split payment."""
         from app.database.models import Order
-        
+
         order = Order(
             restaurant_id=test_restaurant.id,
             table_id=test_table.id,
@@ -286,7 +251,7 @@ class TestOrderPayment:
         db_session.add(order)
         await db_session.commit()
         await db_session.refresh(order)
-        
+
         response = await client.patch(
             f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}",
             headers=admin_auth_headers,
@@ -296,11 +261,11 @@ class TestOrderPayment:
                 "payment_method": "split",
                 "split_payments": [
                     {"method": "cash", "amount": 40.0},
-                    {"method": "card", "amount": 60.0}
-                ]
-            }
+                    {"method": "card", "amount": 60.0},
+                ],
+            },
         )
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["payment_method"] == "split"
@@ -309,19 +274,14 @@ class TestOrderPayment:
 
 class TestOrderStatistics:
     """Tests for order statistics endpoint."""
-    
+
     async def test_get_order_statistics(
-        self,
-        client: AsyncClient,
-        db_session,
-        test_restaurant,
-        test_table,
-        admin_auth_headers
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
     ):
         """Test getting order statistics (revenue endpoint)."""
         from app.database.models import Order
         from datetime import timedelta
-        
+
         # Create some paid orders
         now = datetime.now(UTC)
         for i in range(5):
@@ -341,12 +301,12 @@ class TestOrderStatistics:
             )
             db_session.add(order)
         await db_session.commit()
-        
+
         response = await client.get(
             f"/v1/restaurants/{test_restaurant.id}/order-statistics/revenue",
-            headers=admin_auth_headers
+            headers=admin_auth_headers,
         )
-        
+
         assert response.status_code == 200
         data = response.json()
         # Statistics should include aggregate data

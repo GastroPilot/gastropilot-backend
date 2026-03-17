@@ -1,6 +1,7 @@
 """
 Pytest configuration and fixtures for GastroPilot backend tests.
 """
+
 import pytest
 import asyncio
 from collections.abc import AsyncGenerator, Generator
@@ -12,7 +13,6 @@ from app.database import Base
 from app.dependencies import get_session as get_db_session
 from app.main import app
 from app.auth import hash_password, create_access_token
-
 
 # Test database URL (SQLite in-memory)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -34,15 +34,15 @@ async def async_engine():
         echo=False,
         future=True,
     )
-    
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     yield engine
-    
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-    
+
     await engine.dispose()
 
 
@@ -54,7 +54,7 @@ async def db_session(async_engine) -> AsyncGenerator[AsyncSession, None]:
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    
+
     async with async_session_maker() as session:
         yield session
         await session.rollback()
@@ -63,16 +63,18 @@ async def db_session(async_engine) -> AsyncGenerator[AsyncSession, None]:
 @pytest.fixture(scope="function")
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Create a test client with overridden database session."""
-    
+
     async def override_get_session():
         yield db_session
-    
+
     app.dependency_overrides[get_db_session] = override_get_session
-    
+
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=True) as ac:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as ac:
         yield ac
-    
+
     app.dependency_overrides.clear()
 
 
@@ -80,7 +82,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 async def test_user(db_session: AsyncSession):
     """Create a test user."""
     from app.database.models import User
-    
+
     user = User(
         operator_number="1234",
         pin_hash=hash_password("123456"),
@@ -99,7 +101,7 @@ async def test_user(db_session: AsyncSession):
 async def test_admin_user(db_session: AsyncSession):
     """Create a test admin user (restaurantinhaber)."""
     from app.database.models import User
-    
+
     user = User(
         operator_number="9999",
         pin_hash=hash_password("admin123"),
@@ -118,7 +120,7 @@ async def test_admin_user(db_session: AsyncSession):
 async def test_servecta_user(db_session: AsyncSession):
     """Create a test Servecta user."""
     from app.database.models import User
-    
+
     user = User(
         operator_number="0000",
         pin_hash=hash_password("servecta"),
@@ -165,7 +167,7 @@ async def admin_auth_headers(test_admin_user):
 async def test_restaurant(db_session: AsyncSession):
     """Create a test restaurant."""
     from app.database.models import Restaurant
-    
+
     restaurant = Restaurant(
         name="Test Restaurant",
         address="Teststraße 1, 12345 Teststadt",
@@ -183,7 +185,7 @@ async def test_restaurant(db_session: AsyncSession):
 async def test_table(db_session: AsyncSession, test_restaurant):
     """Create a test table."""
     from app.database.models import Table
-    
+
     table = Table(
         restaurant_id=test_restaurant.id,
         number="T1",
@@ -205,7 +207,7 @@ async def test_table(db_session: AsyncSession, test_restaurant):
 async def test_guest(db_session: AsyncSession, test_restaurant):
     """Create a test guest."""
     from app.database.models import Guest
-    
+
     guest = Guest(
         restaurant_id=test_restaurant.id,
         first_name="Max",
