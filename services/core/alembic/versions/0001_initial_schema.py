@@ -22,6 +22,15 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Wenn init.sql bereits gelaufen ist, existiert restaurants bereits → skip
+    conn = op.get_bind()
+    result = conn.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_name = 'restaurants')"
+    ))
+    if result.scalar():
+        return
+
     # Enums (idempotent, bereits in init.sql erstellt – hier als native Enum referenziert)
     user_role = postgresql.ENUM(
         "guest",

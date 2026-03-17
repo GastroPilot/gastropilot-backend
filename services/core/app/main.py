@@ -40,6 +40,10 @@ limiter = Limiter(key_func=get_remote_address, storage_uri=settings.REDIS_URL)
 async def lifespan(app: FastAPI):
     logger.info("Starting GastroPilot Core Service...")
     get_engines()
+    if settings.is_development:
+        from app.core.seed import seed_database
+
+        await seed_database()
     yield
     logger.info("Shutting down Core Service...")
     await close_engines()
