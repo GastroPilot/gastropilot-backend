@@ -56,9 +56,7 @@ async def login(
 
     # E-Mail/Passwort-Login (platform_admin)
     if login_data.email and login_data.password:
-        result = await session.execute(
-            select(User).where(User.email == login_data.email)
-        )
+        result = await session.execute(select(User).where(User.email == login_data.email))
         candidate = result.scalar_one_or_none()
         if (
             candidate
@@ -77,9 +75,7 @@ async def login(
             user = candidate
 
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     if not user.is_active:
         raise HTTPException(
@@ -399,9 +395,7 @@ async def create_operator(
 
     # Prüfe ob E-Mail bereits existiert
     if operator_data.email:
-        result_email = await session.execute(
-            select(User).where(User.email == operator_data.email)
-        )
+        result_email = await session.execute(select(User).where(User.email == operator_data.email))
         if result_email.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists"
