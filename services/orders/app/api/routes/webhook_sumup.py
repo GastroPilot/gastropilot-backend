@@ -106,12 +106,6 @@ async def sumup_webhook(request: Request):
             logger.warning(f"No matching payment found for webhook: {body}")
             return {"status": "ignored", "reason": "No matching payment found"}
 
-        # Check if this is a prepayment (reference starts with "RES-")
-        ref = body.get("checkout_reference", "")
-        if ref.startswith("RES-"):
-            # Handle prepayment — delegate to core service
-            return {"status": "ignored", "reason": "Prepayment webhook — handled by core service"}
-
         # Update payment record
         payment.webhook_data = body
 

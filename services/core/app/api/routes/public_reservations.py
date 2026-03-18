@@ -16,13 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
 from app.models.block import Block, BlockAssignment
-from app.models.prepayment import ReservationPrepayment
 from app.models.reservation import Guest, Reservation
 from app.models.restaurant import Restaurant, Table
 from app.models.table_config import ReservationTable, TableDayConfig
-from app.models.upsell import ReservationUpsellPackage, UpsellPackage
 from app.models.user import GuestProfile
-from app.models.voucher import Voucher, VoucherUsage
 from app.utils.ics_generator import generate_ics_file
 
 logger = logging.getLogger(__name__)
@@ -52,9 +49,6 @@ class PublicReservationCreate(BaseModel):
     channel: str = "web"
     privacy_accepted: bool = True
     notification_channels: NotificationChannels = NotificationChannels()
-    voucher_code: str | None = None
-    upsell_package_ids: list[UUID] | None = None
-    prepayment_required: bool = False
 
 
 class AvailabilitySlot(BaseModel):
@@ -91,8 +85,6 @@ class PublicReservationResponse(BaseModel):
     party_size: int
     table_number: str | None = None
     message: str
-    prepayment_checkout_url: str | None = None
-    prepayment_amount: float | None = None
 
 
 class ReservationUpdateRequest(BaseModel):
@@ -375,44 +367,6 @@ async def create_reservation(
         confirmed_at=datetime.now(UTC),
     )
 
-    # Voucher processing
-    if body.voucher_code:
-        voucher_result = await db.execute(
-            select(Voucher).where(
-                and_(
-                    Voucher.code == body.voucher_code.upper().strip(),
-                    Voucher.tenant_id == restaurant.id,
-                    Voucher.is_active.is_(True),
-                )
-            )
-        )
-        voucher = voucher_result.scalar_one_or_none()
-        if voucher:
-            today = date.today()
-            valid = True
-            if voucher.valid_from and today < voucher.valid_from:
-                valid = False
-            if voucher.valid_until and today > voucher.valid_until:
-                valid = False
-            if voucher.max_uses and voucher.used_count >= voucher.max_uses:
-                valid = False
-
-            if valid:
-                discount = voucher.value
-                if voucher.type == "percentage":
-                    discount = 0  # percentage needs order value context
-                reservation.voucher_id = voucher.id
-                reservation.voucher_discount_amount = discount
-                voucher.used_count += 1
-                db.add(
-                    VoucherUsage(
-                        voucher_id=voucher.id,
-                        tenant_id=restaurant.id,
-                        used_by_email=body.guest_email,
-                        discount_amount=discount,
-                    )
-                )
-
     db.add(reservation)
     await db.flush()
 
@@ -427,48 +381,6 @@ async def create_reservation(
         )
     )
 
-    # Upsell packages
-    prepayment_amount = 0.0
-    if body.upsell_package_ids:
-        for pkg_id in body.upsell_package_ids:
-            pkg_result = await db.execute(
-                select(UpsellPackage).where(
-                    and_(
-                        UpsellPackage.id == pkg_id,
-                        UpsellPackage.tenant_id == restaurant.id,
-                        UpsellPackage.is_active.is_(True),
-                    )
-                )
-            )
-            pkg = pkg_result.scalar_one_or_none()
-            if pkg:
-                db.add(
-                    ReservationUpsellPackage(
-                        reservation_id=reservation.id,
-                        upsell_package_id=pkg.id,
-                        tenant_id=restaurant.id,
-                        price_at_time=pkg.price,
-                    )
-                )
-                prepayment_amount += pkg.price
-
-    # Prepayment
-    checkout_url = None
-    if body.prepayment_required and prepayment_amount > 0:
-        reservation.prepayment_required = True
-        reservation.prepayment_amount = prepayment_amount
-        # SumUp checkout creation would go here
-        # For now, create a pending prepayment record
-        db.add(
-            ReservationPrepayment(
-                reservation_id=reservation.id,
-                tenant_id=restaurant.id,
-                amount=prepayment_amount,
-                payment_provider="sumup",
-                status="pending",
-            )
-        )
-
     await db.commit()
     await db.refresh(reservation)
 
@@ -482,8 +394,6 @@ async def create_reservation(
         party_size=body.party_size,
         table_number=table.number,
         message="Reservation confirmed",
-        prepayment_checkout_url=checkout_url,
-        prepayment_amount=prepayment_amount if prepayment_amount > 0 else None,
     )
 
 
@@ -600,94 +510,3 @@ async def download_ics(
         media_type="text/calendar",
         headers={"Content-Disposition": f'attachment; filename="reservation-{code}.ics"'},
     )
-
-
-@router.get("/{slug}/upsell-packages")
-async def list_public_upsell_packages(
-    slug: str,
-    party_size: int = Query(2, ge=1),
-    check_date: date = Query(None, alias="date"),
-    db: AsyncSession = Depends(get_db),
-):
-    restaurant = await _get_restaurant_by_slug(slug, db)
-    result = await db.execute(
-        select(UpsellPackage)
-        .where(
-            and_(
-                UpsellPackage.tenant_id == restaurant.id,
-                UpsellPackage.is_active.is_(True),
-            )
-        )
-        .order_by(UpsellPackage.display_order)
-    )
-    packages = result.scalars().all()
-
-    available = []
-    target_date = check_date or date.today()
-    weekday = target_date.weekday()
-
-    for pkg in packages:
-        if pkg.available_from_date and target_date < pkg.available_from_date:
-            continue
-        if pkg.available_until_date and target_date > pkg.available_until_date:
-            continue
-        if pkg.min_party_size and party_size < pkg.min_party_size:
-            continue
-        if pkg.max_party_size and party_size > pkg.max_party_size:
-            continue
-        if pkg.available_weekdays and weekday not in pkg.available_weekdays:
-            continue
-        available.append(
-            {
-                "id": str(pkg.id),
-                "name": pkg.name,
-                "description": pkg.description,
-                "price": pkg.price,
-                "image_url": pkg.image_url,
-            }
-        )
-
-    return available
-
-
-@router.post("/{slug}/voucher/validate")
-async def validate_voucher(
-    slug: str,
-    body: dict,
-    db: AsyncSession = Depends(get_db),
-):
-    restaurant = await _get_restaurant_by_slug(slug, db)
-    code = body.get("code", "").upper().strip()
-    if not code:
-        return {"valid": False, "message": "No voucher code provided"}
-
-    result = await db.execute(
-        select(Voucher).where(
-            and_(
-                Voucher.code == code,
-                Voucher.tenant_id == restaurant.id,
-            )
-        )
-    )
-    voucher = result.scalar_one_or_none()
-    if not voucher:
-        return {"valid": False, "message": "Voucher not found"}
-
-    if not voucher.is_active:
-        return {"valid": False, "message": "Voucher is inactive"}
-
-    today = date.today()
-    if voucher.valid_from and today < voucher.valid_from:
-        return {"valid": False, "message": "Voucher not yet valid"}
-    if voucher.valid_until and today > voucher.valid_until:
-        return {"valid": False, "message": "Voucher expired"}
-    if voucher.max_uses and voucher.used_count >= voucher.max_uses:
-        return {"valid": False, "message": "Voucher usage limit reached"}
-
-    return {
-        "valid": True,
-        "voucher_id": str(voucher.id),
-        "type": voucher.type,
-        "value": voucher.value,
-        "name": voucher.name,
-    }
