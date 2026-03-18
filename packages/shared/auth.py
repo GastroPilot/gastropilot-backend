@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
-from jose import jwt
+import jwt
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +155,7 @@ def verify_token(token: str, token_type: str = "access") -> dict | None:
             algorithms=[_JWT_ALGORITHM],
             audience=_JWT_AUDIENCE,
             issuer=_JWT_ISSUER,
-            options={"leeway": _JWT_LEEWAY_SECONDS},
+            leeway=timedelta(seconds=_JWT_LEEWAY_SECONDS),
         )
 
         if payload.get("type") != token_type:
@@ -166,10 +166,10 @@ def verify_token(token: str, token_type: str = "access") -> dict | None:
     except jwt.ExpiredSignatureError:
         logger.warning("Token expired")
         return None
-    except jwt.JWTClaimsError as e:
+    except (jwt.InvalidIssuerError, jwt.InvalidAudienceError) as e:
         logger.warning(f"Invalid token claims: {e}")
         return None
-    except jwt.JWTError as e:
+    except jwt.PyJWTError as e:
         logger.warning(f"Invalid token: {e}")
         return None
     except Exception as e:

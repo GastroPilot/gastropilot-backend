@@ -40,6 +40,10 @@ limiter = Limiter(key_func=get_remote_address, storage_uri=settings.REDIS_URL)
 async def lifespan(app: FastAPI):
     logger.info("Starting GastroPilot Core Service...")
     get_engines()
+    if settings.is_development:
+        from app.core.seed import seed_database
+
+        await seed_database()
     yield
     logger.info("Shutting down Core Service...")
     await close_engines()
@@ -93,7 +97,6 @@ from app.api.routes import (  # noqa: E402
     messages,
     notification_inbox,
     payments,
-    prepayments,
     public_reservations,
     public_waitlist,
     qr_codes,
@@ -104,10 +107,8 @@ from app.api.routes import (  # noqa: E402
     reviews,
     table_day_configs,
     uploads,
-    upsell_packages,
     user_settings,
     users,
-    vouchers,
     waitlist,
 )
 
@@ -128,9 +129,6 @@ _all_routers = [
     reservation_table_day_configs.router,
     waitlist.router,
     messages.router,
-    vouchers.router,
-    upsell_packages.router,
-    prepayments.router,
     license.router,
     public_reservations.router,
     guest_auth.router,

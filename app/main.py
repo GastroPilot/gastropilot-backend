@@ -36,7 +36,6 @@ from app.routers import (
     obstacles,
     order_statistics,
     orders,
-    prepayments,
     public_reservations,
     reservation_table_day_configs,
     reservation_tables,
@@ -45,9 +44,7 @@ from app.routers import (
     sumup,
     table_day_configs,
     tables,
-    upsell_packages,
     user_settings,
-    vouchers,
     waitlist,
     webhook_sumup,
     webhook_whatsapp,
@@ -189,9 +186,6 @@ app.include_router(order_statistics.router, prefix="/v1")
 app.include_router(invoices.router, prefix="/v1")
 app.include_router(license.router, prefix="/v1")
 app.include_router(sumup.router, prefix="/v1")
-app.include_router(vouchers.router, prefix="/v1")
-app.include_router(upsell_packages.router, prefix="/v1")
-app.include_router(prepayments.router, prefix="/v1")
 app.include_router(websocket.router, prefix="/v1")
 app.include_router(dashboard.router, prefix="/v1")
 app.include_router(ai.router, prefix="/v1")

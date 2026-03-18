@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -85,10 +85,6 @@ class Reservation(Base):
     canceled_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     canceled_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     no_show_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    voucher_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    voucher_discount_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
-    prepayment_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    prepayment_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

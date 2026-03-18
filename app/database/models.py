@@ -49,11 +49,15 @@ class User(Base):
     operator_number = Column(
         String(4), nullable=True, unique=True, index=True
     )  # 4-stellige Bedienernummer (nullable für platform_admin)
-    pin_hash = Column(String(255), nullable=True)  # 6-8 stelliger PIN (gehasht, nullable für E-Mail-Login)
+    pin_hash = Column(
+        String(255), nullable=True
+    )  # 6-8 stelliger PIN (gehasht, nullable für E-Mail-Login)
     nfc_tag_id = Column(
         String(64), nullable=True, unique=True, index=True
     )  # NFC-Tag-ID für Transponder-Login
-    email = Column(String(255), nullable=True, unique=True, index=True)  # E-Mail für Platform-Admin-Login
+    email = Column(
+        String(255), nullable=True, unique=True, index=True
+    )  # E-Mail für Platform-Admin-Login
     password_hash = Column(String(255), nullable=True)  # Passwort-Hash für E-Mail-Login
     first_name = Column(String(120), nullable=False)
     last_name = Column(String(120), nullable=False)
@@ -276,16 +280,6 @@ class Reservation(Base):
     canceled_reason = Column(Text, nullable=True)
     no_show_at = Column(DateTime(timezone=True), nullable=True)
     tags = Column(JSON, default=list)
-
-    # Voucher & Prepayment
-    voucher_id = Column(
-        Integer, ForeignKey("vouchers.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-    voucher_discount_amount = Column(Float, nullable=True)  # Abgezogener Betrag durch Gutschein
-    prepayment_required = Column(
-        Boolean, nullable=False, default=False
-    )  # Ist Vorauszahlung erforderlich?
-    prepayment_amount = Column(Float, nullable=True)  # Betrag der Vorauszahlung
 
     created_at_utc = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at_utc = Column(
@@ -593,161 +587,4 @@ class SumUpPayment(Base):
     created_at_utc = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at_utc = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
-    )
-
-
-class Voucher(Base):
-    """Gutscheine für Reservierungen."""
-
-    __tablename__ = "vouchers"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    restaurant_id = Column(
-        Integer, ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-
-    code = Column(String(64), nullable=False, unique=True, index=True)  # Gutschein-Code
-    name = Column(String(240), nullable=True)  # Name des Gutscheins (z.B. "Geschenkgutschein")
-    description = Column(Text, nullable=True)  # Beschreibung
-
-    # Gutschein-Typ: "fixed" (fester Betrag) oder "percentage" (Prozent)
-    type = Column(String(32), nullable=False, default="fixed")  # fixed, percentage
-    value = Column(Float, nullable=False)  # Betrag in EUR oder Prozent (0-100)
-
-    # Gültigkeit
-    valid_from = Column(Date, nullable=True)  # Ab wann gültig
-    valid_until = Column(Date, nullable=True)  # Bis wann gültig
-
-    # Nutzung
-    max_uses = Column(Integer, nullable=True)  # Maximale Anzahl Nutzungen (None = unbegrenzt)
-    used_count = Column(Integer, nullable=False, default=0)  # Anzahl bereits genutzter Gutscheine
-
-    # Mindestbestellwert
-    min_order_value = Column(Float, nullable=True)  # Mindestbestellwert für Gutschein-Nutzung
-
-    # Status
-    is_active = Column(Boolean, nullable=False, default=True)
-
-    # Metadaten
-    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at_utc = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at_utc = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
-    )
-
-
-class VoucherUsage(Base):
-    """Nutzung eines Gutscheins."""
-
-    __tablename__ = "voucher_usage"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    voucher_id = Column(
-        Integer, ForeignKey("vouchers.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    reservation_id = Column(
-        Integer, ForeignKey("reservations.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-
-    used_by_email = Column(String(255), nullable=True)  # E-Mail des Nutzers
-    discount_amount = Column(Float, nullable=False)  # Abgezogener Betrag
-
-    used_at_utc = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-
-class UpsellPackage(Base):
-    """Upsell-Pakete für Reservierungen (Menü-Upgrades, Getränkepakete, etc.)."""
-
-    __tablename__ = "upsell_packages"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    restaurant_id = Column(
-        Integer, ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-
-    name = Column(String(240), nullable=False)  # Name des Pakets
-    description = Column(Text, nullable=True)  # Beschreibung
-    price = Column(Float, nullable=False)  # Preis in EUR
-
-    # Verfügbarkeit
-    is_active = Column(Boolean, nullable=False, default=True)
-    available_from_date = Column(Date, nullable=True)  # Ab wann verfügbar
-    available_until_date = Column(Date, nullable=True)  # Bis wann verfügbar
-
-    # Bedingungen
-    min_party_size = Column(Integer, nullable=True)  # Mindest-Gästeanzahl
-    max_party_size = Column(Integer, nullable=True)  # Maximale Gästeanzahl
-
-    # Verfügbare Zeiten (JSON: {"monday": ["18:00", "19:00"], ...})
-    available_times = Column(JSON, nullable=True)
-
-    # Verfügbare Wochentage (JSON: [0,1,2,3,4,5,6] für Mo-So)
-    available_weekdays = Column(JSON, nullable=True)
-
-    # Metadaten
-    image_url = Column(String(512), nullable=True)  # Bild-URL
-    display_order = Column(Integer, nullable=False, default=0)  # Reihenfolge der Anzeige
-
-    created_at_utc = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at_utc = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
-    )
-
-
-class ReservationPrepayment(Base):
-    """Vorauszahlungen für Reservierungen."""
-
-    __tablename__ = "reservation_prepayments"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    reservation_id = Column(
-        Integer, ForeignKey("reservations.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    restaurant_id = Column(
-        Integer, ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-
-    amount = Column(Float, nullable=False)  # Betrag in EUR
-    currency = Column(String(3), nullable=False, default="EUR")
-
-    # Payment-Provider (z.B. "sumup", "stripe")
-    payment_provider = Column(String(32), nullable=False)
-    payment_id = Column(String(128), nullable=True)  # Externe Payment-ID
-    transaction_id = Column(String(128), nullable=True)  # Transaction-ID
-
-    # Status: pending, processing, completed, failed, refunded
-    status = Column(String(32), nullable=False, default="pending")
-
-    # Metadaten
-    payment_data = Column(JSON, nullable=True)  # Zusätzliche Payment-Daten
-
-    created_at_utc = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at_utc = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
-    )
-    completed_at_utc = Column(DateTime(timezone=True), nullable=True)
-
-
-class ReservationUpsellPackage(Base):
-    """Verknüpfung zwischen Reservierungen und Upsell-Paketen."""
-
-    __tablename__ = "reservation_upsell_packages"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    reservation_id = Column(
-        Integer, ForeignKey("reservations.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    upsell_package_id = Column(
-        Integer, ForeignKey("upsell_packages.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-
-    # Preis zum Zeitpunkt der Reservierung (falls sich Preis später ändert)
-    price_at_time = Column(Float, nullable=False)
-
-    created_at_utc = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint(
-            "reservation_id", "upsell_package_id", name="uq_reservation_upsell_package"
-        ),
     )

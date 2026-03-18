@@ -17,19 +17,13 @@ from app.database.models import (
     Block,
     BlockAssignment,
     Reservation,
-    ReservationPrepayment,
     ReservationTable,
-    ReservationUpsellPackage,
     Restaurant,
     Table,
-    UpsellPackage,
-    Voucher,
-    VoucherUsage,
 )
 from app.dependencies import get_session
 from app.services.notification_service import ReservationNotification, notification_service
-from app.services.sumup_service import SumUpService
-from app.settings import RESERVATION_WIDGET_URL, SUMUP_API_KEY, SUMUP_MERCHANT_CODE
+from app.settings import RESERVATION_WIDGET_URL
 from app.utils.ics_generator import generate_ics_file
 
 logger = logging.getLogger(__name__)
@@ -63,10 +57,6 @@ class PublicReservationCreate(BaseModel):
     channel: str = Field(default="web", pattern="^(web|whatsapp|phone)$")
     privacy_accepted: bool = True
     notification_channels: NotificationChannels = Field(default_factory=NotificationChannels)
-    # Neue Felder für beworbene Features
-    voucher_code: str | None = Field(None, max_length=64)  # Gutschein-Code
-    upsell_package_ids: list[int] | None = Field(None)  # IDs der gewählten Upsell-Pakete
-    prepayment_required: bool = False  # Ist Vorauszahlung gewünscht/erforderlich?
 
 
 class PublicReservationResponse(BaseModel):
@@ -81,8 +71,6 @@ class PublicReservationResponse(BaseModel):
     party_size: int
     table_number: str | None = None
     message: str
-    prepayment_checkout_url: str | None = None  # URL für Vorauszahlung falls erforderlich
-    prepayment_amount: float | None = None  # Betrag der Vorauszahlung
 
 
 class AvailabilitySlot(BaseModel):
@@ -465,74 +453,6 @@ async def create_public_reservation(
             detail="No tables available for the requested time. Please try a different time.",
         )
 
-    # Validiere und verarbeite Gutschein
-    voucher = None
-    voucher_discount_amount = None
-    if reservation_data.voucher_code:
-        voucher_result = await session.execute(
-            select(Voucher).where(
-                Voucher.code == reservation_data.voucher_code.upper(),
-                Voucher.restaurant_id == restaurant.id,
-                Voucher.is_active == True,
-            )
-        )
-        voucher = voucher_result.scalar_one_or_none()
-
-        if voucher:
-            # Validiere Gutschein (vereinfachte Validierung - vollständige Validierung sollte über /validate Endpoint erfolgen)
-            today = date.today()
-            if (
-                (voucher.valid_from and today < voucher.valid_from)
-                or (voucher.valid_until and today > voucher.valid_until)
-                or (voucher.max_uses and voucher.used_count >= voucher.max_uses)
-            ):
-                voucher = None  # Gutschein ungültig
-            else:
-                # Berechne Rabattbetrag (vereinfacht - könnte auch auf Basis von Paketpreisen berechnet werden)
-                base_amount = 0.0  # TODO: Berechne basierend auf Upsell-Paketen oder Standardbetrag
-                if voucher.type == "fixed":
-                    voucher_discount_amount = min(voucher.value, base_amount)
-                elif voucher.type == "percentage":
-                    voucher_discount_amount = base_amount * (voucher.value / 100)
-        else:
-            # Gutschein nicht gefunden - könnte Warnung geben, aber Reservierung trotzdem erstellen
-            logger.warning(
-                f"Voucher code {reservation_data.voucher_code} not found for restaurant {restaurant.id}"
-            )
-
-    # Validiere Upsell-Pakete
-    upsell_packages = []
-    if reservation_data.upsell_package_ids:
-        package_result = await session.execute(
-            select(UpsellPackage).where(
-                UpsellPackage.id.in_(reservation_data.upsell_package_ids),
-                UpsellPackage.restaurant_id == restaurant.id,
-                UpsellPackage.is_active == True,
-            )
-        )
-        upsell_packages = list(package_result.scalars().all())
-
-        # Prüfe Verfügbarkeit für jedes Paket
-        available_packages = []
-        for package in upsell_packages:
-            # Vereinfachte Verfügbarkeitsprüfung
-            today = date.today()
-            if (
-                (
-                    package.available_from_date
-                    and reservation_data.desired_date < package.available_from_date
-                )
-                or (
-                    package.available_until_date
-                    and reservation_data.desired_date > package.available_until_date
-                )
-                or (package.min_party_size and reservation_data.party_size < package.min_party_size)
-                or (package.max_party_size and reservation_data.party_size > package.max_party_size)
-            ):
-                continue  # Paket nicht verfügbar
-            available_packages.append(package)
-        upsell_packages = available_packages
-
     # Generiere Bestätigungscode
     confirmation_code = _generate_confirmation_code()
 
@@ -550,9 +470,6 @@ async def create_public_reservation(
         guest_phone=reservation_data.guest_phone,
         confirmation_code=confirmation_code,
         special_requests=reservation_data.special_requests,
-        voucher_id=voucher.id if voucher else None,
-        voucher_discount_amount=voucher_discount_amount,
-        prepayment_required=reservation_data.prepayment_required,
     )
 
     try:
@@ -568,88 +485,8 @@ async def create_public_reservation(
         )
         session.add(rt)
 
-        # Speichere Voucher-Nutzung falls vorhanden
-        if voucher and voucher_discount_amount:
-            voucher.used_count += 1
-            voucher_usage = VoucherUsage(
-                voucher_id=voucher.id,
-                reservation_id=reservation.id,
-                used_by_email=reservation_data.guest_email,
-                discount_amount=voucher_discount_amount,
-            )
-            session.add(voucher_usage)
-
-        # Speichere Upsell-Pakete mit Reservierung verknüpfen
-        for package in upsell_packages:
-            reservation_upsell = ReservationUpsellPackage(
-                reservation_id=reservation.id,
-                upsell_package_id=package.id,
-                price_at_time=package.price,
-            )
-            session.add(reservation_upsell)
-
-        # Berechne Gesamtbetrag für Prepayment (Upsell-Pakete + optionaler Standardbetrag)
-        prepayment_amount = None
-        if reservation_data.prepayment_required:
-            total_amount = 0.0
-            if upsell_packages:
-                total_amount = sum(pkg.price for pkg in upsell_packages)
-            # Falls keine Upsell-Pakete, könnte man einen Standardbetrag verwenden
-            # Für jetzt verwenden wir nur Upsell-Pakete als Basis
-            if total_amount > 0:
-                prepayment_amount = total_amount
-
         await session.commit()
         await session.refresh(reservation)
-
-        # Erstelle Prepayment falls gewünscht
-        prepayment_checkout_url = None
-        if reservation_data.prepayment_required and prepayment_amount and prepayment_amount > 0:
-            try:
-                if SUMUP_API_KEY and SUMUP_MERCHANT_CODE:
-                    sumup_service = SumUpService(SUMUP_API_KEY)
-
-                    checkout_reference = f"RES-{confirmation_code}-PREPAY-{reservation.id}"
-                    return_url = f"{RESERVATION_WIDGET_URL}/{restaurant.slug}/manage/{confirmation_code}?prepayment=success"
-                    description = (
-                        f"Vorauszahlung für Reservierung {confirmation_code} bei {restaurant.name}"
-                    )
-
-                    checkout_response = await sumup_service.create_checkout(
-                        merchant_code=SUMUP_MERCHANT_CODE,
-                        amount=prepayment_amount,
-                        currency="EUR",
-                        checkout_reference=checkout_reference,
-                        description=description,
-                        return_url=return_url,
-                    )
-
-                    checkout_id = checkout_response.get("id") or checkout_response.get(
-                        "checkout_id"
-                    )
-
-                    prepayment = ReservationPrepayment(
-                        reservation_id=reservation.id,
-                        restaurant_id=restaurant.id,
-                        amount=prepayment_amount,
-                        currency="EUR",
-                        payment_provider="sumup",
-                        payment_id=checkout_id,
-                        transaction_id=checkout_response.get("client_transaction_id"),
-                        status="processing",
-                        payment_data=checkout_response,
-                    )
-
-                    session.add(prepayment)
-                    await session.commit()
-
-                    prepayment_checkout_url = f"https://checkout.sumup.com/checkout/{checkout_id}"
-                    logger.info(
-                        f"Prepayment created for reservation {reservation.id}: {checkout_id}"
-                    )
-            except Exception as prepay_error:
-                logger.error(f"Failed to create prepayment: {prepay_error}")
-                # Prepayment-Fehler sollten die Reservierung nicht abbrechen
 
         logger.info(
             f"Public reservation created: {confirmation_code} for {reservation_data.guest_name} "
@@ -672,22 +509,9 @@ async def create_public_reservation(
                 channels = ["email"]  # Fallback auf E-Mail
 
             # Erstelle Notification-Objekt
-            from app.services.notification_service import UpsellPackageInfo
             from app.settings import RESERVATION_WIDGET_URL
 
             manage_url = f"{RESERVATION_WIDGET_URL}/{restaurant.slug}/manage/{confirmation_code}"
-
-            # Bereite Upsell-Pakete für Notification vor
-            upsell_packages_info = None
-            if upsell_packages:
-                upsell_packages_info = [
-                    UpsellPackageInfo(
-                        name=pkg.name,
-                        price=pkg.price,
-                        description=pkg.description,
-                    )
-                    for pkg in upsell_packages
-                ]
 
             # Generiere ICS-Datei
             ics_content = None
@@ -701,10 +525,6 @@ async def create_public_reservation(
                     description_parts.append(
                         f"Besondere Wünsche: {reservation_data.special_requests}"
                     )
-                if upsell_packages:
-                    packages_list = ", ".join([pkg.name for pkg in upsell_packages])
-                    description_parts.append(f"Zusatzpakete: {packages_list}")
-
                 description = "\n".join(description_parts)
                 location = restaurant.address or restaurant.name
 
@@ -744,7 +564,6 @@ async def create_public_reservation(
                 confirmation_code=confirmation_code,
                 special_requests=reservation_data.special_requests,
                 manage_url=manage_url,
-                upsell_packages=upsell_packages_info,
                 ics_content=ics_content,
             )
 
@@ -783,8 +602,6 @@ async def create_public_reservation(
         party_size=reservation_data.party_size,
         table_number=table.number,
         message=f"Ihre Reservierung wurde erfolgreich erstellt. Bestätigungscode: {confirmation_code}",
-        prepayment_checkout_url=prepayment_checkout_url,
-        prepayment_amount=prepayment_amount,
     )
 
 

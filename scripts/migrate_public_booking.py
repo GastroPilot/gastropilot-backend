@@ -9,6 +9,7 @@ Neue Felder:
 - booking_default_duration: Standard-Reservierungsdauer in Minuten
 - opening_hours: Öffnungszeiten als JSON
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -17,16 +18,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import text
+
 from app.database.instance import db
 from app.settings import DB_TYPE
 
 
 async def migrate():
     """Führt die Migration aus."""
-    
+
     async with db.engine.begin() as conn:
         print("Starting public booking migration...")
-        
+
         if DB_TYPE == "sqlite":
             # SQLite: Separate ALTER TABLE Statements
             migrations = [
@@ -47,7 +49,7 @@ async def migrate():
                 "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS booking_default_duration INTEGER DEFAULT 120",
                 "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS opening_hours JSONB",
             ]
-        
+
         for migration in migrations:
             try:
                 await conn.execute(text(migration))
@@ -58,21 +60,21 @@ async def migrate():
                     print("  - Column already exists, skipping...")
                 else:
                     print(f"  ✗ Error: {e}")
-        
+
         # Create index on slug if not exists
         try:
             if DB_TYPE == "sqlite":
-                await conn.execute(text(
-                    "CREATE INDEX IF NOT EXISTS ix_restaurants_slug ON restaurants(slug)"
-                ))
+                await conn.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_restaurants_slug ON restaurants(slug)")
+                )
             else:
-                await conn.execute(text(
-                    "CREATE INDEX IF NOT EXISTS ix_restaurants_slug ON restaurants(slug)"
-                ))
+                await conn.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_restaurants_slug ON restaurants(slug)")
+                )
             print("  ✓ Created index on slug")
         except Exception as e:
             print(f"  - Index might already exist: {e}")
-        
+
         print("Migration completed!")
 
 

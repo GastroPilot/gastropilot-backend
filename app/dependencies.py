@@ -120,7 +120,12 @@ async def require_schichtleiter_role(
     current_user: User = Depends(get_current_user),
 ) -> User:
     """Stellt sicher, dass der User die Rolle 'schichtleiter', 'restaurantinhaber', 'servecta' oder 'platform_admin' hat."""
-    if current_user.role not in ["schichtleiter", "restaurantinhaber", "servecta", "platform_admin"]:
+    if current_user.role not in [
+        "schichtleiter",
+        "restaurantinhaber",
+        "servecta",
+        "platform_admin",
+    ]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions: schichtleiter, restaurantinhaber or servecta role required",
@@ -132,7 +137,13 @@ async def require_mitarbeiter_role(
     current_user: User = Depends(get_current_user),
 ) -> User:
     """Stellt sicher, dass der User die Rolle 'mitarbeiter' oder höher hat."""
-    if current_user.role not in ["mitarbeiter", "schichtleiter", "restaurantinhaber", "servecta", "platform_admin"]:
+    if current_user.role not in [
+        "mitarbeiter",
+        "schichtleiter",
+        "restaurantinhaber",
+        "servecta",
+        "platform_admin",
+    ]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions: mitarbeiter role or higher required",

@@ -20,14 +20,6 @@ from pydantic import BaseModel, EmailStr
 logger = logging.getLogger(__name__)
 
 
-class UpsellPackageInfo(BaseModel):
-    """Informationen über ein Upsell-Paket."""
-
-    name: str
-    price: float
-    description: str | None = None
-
-
 class ReservationNotification(BaseModel):
     """Daten für Reservierungsbenachrichtigung."""
 
@@ -45,7 +37,6 @@ class ReservationNotification(BaseModel):
     table_number: str | None = None
     special_requests: str | None = None
     manage_url: str | None = None  # URL zum Verwalten der Reservierung
-    upsell_packages: list[UpsellPackageInfo] | None = None  # Bestellte Upsell-Pakete
     ics_content: str | None = None  # ICS-Datei-Inhalt für Kalender-Anhang
 
 
@@ -315,51 +306,6 @@ class NotificationService:
             else ""
         )
 
-        # Upsell-Pakete Section
-        upsell_packages_section = ""
-        if n.upsell_packages and len(n.upsell_packages) > 0:
-            packages_html = ""
-            total_price = 0.0
-            for pkg in n.upsell_packages:
-                total_price += pkg.price
-                description_html = (
-                    f'<div style="font-size: 13px; color: #6b7280; margin-top: 4px;">{pkg.description or ""}</div>'
-                    if pkg.description
-                    else ""
-                )
-                packages_html += f"""
-                    <tr>
-                        <td style="padding: 12px 0; border-bottom: 1px solid #e5e7eb;">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                                <div style="flex: 1;">
-                                    <div style="font-size: 15px; font-weight: 600; color: #1f2937;">{pkg.name}</div>
-                                    {description_html}
-                                </div>
-                                <div style="font-size: 15px; font-weight: 600; color: #7c3aed; margin-left: 16px;">{pkg.price:.2f} €</div>
-                            </div>
-                        </td>
-                    </tr>"""
-
-            upsell_packages_section = f"""
-                    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 24px;">
-                        <tr>
-                            <td style="background: #faf5ff; border-radius: 12px; padding: 20px; border-left: 4px solid #7c3aed;">
-                                <div style="font-size: 12px; color: #6b21a8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 12px;">📦 Ihre Zusatzpakete</div>
-                                <table cellpadding="0" cellspacing="0" border="0" width="100%">
-                                    {packages_html}
-                                    <tr>
-                                        <td style="padding-top: 12px; border-top: 2px solid #c084fc;">
-                                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                                <div style="font-size: 15px; font-weight: 700; color: #1f2937;">Gesamt</div>
-                                                <div style="font-size: 18px; font-weight: 700; color: #7c3aed;">{total_price:.2f} €</div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </table>
-                            </td>
-                        </tr>
-                    </table>"""
-
         phone_line = (
             f'<div style="margin-top: 4px;">📞 {n.restaurant_phone}</div>'
             if n.restaurant_phone
@@ -493,9 +439,6 @@ class NotificationService:
                                     </td>
                                 </tr>
                             </table>
-                            
-                            <!-- Upsell-Pakete (optional) -->
-                            {upsell_packages_section}
                             
                             <!-- Besondere Wünsche (optional) -->
                             {special_requests_section}

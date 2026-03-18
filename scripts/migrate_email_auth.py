@@ -37,9 +37,7 @@ async def migrate():
                 print("  ~ email column already exists")
 
             try:
-                await conn.execute(
-                    text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)")
-                )
+                await conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"))
                 print("  + Added password_hash column")
             except Exception:
                 print("  ~ password_hash column already exists")
@@ -47,28 +45,20 @@ async def migrate():
         else:
             # PostgreSQL: ADD COLUMN IF NOT EXISTS
             await conn.execute(
-                text(
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255) UNIQUE"
-                )
+                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255) UNIQUE")
             )
             print("  + Added email column")
 
             await conn.execute(
-                text(
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"
-                )
+                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)")
             )
             print("  + Added password_hash column")
 
             # Make operator_number and pin_hash nullable for platform_admin users
-            await conn.execute(
-                text("ALTER TABLE users ALTER COLUMN operator_number DROP NOT NULL")
-            )
+            await conn.execute(text("ALTER TABLE users ALTER COLUMN operator_number DROP NOT NULL"))
             print("  + Made operator_number nullable")
 
-            await conn.execute(
-                text("ALTER TABLE users ALTER COLUMN pin_hash DROP NOT NULL")
-            )
+            await conn.execute(text("ALTER TABLE users ALTER COLUMN pin_hash DROP NOT NULL"))
             print("  + Made pin_hash nullable")
 
             # Create index on email

@@ -479,67 +479,6 @@ def send_waitlist_notification(
 
 
 # ---------------------------------------------------------------------------
-# Prepayment-Bestaetigung
-# ---------------------------------------------------------------------------
-
-
-@celery_app.task(name="notifications.send_prepayment_confirmation", bind=True, max_retries=3)
-def send_prepayment_confirmation(
-    self,
-    *,
-    guest_email: str,
-    guest_name: str,
-    restaurant_name: str,
-    amount: str,
-    currency: str = "EUR",
-    reservation_date: str,
-    reservation_time: str,
-    party_size: int,
-    transaction_code: str | None = None,
-    guest_phone: str | None = None,
-) -> dict:
-    results: dict = {}
-
-    context = {
-        "guest_name": guest_name,
-        "restaurant_name": restaurant_name,
-        "amount": amount,
-        "currency": currency,
-        "reservation_date": reservation_date,
-        "reservation_time": reservation_time,
-        "party_size": party_size,
-        "transaction_code": transaction_code,
-    }
-
-    try:
-        html = render_template("prepayment_confirmation.html", context)
-        success = _run_async(
-            send_email(
-                to=guest_email,
-                subject=f"Anzahlung bestaetigt – {restaurant_name}",
-                html_body=html,
-            )
-        )
-        results["email"] = success
-    except Exception as exc:
-        logger.error("E-Mail-Fehler bei Prepayment: %s", exc)
-        results["email"] = False
-        raise self.retry(exc=exc, countdown=60)
-
-    if guest_phone:
-        try:
-            sms_text = (
-                f"Ihre Anzahlung von {amount} {currency} fuer die Reservierung "
-                f"bei {restaurant_name} wurde bestaetigt."
-            )
-            results["sms"] = _run_async(send_sms(guest_phone, sms_text))
-        except Exception as exc:
-            results["sms"] = False
-
-    return results
-
-
-# ---------------------------------------------------------------------------
 # Redis Pub/Sub Consumer
 # ---------------------------------------------------------------------------
 
@@ -560,7 +499,6 @@ def process_redis_event(event_name: str, payload_json: str) -> None:
         "reservation.canceled": send_reservation_canceled,
         "order.ready": send_order_ready,
         "waitlist.notified": send_waitlist_notification,
-        "prepayment.completed": send_prepayment_confirmation,
         "password_reset.requested": send_password_reset,
     }
 

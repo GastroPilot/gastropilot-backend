@@ -1,4 +1,4 @@
-"""SumUp API integration service for prepayments and checkouts."""
+"""SumUp API integration service for checkouts."""
 
 from __future__ import annotations
 
