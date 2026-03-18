@@ -3,7 +3,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
-from jose import jwt
+import jwt
 
 from app.settings import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -91,7 +91,7 @@ def verify_token(token: str, token_type: str = "access") -> dict | None:
             algorithms=[JWT_ALGORITHM],
             audience=JWT_AUDIENCE,
             issuer=JWT_ISSUER,
-            options={"leeway": JWT_LEEWAY_SECONDS},
+            leeway=timedelta(seconds=JWT_LEEWAY_SECONDS),
         )
 
         if payload.get("type") != token_type:
@@ -102,10 +102,10 @@ def verify_token(token: str, token_type: str = "access") -> dict | None:
     except jwt.ExpiredSignatureError:
         logger.warning("Token expired")
         return None
-    except jwt.JWTClaimsError as e:
+    except (jwt.InvalidIssuerError, jwt.InvalidAudienceError) as e:
         logger.warning(f"Invalid token claims: {e}")
         return None
-    except jwt.JWTError as e:
+    except jwt.PyJWTError as e:
         logger.warning(f"Invalid token: {e}")
         return None
     except Exception as e:
