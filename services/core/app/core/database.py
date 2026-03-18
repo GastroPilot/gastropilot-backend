@@ -30,14 +30,24 @@ def _strip_sslmode(url: str) -> tuple[str, str | None]:
 
 def _connect_args_for_sslmode(sslmode: str | None) -> dict:
     """Build asyncpg connect_args from the extracted sslmode value."""
+    connect_args: dict = {}
+
     if sslmode in _SSLMODE_USE_SSL:
         ctx = _ssl.create_default_context()
         if sslmode == "require":
             ctx.check_hostname = False
             ctx.verify_mode = _ssl.CERT_NONE
-        return {"ssl": ctx}
-    # No sslmode or explicitly disabled → no SSL
-    return {"ssl": False}
+        connect_args["ssl"] = ctx
+    else:
+        # No sslmode or explicitly disabled -> no SSL
+        connect_args["ssl"] = False
+
+    # In local development we frequently run schema-altering migrations manually.
+    # Disable asyncpg's prepared statement cache there to avoid stale-plan crashes.
+    if settings.is_development:
+        connect_args["prepared_statement_cache_size"] = 0
+
+    return connect_args
 
 
 class Base(DeclarativeBase):
