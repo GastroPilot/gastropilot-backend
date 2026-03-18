@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db, require_staff_or_above
 from app.models.reservation import Guest, Reservation
+from app.models.restaurant import Restaurant, Table
 from app.models.user import User
 from app.schemas.reservation import (
     ReservationCreate,
@@ -34,6 +35,66 @@ def _split_guest_name(name: str | None) -> tuple[str, str]:
     if len(parts) == 1:
         return parts[0], ""
     return parts[0], parts[1]
+
+
+def _require_tenant_context(request: Request, current_user: User) -> UUID:
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    if not effective_tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant context required")
+    return effective_tenant_id
+
+
+async def _resolve_tenant_context_for_create(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+    requested_tenant_id: UUID | None,
+    table_id: UUID | None,
+    guest_id: UUID | None,
+) -> UUID:
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    if effective_tenant_id:
+        if requested_tenant_id and requested_tenant_id != effective_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Requested restaurant_id does not match tenant context",
+            )
+        return effective_tenant_id
+
+    if current_user.role != "platform_admin":
+        raise HTTPException(status_code=403, detail="User has no tenant context")
+
+    if requested_tenant_id:
+        restaurant_result = await db.execute(
+            select(Restaurant.id).where(Restaurant.id == requested_tenant_id)
+        )
+        if restaurant_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Restaurant not found")
+        return requested_tenant_id
+
+    if table_id:
+        table_tenant_result = await db.execute(
+            select(Table.tenant_id).where(Table.id == table_id)
+        )
+        table_tenant_id = table_tenant_result.scalar_one_or_none()
+        if table_tenant_id:
+            return table_tenant_id
+
+    if guest_id:
+        guest_tenant_result = await db.execute(
+            select(Guest.tenant_id).where(Guest.id == guest_id)
+        )
+        guest_tenant_id = guest_tenant_result.scalar_one_or_none()
+        if guest_tenant_id:
+            return guest_tenant_id
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Tenant context required (token has no tenant and no table/guest tenant "
+            "could be resolved)"
+        ),
+    )
 
 
 def _reservation_to_dict(r: Reservation) -> dict:
@@ -108,7 +169,14 @@ async def create_reservation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    effective_tenant_id = await _resolve_tenant_context_for_create(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=body.restaurant_id,
+        table_id=body.table_id,
+        guest_id=body.guest_id,
+    )
     # Gast erstellen oder finden
     guest_id = body.guest_id
     if not guest_id and body.guest_name:
@@ -127,7 +195,9 @@ async def create_reservation(
     # Tisch automatisch zuweisen falls keiner angegeben
     table_id = body.table_id
     if not table_id:
-        ends_at = body.ends_at or (body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES))
+        ends_at = body.ends_at or (
+            body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)
+        )
         table = await find_available_table(
             db,
             effective_tenant_id,
@@ -144,7 +214,8 @@ async def create_reservation(
         table_id=table_id,
         party_size=body.party_size,
         start_at=body.starts_at,
-        end_at=body.ends_at or (body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)),
+        end_at=body.ends_at
+        or (body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)),
         notes=body.notes,
         channel=body.source,
         guest_name=body.guest_name,
@@ -167,7 +238,7 @@ async def get_timeslots(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    effective_tenant_id = _require_tenant_context(request, current_user)
     from datetime import date as date_type
 
     target_date = date_type.fromisoformat(date)
@@ -186,7 +257,9 @@ async def get_reservation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
+    result = await db.execute(
+        select(Reservation).where(Reservation.id == reservation_id)
+    )
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
@@ -200,7 +273,9 @@ async def update_reservation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
+    result = await db.execute(
+        select(Reservation).where(Reservation.id == reservation_id)
+    )
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
@@ -223,7 +298,9 @@ async def cancel_reservation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
+    result = await db.execute(
+        select(Reservation).where(Reservation.id == reservation_id)
+    )
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")

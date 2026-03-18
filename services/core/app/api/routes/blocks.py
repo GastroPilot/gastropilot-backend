@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db, require_staff_or_above
 from app.models.block import Block, BlockAssignment
+from app.models.restaurant import Restaurant, Table
 from app.models.user import User
 
 router = APIRouter(prefix="/blocks", tags=["blocks"])
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/blocks", tags=["blocks"])
 
 
 class BlockCreate(BaseModel):
+    restaurant_id: UUID | None = None
     start_at: datetime
     end_at: datetime
     reason: str | None = None
@@ -42,6 +44,7 @@ class BlockResponse(BaseModel):
 
 
 class BlockAssignmentCreate(BaseModel):
+    restaurant_id: UUID | None = None
     block_id: UUID
     table_id: UUID
 
@@ -61,6 +64,41 @@ def _normalize_utc(dt: datetime) -> datetime:
     return dt.astimezone(UTC)
 
 
+async def _resolve_tenant_context_for_block(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+    requested_tenant_id: UUID | None,
+) -> UUID:
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    if effective_tenant_id:
+        if requested_tenant_id and requested_tenant_id != effective_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Requested restaurant_id does not match tenant context",
+            )
+        return effective_tenant_id
+
+    if current_user.role != "platform_admin":
+        raise HTTPException(status_code=403, detail="User has no tenant context")
+
+    if requested_tenant_id:
+        restaurant_result = await db.execute(
+            select(Restaurant.id).where(Restaurant.id == requested_tenant_id)
+        )
+        if restaurant_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Restaurant not found")
+        return requested_tenant_id
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Tenant context required (token has no tenant and no restaurant tenant "
+            "could be resolved)"
+        ),
+    )
+
+
 # --- Block CRUD ---
 
 
@@ -71,7 +109,12 @@ async def create_block(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    effective_tenant_id = await _resolve_tenant_context_for_block(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=body.restaurant_id,
+    )
     start = _normalize_utc(body.start_at)
     end = _normalize_utc(body.end_at)
     if end <= start:
@@ -157,17 +200,41 @@ async def create_block_assignment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
-
-    # Validate block exists
+    # Validate block exists and derive tenant from it
     block_result = await db.execute(select(Block).where(Block.id == body.block_id))
-    if not block_result.scalar_one_or_none():
+    block = block_result.scalar_one_or_none()
+    if not block:
         raise HTTPException(status_code=404, detail="Block not found")
+
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+    resolved_tenant_id = block.tenant_id
+    if effective_tenant_id and effective_tenant_id != resolved_tenant_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Tenant context does not match block tenant",
+        )
+    if body.restaurant_id and body.restaurant_id != resolved_tenant_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Requested restaurant_id does not match block tenant",
+        )
+
+    table_result = await db.execute(
+        select(Table.tenant_id).where(Table.id == body.table_id)
+    )
+    table_tenant_id = table_result.scalar_one_or_none()
+    if table_tenant_id is None:
+        raise HTTPException(status_code=404, detail="Table not found")
+    if table_tenant_id != resolved_tenant_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Table does not belong to block tenant",
+        )
 
     assignment = BlockAssignment(
         block_id=body.block_id,
         table_id=body.table_id,
-        tenant_id=effective_tenant_id,
+        tenant_id=resolved_tenant_id,
     )
     db.add(assignment)
     try:
@@ -188,23 +255,31 @@ async def list_block_assignments(
     return result.scalars().all()
 
 
-@router.get("/assignments/by-block/{block_id}", response_model=list[BlockAssignmentResponse])
+@router.get(
+    "/assignments/by-block/{block_id}", response_model=list[BlockAssignmentResponse]
+)
 async def list_assignments_by_block(
     block_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(BlockAssignment).where(BlockAssignment.block_id == block_id))
+    result = await db.execute(
+        select(BlockAssignment).where(BlockAssignment.block_id == block_id)
+    )
     return result.scalars().all()
 
 
-@router.get("/assignments/by-table/{table_id}", response_model=list[BlockAssignmentResponse])
+@router.get(
+    "/assignments/by-table/{table_id}", response_model=list[BlockAssignmentResponse]
+)
 async def list_assignments_by_table(
     table_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(BlockAssignment).where(BlockAssignment.table_id == table_id))
+    result = await db.execute(
+        select(BlockAssignment).where(BlockAssignment.table_id == table_id)
+    )
     return result.scalars().all()
 
 
@@ -214,7 +289,9 @@ async def delete_block_assignment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(BlockAssignment).where(BlockAssignment.id == assignment_id))
+    result = await db.execute(
+        select(BlockAssignment).where(BlockAssignment.id == assignment_id)
+    )
     assignment = result.scalar_one_or_none()
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")

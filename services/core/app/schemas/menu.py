@@ -14,7 +14,7 @@ class MenuCategoryBase(BaseModel):
 
 
 class MenuCategoryCreate(MenuCategoryBase):
-    pass
+    restaurant_id: UUID | None = None
 
 
 class MenuCategoryUpdate(BaseModel):
@@ -54,7 +54,7 @@ class MenuItemBase(BaseModel):
 
 
 class MenuItemCreate(MenuItemBase):
-    pass
+    restaurant_id: UUID | None = None
 
 
 class MenuItemUpdate(BaseModel):

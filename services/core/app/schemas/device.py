@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 
 class DeviceCreate(BaseModel):
+    restaurant_id: UUID | None = None
     name: str
     station: str = "alle"
 
