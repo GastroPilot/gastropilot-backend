@@ -73,17 +73,13 @@ async def _resolve_tenant_context_for_create(
         return requested_tenant_id
 
     if table_id:
-        table_tenant_result = await db.execute(
-            select(Table.tenant_id).where(Table.id == table_id)
-        )
+        table_tenant_result = await db.execute(select(Table.tenant_id).where(Table.id == table_id))
         table_tenant_id = table_tenant_result.scalar_one_or_none()
         if table_tenant_id:
             return table_tenant_id
 
     if guest_id:
-        guest_tenant_result = await db.execute(
-            select(Guest.tenant_id).where(Guest.id == guest_id)
-        )
+        guest_tenant_result = await db.execute(select(Guest.tenant_id).where(Guest.id == guest_id))
         guest_tenant_id = guest_tenant_result.scalar_one_or_none()
         if guest_tenant_id:
             return guest_tenant_id
@@ -195,9 +191,7 @@ async def create_reservation(
     # Tisch automatisch zuweisen falls keiner angegeben
     table_id = body.table_id
     if not table_id:
-        ends_at = body.ends_at or (
-            body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)
-        )
+        ends_at = body.ends_at or (body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES))
         table = await find_available_table(
             db,
             effective_tenant_id,
@@ -214,8 +208,7 @@ async def create_reservation(
         table_id=table_id,
         party_size=body.party_size,
         start_at=body.starts_at,
-        end_at=body.ends_at
-        or (body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)),
+        end_at=body.ends_at or (body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)),
         notes=body.notes,
         channel=body.source,
         guest_name=body.guest_name,
@@ -257,9 +250,7 @@ async def get_reservation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(Reservation).where(Reservation.id == reservation_id)
-    )
+    result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
@@ -273,9 +264,7 @@ async def update_reservation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(Reservation).where(Reservation.id == reservation_id)
-    )
+    result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
@@ -298,9 +287,7 @@ async def cancel_reservation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(Reservation).where(Reservation.id == reservation_id)
-    )
+    result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")

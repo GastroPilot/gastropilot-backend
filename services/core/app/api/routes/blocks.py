@@ -219,9 +219,7 @@ async def create_block_assignment(
             detail="Requested restaurant_id does not match block tenant",
         )
 
-    table_result = await db.execute(
-        select(Table.tenant_id).where(Table.id == body.table_id)
-    )
+    table_result = await db.execute(select(Table.tenant_id).where(Table.id == body.table_id))
     table_tenant_id = table_result.scalar_one_or_none()
     if table_tenant_id is None:
         raise HTTPException(status_code=404, detail="Table not found")
@@ -255,31 +253,23 @@ async def list_block_assignments(
     return result.scalars().all()
 
 
-@router.get(
-    "/assignments/by-block/{block_id}", response_model=list[BlockAssignmentResponse]
-)
+@router.get("/assignments/by-block/{block_id}", response_model=list[BlockAssignmentResponse])
 async def list_assignments_by_block(
     block_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(BlockAssignment).where(BlockAssignment.block_id == block_id)
-    )
+    result = await db.execute(select(BlockAssignment).where(BlockAssignment.block_id == block_id))
     return result.scalars().all()
 
 
-@router.get(
-    "/assignments/by-table/{table_id}", response_model=list[BlockAssignmentResponse]
-)
+@router.get("/assignments/by-table/{table_id}", response_model=list[BlockAssignmentResponse])
 async def list_assignments_by_table(
     table_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(BlockAssignment).where(BlockAssignment.table_id == table_id)
-    )
+    result = await db.execute(select(BlockAssignment).where(BlockAssignment.table_id == table_id))
     return result.scalars().all()
 
 
@@ -289,9 +279,7 @@ async def delete_block_assignment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(
-        select(BlockAssignment).where(BlockAssignment.id == assignment_id)
-    )
+    result = await db.execute(select(BlockAssignment).where(BlockAssignment.id == assignment_id))
     assignment = result.scalar_one_or_none()
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
