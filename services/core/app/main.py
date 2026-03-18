@@ -97,7 +97,6 @@ from app.api.routes import (  # noqa: E402
     messages,
     notification_inbox,
     payments,
-    prepayments,
     public_reservations,
     public_waitlist,
     qr_codes,
@@ -108,10 +107,8 @@ from app.api.routes import (  # noqa: E402
     reviews,
     table_day_configs,
     uploads,
-    upsell_packages,
     user_settings,
     users,
-    vouchers,
     waitlist,
 )
 
@@ -132,9 +129,6 @@ _all_routers = [
     reservation_table_day_configs.router,
     waitlist.router,
     messages.router,
-    vouchers.router,
-    upsell_packages.router,
-    prepayments.router,
     license.router,
     public_reservations.router,
     guest_auth.router,

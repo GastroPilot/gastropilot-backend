@@ -10,10 +10,8 @@ from app.database.models import (
     Guest,
     Reservation,
     ReservationTable,
-    ReservationUpsellPackage,
     Restaurant,
     Table,
-    UpsellPackage,
     User,
 )
 from app.dependencies import (
@@ -142,38 +140,7 @@ async def create_reservation(
         await session.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reservation conflict")
 
-    return await _load_reservation_with_upsell_packages(reservation, session)
-
-
-async def _load_reservation_with_upsell_packages(
-    reservation: Reservation,
-    session: AsyncSession,
-) -> ReservationRead:
-    """Lädt Reservierung mit zugehörigen Upsell-Paketen."""
-    from app.schemas import ReservationRead, UpsellPackageRead
-
-    # Lade Upsell-Pakete
-    upsell_result = await session.execute(
-        select(UpsellPackage)
-        .join(ReservationUpsellPackage)
-        .where(ReservationUpsellPackage.reservation_id == reservation.id)
-    )
-    upsell_packages = list(upsell_result.scalars().all())
-
-    # Konvertiere zu ReservationRead
-    reservation_dict = {
-        **{
-            k: getattr(reservation, k)
-            for k in ReservationRead.model_fields.keys()
-            if hasattr(reservation, k)
-        },
-        "upsell_packages": (
-            [UpsellPackageRead.model_validate(pkg) for pkg in upsell_packages]
-            if upsell_packages
-            else None
-        ),
-    }
-    return ReservationRead(**reservation_dict)
+    return reservation
 
 
 @router.get(
@@ -250,13 +217,7 @@ async def list_reservations(
     result = await session.execute(query)
     reservations = result.scalars().all()
 
-    # Lade Upsell-Pakete für alle Reservierungen
-    reservation_reads = []
-    for reservation in reservations:
-        reservation_read = await _load_reservation_with_upsell_packages(reservation, session)
-        reservation_reads.append(reservation_read)
-
-    return reservation_reads
+    return list(reservations)
 
 
 @router.get("/{reservation_id}", response_model=ReservationRead)
@@ -270,7 +231,7 @@ async def get_reservation(
     """Holt eine einzelne Reservierung."""
     await _get_restaurant_or_404(restaurant_id, session)
     reservation = await _get_reservation_or_404(reservation_id, restaurant_id, session)
-    return await _load_reservation_with_upsell_packages(reservation, session)
+    return reservation
 
 
 @router.patch("/{reservation_id}", response_model=ReservationRead)
@@ -410,7 +371,7 @@ async def update_reservation(
         await session.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reservation conflict")
 
-    return await _load_reservation_with_upsell_packages(reservation, session)
+    return reservation
 
 
 @router.post("/{reservation_id}/cancel", response_model=ReservationRead)
@@ -504,7 +465,7 @@ async def cancel_reservation(
             # Benachrichtigungsfehler sollten die Stornierung nicht abbrechen
             logger.error(f"Failed to send cancellation notification: {notify_error}")
 
-    return await _load_reservation_with_upsell_packages(reservation, session)
+    return reservation
 
 
 @router.delete("/{reservation_id}", status_code=status.HTTP_200_OK)

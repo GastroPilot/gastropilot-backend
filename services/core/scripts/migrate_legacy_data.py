@@ -345,70 +345,7 @@ async def migrate_menu(ctx: MigrationContext) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Step 8: Vouchers + Usage
-# ---------------------------------------------------------------------------
-async def migrate_vouchers(ctx: MigrationContext) -> None:
-    rows = await ctx.legacy.fetch("SELECT * FROM vouchers ORDER BY id")
-    logger.info("Migrating %d vouchers...", len(rows))
-    for row in rows:
-        new_id = ctx.map_id("vouchers", row["id"])
-        tenant_id = ctx.get_mapped_id("restaurants", row["restaurant_id"])
-        created_by = ctx.get_mapped_id("users", row.get("created_by_user_id"))
-        if not tenant_id:
-            continue
-        await ctx.execute(
-            """INSERT INTO vouchers (
-                id, tenant_id, code, name, description, type, value,
-                valid_from, valid_until, max_uses, used_count,
-                min_order_value, is_active, created_by_user_id,
-                created_at, updated_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-            ON CONFLICT (id) DO NOTHING""",
-            new_id,
-            tenant_id,
-            row["code"],
-            row.get("name"),
-            row.get("description"),
-            row.get("type", "fixed"),
-            row.get("value"),
-            row.get("valid_from"),
-            row.get("valid_until"),
-            row.get("max_uses"),
-            row.get("used_count", 0),
-            row.get("min_order_value"),
-            row.get("is_active", True),
-            created_by,
-            row.get("created_at_utc", datetime.now(UTC)),
-            row.get("updated_at_utc", datetime.now(UTC)),
-        )
-    ctx.counts["vouchers"] = len(rows)
-
-    usage_rows = await ctx.legacy.fetch("SELECT * FROM voucher_usage ORDER BY id")
-    logger.info("Migrating %d voucher usages...", len(usage_rows))
-    for row in usage_rows:
-        new_id = ctx.map_id("voucher_usage", row["id"])
-        voucher_id = ctx.get_mapped_id("vouchers", row["voucher_id"])
-        reservation_id = ctx.get_mapped_id("reservations", row.get("reservation_id"))
-        if not voucher_id:
-            continue
-        await ctx.execute(
-            """INSERT INTO voucher_usage (
-                id, voucher_id, reservation_id, used_by_email,
-                discount_amount, used_at
-            ) VALUES ($1,$2,$3,$4,$5,$6)
-            ON CONFLICT (id) DO NOTHING""",
-            new_id,
-            voucher_id,
-            reservation_id,
-            row.get("used_by_email"),
-            row.get("discount_amount"),
-            row.get("used_at_utc"),
-        )
-    ctx.counts["voucher_usage"] = len(usage_rows)
-
-
-# ---------------------------------------------------------------------------
-# Step 9: Blocks + Assignments
+# Step 8: Blocks + Assignments
 # ---------------------------------------------------------------------------
 async def migrate_blocks(ctx: MigrationContext) -> None:
     rows = await ctx.legacy.fetch("SELECT * FROM blocks ORDER BY id")
@@ -451,47 +388,7 @@ async def migrate_blocks(ctx: MigrationContext) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Step 10: Upsell Packages
-# ---------------------------------------------------------------------------
-async def migrate_upsell_packages(ctx: MigrationContext) -> None:
-    rows = await ctx.legacy.fetch("SELECT * FROM upsell_packages ORDER BY id")
-    logger.info("Migrating %d upsell packages...", len(rows))
-    for row in rows:
-        new_id = ctx.map_id("upsell_packages", row["id"])
-        tenant_id = ctx.get_mapped_id("restaurants", row["restaurant_id"])
-        if not tenant_id:
-            continue
-        await ctx.execute(
-            """INSERT INTO upsell_packages (
-                id, tenant_id, name, description, price, is_active,
-                available_from_date, available_until_date,
-                min_party_size, max_party_size,
-                available_times, available_weekdays,
-                image_url, display_order, created_at, updated_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-            ON CONFLICT (id) DO NOTHING""",
-            new_id,
-            tenant_id,
-            row["name"],
-            row.get("description"),
-            row.get("price"),
-            row.get("is_active", True),
-            row.get("available_from_date"),
-            row.get("available_until_date"),
-            row.get("min_party_size"),
-            row.get("max_party_size"),
-            row.get("available_times"),
-            row.get("available_weekdays"),
-            row.get("image_url"),
-            row.get("display_order", 0),
-            row.get("created_at_utc", datetime.now(UTC)),
-            row.get("updated_at_utc", datetime.now(UTC)),
-        )
-    ctx.counts["upsell_packages"] = len(rows)
-
-
-# ---------------------------------------------------------------------------
-# Step 11: Reservations (main entity + junction tables)
+# Step 9: Reservations (main entity + junction tables)
 # ---------------------------------------------------------------------------
 async def migrate_reservations(ctx: MigrationContext) -> None:
     rows = await ctx.legacy.fetch("SELECT * FROM reservations ORDER BY id")
@@ -501,7 +398,6 @@ async def migrate_reservations(ctx: MigrationContext) -> None:
         tenant_id = ctx.get_mapped_id("restaurants", row["restaurant_id"])
         guest_id = ctx.get_mapped_id("guests", row.get("guest_id"))
         table_id = ctx.get_mapped_id("tables", row.get("table_id"))
-        voucher_id = ctx.get_mapped_id("vouchers", row.get("voucher_id"))
         if not tenant_id:
             continue
         await ctx.execute(
@@ -510,10 +406,9 @@ async def migrate_reservations(ctx: MigrationContext) -> None:
                 party_size, status, channel, guest_name, guest_email, guest_phone,
                 confirmation_code, special_requests, notes,
                 confirmed_at, seated_at, completed_at, canceled_at, canceled_reason, no_show_at,
-                tags, voucher_id, voucher_discount_amount,
-                prepayment_required, prepayment_amount,
+                tags,
                 created_at, updated_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
             ON CONFLICT (id) DO NOTHING""",
             new_id,
             tenant_id,
@@ -537,10 +432,6 @@ async def migrate_reservations(ctx: MigrationContext) -> None:
             row.get("canceled_reason"),
             row.get("no_show_at"),
             row.get("tags"),
-            voucher_id,
-            row.get("voucher_discount_amount"),
-            row.get("prepayment_required", False),
-            row.get("prepayment_amount"),
             row.get("created_at_utc", datetime.now(UTC)),
             row.get("updated_at_utc", datetime.now(UTC)),
         )
@@ -564,61 +455,9 @@ async def migrate_reservations(ctx: MigrationContext) -> None:
         )
     ctx.counts["reservation_tables"] = len(rt_rows)
 
-    # Reservation upsell packages
-    rup_rows = await ctx.legacy.fetch("SELECT * FROM reservation_upsell_packages ORDER BY id")
-    logger.info("Migrating %d reservation_upsell_packages...", len(rup_rows))
-    for row in rup_rows:
-        new_id = ctx.map_id("reservation_upsell_packages", row["id"])
-        res_id = ctx.get_mapped_id("reservations", row["reservation_id"])
-        pkg_id = ctx.get_mapped_id("upsell_packages", row["upsell_package_id"])
-        if not res_id or not pkg_id:
-            continue
-        await ctx.execute(
-            """INSERT INTO reservation_upsell_packages (id, reservation_id, upsell_package_id, price_at_time, created_at)
-            VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING""",
-            new_id,
-            res_id,
-            pkg_id,
-            row.get("price_at_time"),
-            row.get("created_at_utc"),
-        )
-    ctx.counts["reservation_upsell_packages"] = len(rup_rows)
-
-    # Reservation prepayments
-    rp_rows = await ctx.legacy.fetch("SELECT * FROM reservation_prepayments ORDER BY id")
-    logger.info("Migrating %d reservation_prepayments...", len(rp_rows))
-    for row in rp_rows:
-        new_id = ctx.map_id("reservation_prepayments", row["id"])
-        res_id = ctx.get_mapped_id("reservations", row["reservation_id"])
-        tenant_id = ctx.get_mapped_id("restaurants", row["restaurant_id"])
-        if not res_id or not tenant_id:
-            continue
-        await ctx.execute(
-            """INSERT INTO reservation_prepayments (
-                id, reservation_id, tenant_id, amount, currency,
-                payment_provider, payment_id, transaction_id,
-                status, payment_data, created_at, updated_at, completed_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-            ON CONFLICT (id) DO NOTHING""",
-            new_id,
-            res_id,
-            tenant_id,
-            row.get("amount"),
-            row.get("currency", "EUR"),
-            row.get("payment_provider"),
-            row.get("payment_id"),
-            row.get("transaction_id"),
-            row.get("status", "pending"),
-            row.get("payment_data"),
-            row.get("created_at_utc", datetime.now(UTC)),
-            row.get("updated_at_utc", datetime.now(UTC)),
-            row.get("completed_at_utc"),
-        )
-    ctx.counts["reservation_prepayments"] = len(rp_rows)
-
 
 # ---------------------------------------------------------------------------
-# Step 12: Table Day Configs
+# Step 10: Table Day Configs
 # ---------------------------------------------------------------------------
 async def migrate_table_day_configs(ctx: MigrationContext) -> None:
     rows = await ctx.legacy.fetch("SELECT * FROM table_day_configs ORDER BY id")
@@ -951,15 +790,10 @@ async def verify_migration(legacy_pool: asyncpg.Pool, target_pool: asyncpg.Pool)
         "guests",
         "menu_categories",
         "menu_items",
-        "vouchers",
-        "voucher_usage",
         "blocks",
         "block_assignments",
-        "upsell_packages",
         "reservations",
         "reservation_tables",
-        "reservation_upsell_packages",
-        "reservation_prepayments",
         "table_day_configs",
         "orders",
         "order_items",
@@ -1022,9 +856,7 @@ async def run_migration(
         await migrate_obstacles(ctx)
         await migrate_guests(ctx)
         await migrate_menu(ctx)
-        await migrate_vouchers(ctx)
         await migrate_blocks(ctx)
-        await migrate_upsell_packages(ctx)
         await migrate_table_day_configs(ctx)
         await migrate_reservations(ctx)
         await migrate_orders(ctx)

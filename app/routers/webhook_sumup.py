@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import Order, ReservationPrepayment, SumUpPayment
+from app.database.models import Order, SumUpPayment
 from app.dependencies import get_session
 from app.services.sumup_service import SumUpService
 from app.settings import SUMUP_API_KEY, SUMUP_MERCHANT_CODE, SUMUP_WEBHOOK_SECRET
@@ -24,93 +24,6 @@ from app.settings import SUMUP_API_KEY, SUMUP_MERCHANT_CODE, SUMUP_WEBHOOK_SECRE
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks/sumup", tags=["webhooks"])
-
-
-async def _handle_prepayment_webhook(
-    prepayment: ReservationPrepayment,
-    event_type: str,
-    event_type_normalized: str,
-    transaction_status: str | None,
-    checkout_id: str | None,
-    transaction_code: str | None,
-    transaction_id: str | None,
-    webhook_data: dict,
-    session: AsyncSession,
-) -> dict:
-    """Verarbeitet Webhook-Events für ReservationPrepayment."""
-    logger.info(
-        f"Processing prepayment webhook for prepayment_id: {prepayment.id}, event: {event_type}"
-    )
-
-    # Aktualisiere checkout_id falls vorhanden
-    if checkout_id and not prepayment.payment_id:
-        prepayment.payment_id = checkout_id
-
-    # Event verarbeiten
-    if event_type_normalized in ["payment.succeeded", "payment_succeeded"]:
-        prepayment.status = "completed"
-        prepayment.transaction_code = transaction_code
-        prepayment.transaction_id = transaction_id
-        prepayment.completed_at_utc = datetime.now(UTC)
-        prepayment.payment_data = webhook_data
-
-        logger.info(
-            f"Prepayment erfolgreich: Reservation {prepayment.reservation_id}, Transaction {transaction_code}"
-        )
-
-    elif event_type_normalized in ["payment.failed", "payment_failed"]:
-        prepayment.status = "failed"
-        prepayment.completed_at_utc = datetime.now(UTC)
-        prepayment.payment_data = webhook_data
-
-        logger.warning(f"Prepayment fehlgeschlagen: Reservation {prepayment.reservation_id}")
-
-    elif event_type_normalized in ["payment.canceled", "payment_canceled"]:
-        prepayment.status = "failed"  # Für Prepayments behandeln wir canceled als failed
-        prepayment.completed_at_utc = datetime.now(UTC)
-        prepayment.payment_data = webhook_data
-
-        logger.info(f"Prepayment abgebrochen: Reservation {prepayment.reservation_id}")
-
-    elif event_type_normalized in [
-        "checkout.status.updated",
-        "checkout_status_changed",
-        "checkout_status_updated",
-    ]:
-        checkout_status = (transaction_status or "").upper()
-
-        if checkout_status == "PAID":
-            prepayment.status = "completed"
-            prepayment.transaction_code = transaction_code
-            prepayment.transaction_id = transaction_id
-            prepayment.completed_at_utc = datetime.now(UTC)
-            prepayment.payment_data = webhook_data
-
-            logger.info(
-                f"Prepayment erfolgreich (Checkout): Reservation {prepayment.reservation_id}"
-            )
-
-        elif checkout_status == "FAILED":
-            prepayment.status = "failed"
-            prepayment.completed_at_utc = datetime.now(UTC)
-            prepayment.payment_data = webhook_data
-
-            logger.warning(
-                f"Prepayment fehlgeschlagen (Checkout): Reservation {prepayment.reservation_id}"
-            )
-
-        else:
-            prepayment.status = "processing"
-            prepayment.payment_data = webhook_data
-
-    await session.commit()
-    await session.refresh(prepayment)
-
-    return {
-        "status": "ok",
-        "prepayment_id": prepayment.id,
-        "reservation_id": prepayment.reservation_id,
-    }
 
 
 def verify_webhook_signature(payload: bytes, signature: str, secret: str) -> bool:
@@ -360,33 +273,9 @@ async def handle_sumup_webhook(
                         )
                         break
 
-        # Prüfe ob es eine Prepayment ist (checkout_reference beginnt mit "RES-")
-        is_prepayment = checkout_reference and checkout_reference.startswith("RES-")
-        prepayment = None
-
-        if is_prepayment and not sumup_payment:
-            # Suche ReservationPrepayment über checkout_id oder payment_id
-            if checkout_id:
-                result = await session.execute(
-                    select(ReservationPrepayment).where(
-                        ReservationPrepayment.payment_id == checkout_id
-                    )
-                )
-                prepayment = result.scalar_one_or_none()
-
-            if not prepayment and checkout_reference:
-                # Extrahiere Prepayment-ID aus checkout_reference: "RES-{code}-PREPAY-{id}"
-                try:
-                    parts = checkout_reference.split("-")
-                    if len(parts) >= 4 and parts[0] == "RES" and parts[2] == "PREPAY":
-                        prepayment_id = int(parts[3])
-                        prepayment = await session.get(ReservationPrepayment, prepayment_id)
-                except (ValueError, IndexError):
-                    pass
-
-        if not sumup_payment and not prepayment:
+        if not sumup_payment:
             logger.warning(
-                f"SumUpPayment/Prepayment nicht gefunden für "
+                f"SumUpPayment nicht gefunden für "
                 f"client_transaction_id: {client_transaction_id}, "
                 f"checkout_id: {checkout_id}, "
                 f"checkout_reference: {checkout_reference}"
@@ -399,20 +288,6 @@ async def handle_sumup_webhook(
                 f"Vollständiger Webhook-Payload: {json.dumps(webhook_data, indent=2, default=str)}"
             )
             return {"status": "ignored", "reason": "payment_not_found"}
-
-        # Wenn Prepayment, verarbeite es separat
-        if prepayment:
-            return await _handle_prepayment_webhook(
-                prepayment,
-                event_type,
-                event_type_normalized,
-                transaction_status,
-                checkout_id,
-                transaction_code,
-                transaction_id,
-                webhook_data,
-                session,
-            )
 
         # Order laden
         order = await session.get(Order, sumup_payment.order_id)
