@@ -137,9 +137,7 @@ async def change_email(
                 detail="Diese E-Mail-Adresse wird bereits verwendet",
             )
 
-        result = await session.execute(
-            select(GuestProfile).where(GuestProfile.id == guest.id)
-        )
+        result = await session.execute(select(GuestProfile).where(GuestProfile.id == guest.id))
         db_guest = result.scalar_one()
         db_guest.email = body.new_email
         db_guest.email_verified = False
@@ -167,9 +165,7 @@ async def change_password(
 
     from app.core.database import get_session_factories
 
-    if not guest.password_hash or not verify_password(
-        body.current_password, guest.password_hash
-    ):
+    if not guest.password_hash or not verify_password(body.current_password, guest.password_hash):
         raise HTTPException(status_code=401, detail="Aktuelles Passwort ist falsch")
 
     if len(body.new_password) < 8:
@@ -179,9 +175,7 @@ async def change_password(
 
     session_factory_app, _ = get_session_factories()
     async with session_factory_app() as session:
-        result = await session.execute(
-            select(GuestProfile).where(GuestProfile.id == guest.id)
-        )
+        result = await session.execute(select(GuestProfile).where(GuestProfile.id == guest.id))
         db_guest = result.scalar_one()
         db_guest.password_hash = hash_password(body.new_password)
         await session.commit()
