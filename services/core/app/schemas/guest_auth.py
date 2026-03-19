@@ -46,6 +46,16 @@ class GuestProfileUpdateRequest(BaseModel):
     allergen_profile: list | None = None
 
 
+class GuestChangeEmailRequest(BaseModel):
+    new_email: EmailStr
+    password: str
+
+
+class GuestChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class EmailVerifyRequest(BaseModel):
     token: str
 

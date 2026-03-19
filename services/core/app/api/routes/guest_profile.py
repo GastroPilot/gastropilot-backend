@@ -18,6 +18,8 @@ from app.models.restaurant import Restaurant
 from app.models.review import Review
 from app.models.user import GuestProfile
 from app.schemas.guest_auth import (
+    GuestChangeEmailRequest,
+    GuestChangePasswordRequest,
     GuestProfileResponse,
     GuestProfileUpdateRequest,
 )
@@ -103,6 +105,88 @@ async def update_push_token(
         await session.commit()
 
     return {"message": "Push token updated"}
+
+
+@router.put("/email", response_model=GuestProfileResponse)
+async def change_email(
+    body: GuestChangeEmailRequest,
+    guest: GuestProfile = Depends(get_current_guest),
+):
+    """Change the guest's email address (requires current password)."""
+    from packages.shared.auth import verify_password
+
+    from app.core.database import get_session_factories
+
+    if not guest.password_hash or not verify_password(body.password, guest.password_hash):
+        raise HTTPException(status_code=401, detail="Falsches Passwort")
+
+    session_factory_app, _ = get_session_factories()
+    async with session_factory_app() as session:
+        # Check if new email is already taken
+        existing = await session.execute(
+            select(GuestProfile).where(
+                and_(
+                    GuestProfile.email == body.new_email,
+                    GuestProfile.id != guest.id,
+                )
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=409,
+                detail="Diese E-Mail-Adresse wird bereits verwendet",
+            )
+
+        result = await session.execute(
+            select(GuestProfile).where(GuestProfile.id == guest.id)
+        )
+        db_guest = result.scalar_one()
+        db_guest.email = body.new_email
+        db_guest.email_verified = False
+        await session.commit()
+        await session.refresh(db_guest)
+
+        return GuestProfileResponse(
+            id=db_guest.id,
+            first_name=db_guest.first_name,
+            last_name=db_guest.last_name,
+            email=db_guest.email,
+            phone=db_guest.phone,
+            allergen_profile=db_guest.allergen_profile,
+            email_verified=db_guest.email_verified,
+        )
+
+
+@router.put("/password")
+async def change_password(
+    body: GuestChangePasswordRequest,
+    guest: GuestProfile = Depends(get_current_guest),
+):
+    """Change the guest's password (requires current password)."""
+    from packages.shared.auth import hash_password, verify_password
+
+    from app.core.database import get_session_factories
+
+    if not guest.password_hash or not verify_password(
+        body.current_password, guest.password_hash
+    ):
+        raise HTTPException(status_code=401, detail="Aktuelles Passwort ist falsch")
+
+    if len(body.new_password) < 8:
+        raise HTTPException(
+            status_code=422, detail="Das neue Passwort muss mindestens 8 Zeichen lang sein"
+        )
+
+    session_factory_app, _ = get_session_factories()
+    async with session_factory_app() as session:
+        result = await session.execute(
+            select(GuestProfile).where(GuestProfile.id == guest.id)
+        )
+        db_guest = result.scalar_one()
+        db_guest.password_hash = hash_password(body.new_password)
+        await session.commit()
+
+    return {"message": "Passwort wurde erfolgreich geändert"}
 
 
 @router.get("/reservations")
