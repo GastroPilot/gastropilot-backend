@@ -113,9 +113,8 @@ async def change_email(
     guest: GuestProfile = Depends(get_current_guest),
 ):
     """Change the guest's email address (requires current password)."""
-    from packages.shared.auth import verify_password
-
     from app.core.database import get_session_factories
+    from packages.shared.auth import verify_password
 
     if not guest.password_hash or not verify_password(body.password, guest.password_hash):
         raise HTTPException(status_code=401, detail="Falsches Passwort")
@@ -161,9 +160,8 @@ async def change_password(
     guest: GuestProfile = Depends(get_current_guest),
 ):
     """Change the guest's password (requires current password)."""
-    from packages.shared.auth import hash_password, verify_password
-
     from app.core.database import get_session_factories
+    from packages.shared.auth import hash_password, verify_password
 
     if not guest.password_hash or not verify_password(body.current_password, guest.password_hash):
         raise HTTPException(status_code=401, detail="Aktuelles Passwort ist falsch")
