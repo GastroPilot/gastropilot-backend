@@ -67,7 +67,51 @@ class TenantCreateResponse(BaseModel):
 
 class TenantUpdate(BaseModel):
     name: str | None = None
+    slug: str | None = None
+    address: str | None = None
+    phone: str | None = None
+    email: str | None = None
     settings: dict | None = None
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, v: str | None) -> str | None:
+        if v is not None and not re.fullmatch(r"[a-z0-9-]+", v):
+            raise ValueError("slug darf nur Kleinbuchstaben, Ziffern und Bindestriche enthalten")
+        return v
+
+
+class TenantSuspendUpdate(BaseModel):
+    is_suspended: bool
+
+
+class PlatformAdminCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Passwort muss mindestens 8 Zeichen lang sein")
+        return v
+
+
+class PlatformAdminUpdate(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    email: str | None = None
+    password: str | None = None
+    is_active: bool | None = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str | None) -> str | None:
+        if v is not None and len(v) < 8:
+            raise ValueError("Passwort muss mindestens 8 Zeichen lang sein")
+        return v
 
 
 class UserImpersonateResponse(BaseModel):
@@ -92,6 +136,12 @@ async def list_tenants(
             "id": str(t.id),
             "name": t.name,
             "slug": t.slug,
+            "address": t.address,
+            "phone": t.phone,
+            "email": t.email,
+            "is_suspended": t.is_suspended,
+            "subscription_status": t.subscription_status,
+            "subscription_tier": t.subscription_tier,
             "created_at": t.created_at.isoformat() if t.created_at else None,
         }
         for t in tenants
@@ -174,8 +224,13 @@ async def get_tenant(
         "address": tenant.address,
         "phone": tenant.phone,
         "email": tenant.email,
+        "description": tenant.description,
+        "is_suspended": tenant.is_suspended,
+        "subscription_status": tenant.subscription_status,
+        "subscription_tier": tenant.subscription_tier,
         "settings": tenant.settings,
         "created_at": tenant.created_at.isoformat() if tenant.created_at else None,
+        "updated_at": tenant.updated_at.isoformat() if tenant.updated_at else None,
     }
 
 
@@ -194,6 +249,19 @@ async def update_tenant(
 
     if data.name is not None:
         tenant.name = data.name
+    if data.slug is not None:
+        existing = await session.execute(
+            select(Restaurant).where(Restaurant.slug == data.slug, Restaurant.id != tenant_id)
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Slug ist bereits vergeben")
+        tenant.slug = data.slug
+    if data.address is not None:
+        tenant.address = data.address
+    if data.phone is not None:
+        tenant.phone = data.phone
+    if data.email is not None:
+        tenant.email = data.email
     if data.settings is not None:
         current = dict(tenant.settings or {})
         current.update(data.settings)
@@ -792,3 +860,234 @@ async def get_stats(
         "recent_guests_30d": recent_guests_30d,
         "recent_reservations_30d": recent_reservations_30d,
     }
+
+
+# ─── Tenant Aktivieren / Deaktivieren ──────────────────────────────────────
+
+
+@router.patch("/tenants/{tenant_id}/suspend")
+async def toggle_tenant_suspension(
+    tenant_id: uuid.UUID,
+    data: TenantSuspendUpdate,
+    request: Request,
+    current_user=Depends(require_platform_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(select(Restaurant).where(Restaurant.id == tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    tenant.is_suspended = data.is_suspended
+
+    action = "tenant.suspended" if data.is_suspended else "tenant.activated"
+    log = PlatformAuditLog(
+        admin_user_id=current_user.id,
+        target_tenant_id=tenant_id,
+        action=action,
+        entity_type="restaurant",
+        entity_id=tenant_id,
+        description=(
+            f"Tenant '{tenant.name}' {'deaktiviert' if data.is_suspended else 'aktiviert'}"
+        ),
+        ip_address=request.client.host if request.client else None,
+    )
+    session.add(log)
+    await session.commit()
+
+    return {
+        "id": str(tenant.id),
+        "name": tenant.name,
+        "is_suspended": tenant.is_suspended,
+    }
+
+
+# ─── Platform-Admin-Verwaltung ──────────────────────────────────────────────
+
+PLATFORM_ROLES = {"platform_admin", "platform_support", "platform_analyst"}
+
+
+@router.get("/platform-admins")
+async def list_platform_admins(
+    current_user=Depends(require_platform_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(User).where(User.role.in_(PLATFORM_ROLES)).order_by(User.created_at.desc())
+    )
+    admins = result.scalars().all()
+    return [
+        {
+            "id": str(a.id),
+            "first_name": a.first_name,
+            "last_name": a.last_name,
+            "email": a.email,
+            "role": a.role,
+            "is_active": a.is_active,
+            "last_login_at": a.last_login_at.isoformat() if a.last_login_at else None,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in admins
+    ]
+
+
+@router.post("/platform-admins", status_code=201)
+async def create_platform_admin(
+    data: PlatformAdminCreate,
+    request: Request,
+    current_user=Depends(require_platform_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    existing = await session.execute(select(User).where(User.email == data.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="E-Mail ist bereits vergeben")
+
+    admin = User(
+        first_name=data.first_name,
+        last_name=data.last_name,
+        email=data.email,
+        password_hash=hash_password(data.password),
+        role="platform_admin",
+        auth_method="password",
+        is_active=True,
+        tenant_id=None,
+    )
+    session.add(admin)
+    await session.flush()
+
+    log = PlatformAuditLog(
+        admin_user_id=current_user.id,
+        action="platform_admin.created",
+        entity_type="user",
+        entity_id=admin.id,
+        description=f"Platform-Admin '{data.first_name} {data.last_name}' angelegt",
+        ip_address=request.client.host if request.client else None,
+    )
+    session.add(log)
+    await session.commit()
+
+    return {
+        "id": str(admin.id),
+        "first_name": admin.first_name,
+        "last_name": admin.last_name,
+        "email": admin.email,
+        "role": admin.role,
+        "is_active": admin.is_active,
+        "created_at": admin.created_at.isoformat() if admin.created_at else None,
+    }
+
+
+@router.get("/platform-admins/{admin_id}")
+async def get_platform_admin(
+    admin_id: uuid.UUID,
+    current_user=Depends(require_platform_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(User).where(User.id == admin_id, User.role.in_(PLATFORM_ROLES))
+    )
+    admin = result.scalar_one_or_none()
+    if not admin:
+        raise HTTPException(status_code=404, detail="Platform-Admin nicht gefunden")
+    return {
+        "id": str(admin.id),
+        "first_name": admin.first_name,
+        "last_name": admin.last_name,
+        "email": admin.email,
+        "role": admin.role,
+        "is_active": admin.is_active,
+        "last_login_at": admin.last_login_at.isoformat() if admin.last_login_at else None,
+        "created_at": admin.created_at.isoformat() if admin.created_at else None,
+        "updated_at": admin.updated_at.isoformat() if admin.updated_at else None,
+    }
+
+
+@router.patch("/platform-admins/{admin_id}")
+async def update_platform_admin(
+    admin_id: uuid.UUID,
+    data: PlatformAdminUpdate,
+    request: Request,
+    current_user=Depends(require_platform_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await session.execute(
+        select(User).where(User.id == admin_id, User.role.in_(PLATFORM_ROLES))
+    )
+    admin = result.scalar_one_or_none()
+    if not admin:
+        raise HTTPException(status_code=404, detail="Platform-Admin nicht gefunden")
+
+    if data.first_name is not None:
+        admin.first_name = data.first_name
+    if data.last_name is not None:
+        admin.last_name = data.last_name
+    if data.email is not None:
+        existing = await session.execute(
+            select(User).where(User.email == data.email, User.id != admin_id)
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="E-Mail ist bereits vergeben")
+        admin.email = data.email
+    if data.password is not None:
+        admin.password_hash = hash_password(data.password)
+    if data.is_active is not None:
+        admin.is_active = data.is_active
+
+    log = PlatformAuditLog(
+        admin_user_id=current_user.id,
+        action="platform_admin.updated",
+        entity_type="user",
+        entity_id=admin_id,
+        description=f"Platform-Admin '{admin.first_name} {admin.last_name}' aktualisiert",
+        ip_address=request.client.host if request.client else None,
+    )
+    session.add(log)
+    await session.commit()
+    await session.refresh(admin)
+
+    return {
+        "id": str(admin.id),
+        "first_name": admin.first_name,
+        "last_name": admin.last_name,
+        "email": admin.email,
+        "role": admin.role,
+        "is_active": admin.is_active,
+        "last_login_at": admin.last_login_at.isoformat() if admin.last_login_at else None,
+        "created_at": admin.created_at.isoformat() if admin.created_at else None,
+    }
+
+
+@router.delete("/platform-admins/{admin_id}", status_code=200)
+async def delete_platform_admin(
+    admin_id: uuid.UUID,
+    request: Request,
+    current_user=Depends(require_platform_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    if admin_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Sie können sich nicht selbst löschen")
+
+    result = await session.execute(
+        select(User).where(User.id == admin_id, User.role.in_(PLATFORM_ROLES))
+    )
+    admin = result.scalar_one_or_none()
+    if not admin:
+        raise HTTPException(status_code=404, detail="Platform-Admin nicht gefunden")
+
+    admin_name = f"{admin.first_name} {admin.last_name}"
+
+    log = PlatformAuditLog(
+        admin_user_id=current_user.id,
+        action="platform_admin.deleted",
+        entity_type="user",
+        entity_id=admin_id,
+        description=f"Platform-Admin '{admin_name}' gelöscht",
+        ip_address=request.client.host if request.client else None,
+    )
+    session.add(log)
+    await session.flush()
+
+    await session.delete(admin)
+    await session.commit()
+
+    return {"deleted": True, "admin_id": str(admin_id), "admin_name": admin_name}
