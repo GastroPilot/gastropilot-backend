@@ -44,6 +44,8 @@ async def get_guest_profile(
         phone=guest.phone,
         allergen_profile=guest.allergen_profile,
         email_verified=guest.email_verified,
+        created_at=guest.created_at,
+        updated_at=guest.updated_at,
     )
 
 
@@ -80,6 +82,8 @@ async def update_guest_profile(
             phone=db_guest.phone,
             allergen_profile=db_guest.allergen_profile,
             email_verified=db_guest.email_verified,
+            created_at=db_guest.created_at,
+            updated_at=db_guest.updated_at,
         )
 
 
@@ -151,6 +155,8 @@ async def change_email(
             phone=db_guest.phone,
             allergen_profile=db_guest.allergen_profile,
             email_verified=db_guest.email_verified,
+            created_at=db_guest.created_at,
+            updated_at=db_guest.updated_at,
         )
 
 
