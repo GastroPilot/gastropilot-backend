@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +36,12 @@ async def _get_restaurant_by_slug(slug: str, db: AsyncSession) -> Restaurant:
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
     return restaurant
+
+
+def _format_author_name(guest: GuestProfile) -> str:
+    if guest.last_name:
+        return f"{guest.first_name} {guest.last_name[0]}."
+    return guest.first_name
 
 
 # --- Public endpoints ---
@@ -112,16 +118,96 @@ async def create_review(
     await db.commit()
     await db.refresh(review)
 
-    author_name = f"{guest.first_name} {guest.last_name[0]}."
     return ReviewResponse(
         id=review.id,
         rating=review.rating,
         title=review.title,
         text=review.text,
-        author_name=author_name,
+        author_name=_format_author_name(guest),
+        is_mine=True,
         is_verified=review.is_verified,
         created_at=review.created_at,
+        updated_at=review.updated_at,
     )
+
+
+@router.patch(
+    "/public/restaurants/{slug}/reviews/{review_id}",
+    response_model=ReviewResponse,
+)
+async def update_review(
+    slug: str,
+    review_id: uuid.UUID,
+    body: ReviewCreateRequest,
+    guest: GuestProfile = Depends(get_current_guest),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update own review for a restaurant (guest auth required)."""
+    restaurant = await _get_restaurant_by_slug(slug, db)
+
+    result = await db.execute(
+        select(Review).where(
+            and_(
+                Review.id == review_id,
+                Review.tenant_id == restaurant.id,
+                Review.guest_profile_id == guest.id,
+            )
+        )
+    )
+    review = result.scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    review.rating = body.rating
+    review.title = body.title
+    review.text = body.text
+    await db.commit()
+    await db.refresh(review)
+
+    return ReviewResponse(
+        id=review.id,
+        rating=review.rating,
+        title=review.title,
+        text=review.text,
+        author_name=_format_author_name(guest),
+        is_mine=True,
+        is_verified=review.is_verified,
+        staff_reply=review.staff_reply,
+        staff_reply_at=review.staff_reply_at,
+        created_at=review.created_at,
+        updated_at=review.updated_at,
+    )
+
+
+@router.delete(
+    "/public/restaurants/{slug}/reviews/{review_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_own_review(
+    slug: str,
+    review_id: uuid.UUID,
+    guest: GuestProfile = Depends(get_current_guest),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Delete own review for a restaurant (guest auth required)."""
+    restaurant = await _get_restaurant_by_slug(slug, db)
+
+    result = await db.execute(
+        select(Review).where(
+            and_(
+                Review.id == review_id,
+                Review.tenant_id == restaurant.id,
+                Review.guest_profile_id == guest.id,
+            )
+        )
+    )
+    review = result.scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    await db.delete(review)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # --- Staff-protected endpoints ---
