@@ -35,6 +35,7 @@ async def get_available_timeslots(
     tables_result = await session.execute(
         select(Table).where(
             and_(
+                Table.tenant_id == tenant_id,
                 Table.capacity >= party_size,
                 Table.is_active.is_(True),
             )
@@ -117,6 +118,7 @@ async def find_available_table(
         select(Table)
         .where(
             and_(
+                Table.tenant_id == tenant_id,
                 Table.capacity >= party_size,
                 Table.is_active.is_(True),
             )
