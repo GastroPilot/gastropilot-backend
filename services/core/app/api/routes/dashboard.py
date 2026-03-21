@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from app.models.block import Block, BlockAssignment
 from app.models.reservation import Guest, Reservation
 from app.models.restaurant import Area, Obstacle, Restaurant, Table
 from app.models.table_config import ReservationTableDayConfig, TableDayConfig
+from app.models.user import User
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 logger = logging.getLogger(__name__)
@@ -58,6 +59,31 @@ async def _get_restaurant_or_404(
     return row
 
 
+async def _get_scoped_restaurant_or_404(
+    request: Request,
+    current_user: User,
+    restaurant_id: str,
+    session: AsyncSession,
+) -> Restaurant:
+    restaurant = await _get_restaurant_or_404(restaurant_id, session)
+    restaurant_id_str = str(restaurant.id)
+
+    is_impersonating = getattr(request.state, "is_impersonating", False)
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
+
+    # Echter Platform-Admin (ohne Impersonation) darf tenant-übergreifend sehen.
+    if current_user.role == "platform_admin" and not is_impersonating:
+        return restaurant
+
+    if not effective_tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant context required")
+
+    if restaurant_id_str != str(effective_tenant_id):
+        raise HTTPException(status_code=403, detail="Restaurant not in tenant scope")
+
+    return restaurant
+
+
 # ---------------------------------------------------------------------------
 # GET /dashboard/batch/{restaurant_id}
 # ---------------------------------------------------------------------------
@@ -65,10 +91,11 @@ async def _get_restaurant_or_404(
 
 @router.get("/batch/{restaurant_id}")
 async def get_dashboard_batch(
+    request: Request,
     restaurant_id: str,
     date: date | None = Query(default=None, description="Datum für Reservierungen (YYYY-MM-DD)"),
     session: AsyncSession = Depends(get_db),
-    _current_user=Depends(require_staff_or_above),
+    current_user: User = Depends(require_staff_or_above),
 ) -> dict:
     """
     Liefert alle benötigten Dashboard-Daten in einem einzigen Request:
@@ -76,7 +103,12 @@ async def get_dashboard_batch(
 
     Ersetzt ~10 einzelne API-Calls im Frontend.
     """
-    restaurant = await _get_restaurant_or_404(restaurant_id, session)
+    restaurant = await _get_scoped_restaurant_or_404(
+        request=request,
+        current_user=current_user,
+        restaurant_id=restaurant_id,
+        session=session,
+    )
     rid = restaurant.id
 
     # Areas
@@ -208,15 +240,21 @@ async def get_dashboard_batch(
 
 @router.get("/kitchen/{restaurant_id}")
 async def get_kitchen_data(
+    request: Request,
     restaurant_id: str,
     session: AsyncSession = Depends(get_db),
-    _current_user=Depends(require_staff_or_above),
+    current_user: User = Depends(require_staff_or_above),
 ) -> dict:
     """
     Küchen-Ansicht: aktive Orders mit allen OrderItems und Tischen.
     Gibt nur Orders mit Status open/in_preparation/ready zurück.
     """
-    restaurant = await _get_restaurant_or_404(restaurant_id, session)
+    restaurant = await _get_scoped_restaurant_or_404(
+        request=request,
+        current_user=current_user,
+        restaurant_id=restaurant_id,
+        session=session,
+    )
     rid = restaurant.id
 
     # Tabellen für Tischnamen
@@ -286,17 +324,23 @@ async def get_kitchen_data(
 
 @router.get("/insights/{restaurant_id}")
 async def get_insights_data(
+    request: Request,
     restaurant_id: str,
     from_date: date | None = Query(default=None, alias="from_date"),
     to_date: date | None = Query(default=None, alias="to_date"),
     session: AsyncSession = Depends(get_db),
-    _current_user=Depends(require_staff_or_above),
+    current_user: User = Depends(require_staff_or_above),
 ) -> dict:
     """
     Analytics/Insights: Umsatz, Bestellungen, Reservierungen für einen Zeitraum.
     Standard: letzte 30 Tage.
     """
-    restaurant = await _get_restaurant_or_404(restaurant_id, session)
+    restaurant = await _get_scoped_restaurant_or_404(
+        request=request,
+        current_user=current_user,
+        restaurant_id=restaurant_id,
+        session=session,
+    )
     rid = restaurant.id
 
     # Zeitraum bestimmen
