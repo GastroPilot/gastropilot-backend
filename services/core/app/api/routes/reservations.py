@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +25,10 @@ from app.services.reservation_service import (
 )
 
 router = APIRouter(prefix="/reservations", tags=["reservations"])
+
+
+class ReservationCancelRequest(BaseModel):
+    canceled_reason: str | None = None
 
 
 def _split_guest_name(name: str | None) -> tuple[str, str]:
@@ -287,7 +292,7 @@ async def update_reservation(
 
 
 @router.delete("/{reservation_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def cancel_reservation(
+async def delete_reservation(
     request: Request,
     reservation_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -301,6 +306,29 @@ async def cancel_reservation(
     if reservation.tenant_id != effective_tenant_id:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
 
+    await db.delete(reservation)
+    await db.commit()
+
+
+@router.post("/{reservation_id}/cancel")
+async def cancel_reservation_post(
+    request: Request,
+    reservation_id: UUID,
+    body: ReservationCancelRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_or_above),
+):
+    effective_tenant_id = _require_tenant_context(request, current_user)
+    result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
+    reservation = result.scalar_one_or_none()
+    if not reservation:
+        raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
+    if reservation.tenant_id != effective_tenant_id:
+        raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
+
     reservation.status = "canceled"
     reservation.canceled_at = datetime.now(UTC)
+    reservation.canceled_reason = body.canceled_reason
     await db.commit()
+    await db.refresh(reservation)
+    return _reservation_to_dict(reservation)
