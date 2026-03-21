@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,11 +21,14 @@ from app.schemas.reservation import (
 )
 from app.services.reservation_service import (
     DEFAULT_DURATION_MINUTES,
-    find_available_table,
     get_available_timeslots,
 )
 
 router = APIRouter(prefix="/reservations", tags=["reservations"])
+
+
+class ReservationCancelRequest(BaseModel):
+    canceled_reason: str | None = None
 
 
 def _split_guest_name(name: str | None) -> tuple[str, str]:
@@ -121,6 +125,7 @@ def _reservation_to_dict(r: Reservation) -> dict:
 
 @router.get("/")
 async def list_reservations(
+    request: Request,
     date: str | None = Query(None, description="YYYY-MM-DD"),
     from_dt: str | None = Query(None, alias="from", description="ISO datetime"),
     to_dt: str | None = Query(None, alias="to", description="ISO datetime"),
@@ -131,7 +136,12 @@ async def list_reservations(
     from datetime import UTC
     from datetime import datetime as dt
 
+    effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
     query = select(Reservation)
+    if effective_tenant_id:
+        query = query.where(Reservation.tenant_id == effective_tenant_id)
+    elif current_user.role != "platform_admin":
+        raise HTTPException(status_code=400, detail="Tenant context required")
     filters = []
 
     if from_dt and to_dt:
@@ -188,19 +198,9 @@ async def create_reservation(
         await db.flush()
         guest_id = guest.id
 
-    # Tisch automatisch zuweisen falls keiner angegeben
+    # Kein automatisches Tisch-Matching mehr im Staff-Flow:
+    # Ohne explizite Tischwahl bleibt die Reservierung unzugewiesen.
     table_id = body.table_id
-    if not table_id:
-        ends_at = body.ends_at or (body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES))
-        table = await find_available_table(
-            db,
-            effective_tenant_id,
-            body.starts_at,
-            ends_at,
-            body.party_size,
-        )
-        if table:
-            table_id = table.id
 
     reservation = Reservation(
         tenant_id=effective_tenant_id,
@@ -210,11 +210,13 @@ async def create_reservation(
         start_at=body.starts_at,
         end_at=body.ends_at or (body.starts_at + timedelta(minutes=DEFAULT_DURATION_MINUTES)),
         notes=body.notes,
+        special_requests=body.special_requests,
         channel=body.source,
         guest_name=body.guest_name,
         guest_email=body.guest_email,
         guest_phone=body.guest_phone,
-        status="confirmed",
+        tags=body.tags or [],
+        status=body.status,
     )
     db.add(reservation)
     await db.commit()
@@ -246,27 +248,35 @@ async def get_timeslots(
 
 @router.get("/{reservation_id}")
 async def get_reservation(
+    request: Request,
     reservation_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
+    effective_tenant_id = _require_tenant_context(request, current_user)
     result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
     reservation = result.scalar_one_or_none()
     if not reservation:
+        raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
+    if reservation.tenant_id != effective_tenant_id:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
     return _reservation_to_dict(reservation)
 
 
 @router.patch("/{reservation_id}")
 async def update_reservation(
+    request: Request,
     reservation_id: UUID,
     body: ReservationUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
+    effective_tenant_id = _require_tenant_context(request, current_user)
     result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
     reservation = result.scalar_one_or_none()
     if not reservation:
+        raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
+    if reservation.tenant_id != effective_tenant_id:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
 
     update_data = body.model_dump(exclude_none=True)
@@ -282,16 +292,43 @@ async def update_reservation(
 
 
 @router.delete("/{reservation_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def cancel_reservation(
+async def delete_reservation(
+    request: Request,
     reservation_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
+    effective_tenant_id = _require_tenant_context(request, current_user)
     result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
     reservation = result.scalar_one_or_none()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
+    if reservation.tenant_id != effective_tenant_id:
+        raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
+
+    await db.delete(reservation)
+    await db.commit()
+
+
+@router.post("/{reservation_id}/cancel")
+async def cancel_reservation_post(
+    request: Request,
+    reservation_id: UUID,
+    body: ReservationCancelRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_or_above),
+):
+    effective_tenant_id = _require_tenant_context(request, current_user)
+    result = await db.execute(select(Reservation).where(Reservation.id == reservation_id))
+    reservation = result.scalar_one_or_none()
+    if not reservation:
+        raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
+    if reservation.tenant_id != effective_tenant_id:
+        raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
 
     reservation.status = "canceled"
     reservation.canceled_at = datetime.now(UTC)
+    reservation.canceled_reason = body.canceled_reason
     await db.commit()
+    await db.refresh(reservation)
+    return _reservation_to_dict(reservation)
