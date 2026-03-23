@@ -4,7 +4,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -414,6 +414,31 @@ async def update_order(
         "total": order.total,
         "payment_status": order.payment_status,
     }
+
+
+@router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_order(
+    order_id: uuid.UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await session.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    await session.delete(order)
+    await session.commit()
+
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if tenant_id:
+        await manager.broadcast_to_tenant(
+            str(tenant_id),
+            {"type": "order_deleted", "data": {"id": str(order_id)}},
+        )
+
+    return None
 
 
 @router.post("/{order_id}/items", status_code=201)
