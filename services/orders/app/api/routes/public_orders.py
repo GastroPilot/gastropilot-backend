@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
 from app.models.order import Order, OrderItem
+from app.services.table_group_service import normalize_order_table_ids, resolve_group_table_ids
 from app.schemas.public_order import (
     PublicOrderCreateRequest,
     PublicPaymentRequest,
@@ -190,10 +192,20 @@ async def create_public_order(
         session_id = secrets.token_urlsafe(16)
 
     order_number = f"PUB-{secrets.token_hex(4).upper()}"
+    try:
+        resolved_table_ids = await resolve_group_table_ids(
+            db,
+            restaurant[0],
+            table[0],
+            datetime.now(UTC).date(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
     order = Order(
         tenant_id=restaurant[0],
-        table_id=table[0],
+        table_id=resolved_table_ids[0] if resolved_table_ids else table[0],
+        table_ids=[str(table_id) for table_id in resolved_table_ids],
         order_number=order_number,
         status="open",
         special_requests=session_id,
@@ -252,6 +264,7 @@ async def create_public_order(
         "session_id": session_id,
         "order_number": order.order_number,
         "status": _public_order_status(order.status),
+        "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
         "total": order.total,
         "created_at": (order.created_at.isoformat() if order.created_at else None),
         "items": [

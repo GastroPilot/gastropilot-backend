@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db
 from app.models.order import Order, OrderItem
+from app.services.table_group_service import normalize_order_table_ids, resolve_group_table_ids
 from app.services.tax_service import calculate_totals
 from app.websocket.manager import manager
 
@@ -24,6 +26,7 @@ ORDER_STATUSES = [
     "paid",
     "canceled",
 ]
+TABLE_ID_UNSET = object()
 
 
 class OrderCreate(BaseModel):
@@ -137,6 +140,7 @@ async def list_orders(
             "order_number": o.order_number,
             "status": o.status,
             "table_id": str(o.table_id) if o.table_id else None,
+            "table_ids": normalize_order_table_ids(o.table_ids, o.table_id),
             "total": o.total,
             "payment_status": o.payment_status,
             "opened_at": o.opened_at.isoformat() if o.opened_at else None,
@@ -156,10 +160,25 @@ async def create_order(
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant context required")
 
+    resolved_table_ids: list[uuid.UUID] = []
+    resolved_table_id = data.table_id
+    if data.table_id is not None:
+        try:
+            resolved_table_ids = await resolve_group_table_ids(
+                session,
+                tenant_id,
+                data.table_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        resolved_table_id = resolved_table_ids[0] if resolved_table_ids else data.table_id
+
     order_number = f"ORD-{secrets.token_hex(4).upper()}"
     order = Order(
         tenant_id=tenant_id,
-        table_id=data.table_id,
+        table_id=resolved_table_id,
+        table_ids=[str(table_id) for table_id in resolved_table_ids] if resolved_table_ids else None,
+        guest_id=data.guest_id,
         reservation_id=data.reservation_id,
         party_size=data.party_size,
         notes=data.notes,
@@ -228,7 +247,13 @@ async def create_order(
         },
     )
 
-    return {"id": str(order.id), "order_number": order.order_number, "status": order.status}
+    return {
+        "id": str(order.id),
+        "order_number": order.order_number,
+        "status": order.status,
+        "table_id": str(order.table_id) if order.table_id else None,
+        "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
+    }
 
 
 @router.get("/{order_id}")
@@ -250,6 +275,7 @@ async def get_order(
         "order_number": order.order_number,
         "status": order.status,
         "table_id": str(order.table_id) if order.table_id else None,
+        "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
         "subtotal": order.subtotal,
         "tax_amount": order.tax_amount,
         "total": order.total,
@@ -322,6 +348,10 @@ async def update_order(
         "opened_at",
     }
     update_data = data.model_dump(exclude_unset=True)
+    table_id_update = (
+        update_data.pop("table_id", None) if "table_id" in update_data else TABLE_ID_UNSET
+    )
+    update_data.pop("table_ids", None)
 
     if "status" in update_data and update_data["status"]:
         if update_data["status"] not in ORDER_STATUSES:
@@ -333,6 +363,28 @@ async def update_order(
             update_data[date_field] = dt.fromisoformat(
                 update_data[date_field].replace("Z", "+00:00")
             )
+
+    if table_id_update is not TABLE_ID_UNSET:
+        if table_id_update is None:
+            order.table_id = None
+            order.table_ids = None
+        else:
+            reference_date = (
+                order.opened_at.astimezone(UTC).date()
+                if order.opened_at and order.opened_at.tzinfo is not None
+                else (order.opened_at or datetime.now(UTC)).date()
+            )
+            try:
+                resolved_table_ids = await resolve_group_table_ids(
+                    session,
+                    order.tenant_id,
+                    table_id_update,
+                    reference_date,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=404, detail=str(exc))
+            order.table_id = resolved_table_ids[0] if resolved_table_ids else table_id_update
+            order.table_ids = [str(table_id) for table_id in resolved_table_ids]
 
     for key, value in update_data.items():
         if key in valid_fields:
@@ -357,6 +409,8 @@ async def update_order(
     return {
         "id": str(order.id),
         "status": order.status,
+        "table_id": str(order.table_id) if order.table_id else None,
+        "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
         "total": order.total,
         "payment_status": order.payment_status,
     }

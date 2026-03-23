@@ -14,10 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_staff_or_above
 from app.models.block import Block, BlockAssignment
-from app.models.reservation import Guest, Reservation
+from app.models.reservation import Reservation
 from app.models.restaurant import Area, Obstacle, Restaurant, Table
 from app.models.table_config import ReservationTableDayConfig, TableDayConfig
 from app.models.user import User
+from app.services.table_group_service import fetch_reservation_table_ids_map
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 logger = logging.getLogger(__name__)
@@ -137,7 +138,22 @@ async def get_dashboard_batch(
             Reservation.start_at < day_end,
         )
     )
-    reservations = [_serialize(r) for r in reservations_result.scalars().all()]
+    reservation_rows = reservations_result.scalars().all()
+    reservation_table_ids_map = await fetch_reservation_table_ids_map(
+        session,
+        rid,
+        [reservation.id for reservation in reservation_rows],
+    )
+    reservations: list[dict[str, Any]] = []
+    for reservation in reservation_rows:
+        payload = _serialize(reservation)
+        table_ids = reservation_table_ids_map.get(str(reservation.id))
+        if not table_ids:
+            table_ids = [str(reservation.table_id)] if reservation.table_id else []
+        payload["table_ids"] = table_ids
+        if payload.get("table_id") is None and table_ids:
+            payload["table_id"] = table_ids[0]
+        reservations.append(payload)
 
     # Blocks (inkl. Überlappung mit dem Tag)
     blocks_result = await session.execute(
@@ -160,20 +176,51 @@ async def get_dashboard_batch(
 
     # Orders – aktive Orders für heute (status != closed/cancelled)
     try:
-        orders_result = await session.execute(
-            text("""
-                SELECT id, tenant_id, table_id, order_number, status,
-                       subtotal, tax_amount, total, payment_status,
-                       notes, opened_at, closed_at, created_at, updated_at
-                FROM orders
-                WHERE tenant_id = :tid
-                  AND opened_at >= :day_start
-                  AND opened_at < :day_end
-                ORDER BY opened_at DESC
-                LIMIT 500
-                """),
-            {"tid": str(rid), "day_start": day_start, "day_end": day_end},
+        has_table_ids_column_result = await session.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'orders'
+                      AND column_name = 'table_ids'
+                )
+                """
+            )
         )
+        has_table_ids_column = bool(has_table_ids_column_result.scalar())
+
+        if has_table_ids_column:
+            orders_result = await session.execute(
+                text("""
+                    SELECT id, tenant_id, table_id, table_ids, order_number, status,
+                           subtotal, tax_amount, total, payment_status,
+                           notes, opened_at, closed_at, created_at, updated_at
+                    FROM orders
+                    WHERE tenant_id = :tid
+                      AND opened_at >= :day_start
+                      AND opened_at < :day_end
+                    ORDER BY opened_at DESC
+                    LIMIT 500
+                    """),
+                {"tid": str(rid), "day_start": day_start, "day_end": day_end},
+            )
+        else:
+            orders_result = await session.execute(
+                text("""
+                    SELECT id, tenant_id, table_id, order_number, status,
+                           subtotal, tax_amount, total, payment_status,
+                           notes, opened_at, closed_at, created_at, updated_at
+                    FROM orders
+                    WHERE tenant_id = :tid
+                      AND opened_at >= :day_start
+                      AND opened_at < :day_end
+                    ORDER BY opened_at DESC
+                    LIMIT 500
+                    """),
+                {"tid": str(rid), "day_start": day_start, "day_end": day_end},
+            )
         orders = [dict(row._mapping) for row in orders_result]
         # UUID / datetime serialisieren
         for o in orders:
@@ -182,6 +229,15 @@ async def get_dashboard_batch(
                     o[k] = str(v)
                 elif isinstance(v, datetime):
                     o[k] = v.isoformat()
+            raw_table_ids = o.get("table_ids")
+            normalized_table_ids: list[str] = []
+            if isinstance(raw_table_ids, list):
+                normalized_table_ids = [str(table_id) for table_id in raw_table_ids if table_id]
+            elif o.get("table_id"):
+                normalized_table_ids = [str(o["table_id"])]
+            o["table_ids"] = normalized_table_ids
+            if o.get("table_id") is None and normalized_table_ids:
+                o["table_id"] = normalized_table_ids[0]
     except SQLAlchemyError:
         logger.exception(
             "Orders konnten fuer Dashboard-Batch nicht geladen werden",
