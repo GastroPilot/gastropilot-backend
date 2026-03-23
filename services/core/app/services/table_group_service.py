@@ -46,7 +46,7 @@ async def resolve_group_table_ids(
     target_date = _normalize_reference_date(reference_start_at)
 
     day_config_result = await session.execute(
-        select(TableDayConfig.join_group_id).where(
+        select(TableDayConfig.id, TableDayConfig.join_group_id).where(
             and_(
                 TableDayConfig.tenant_id == tenant_id,
                 TableDayConfig.table_id == table.id,
@@ -54,10 +54,11 @@ async def resolve_group_table_ids(
             )
         )
     )
-    config_group_id = day_config_result.scalar_one_or_none()
-    effective_group_id = (
-        config_group_id if config_group_id is not None else table.join_group_id
-    )
+    day_config_row = day_config_result.first()
+    if day_config_row is not None:
+        effective_group_id = day_config_row[1]
+    else:
+        effective_group_id = table.join_group_id
     if effective_group_id is None:
         return [table.id]
 

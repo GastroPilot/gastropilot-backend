@@ -232,7 +232,7 @@ async def create_or_update_config(
         existing = result.scalar_one_or_none()
         if existing:
             for field, value in body.model_dump(
-                exclude_none=True, exclude={"restaurant_id", "table_id", "date"}
+                exclude_unset=True, exclude={"restaurant_id", "table_id", "date"}
             ).items():
                 setattr(existing, field, value)
             await db.commit()
@@ -280,7 +280,7 @@ async def update_config(
     if not config:
         raise HTTPException(status_code=404, detail="Config not found")
 
-    for field, value in body.model_dump(exclude_none=True).items():
+    for field, value in body.model_dump(exclude_unset=True).items():
         setattr(config, field, value)
 
     await db.commit()
