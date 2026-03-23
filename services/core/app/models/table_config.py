@@ -33,6 +33,9 @@ class TableDayConfig(Base):
     table_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tables.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    area_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("areas.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     date: Mapped[Date] = mapped_column(Date, nullable=False, index=True)
     is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_temporary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
