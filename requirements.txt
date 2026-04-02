@@ -32,6 +32,12 @@ sentry-sdk[fastapi]==2.19.2
 # AI / OpenAI
 openai>=1.0.0
 
+# AWS / S3 uploads
+aioboto3>=13.0.0
+
+# Payments
+stripe>=10.0.0
+
 # Twilio (SMS + WhatsApp)
 twilio>=8.0.0
 
