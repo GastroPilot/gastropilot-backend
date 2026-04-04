@@ -192,7 +192,8 @@ async def get_dashboard_batch(
                 text("""
                     SELECT id, tenant_id, table_id, table_ids, order_number, status,
                            subtotal, tax_amount, total, payment_status,
-                           notes, opened_at, closed_at, created_at, updated_at
+                           notes, opened_at, sent_to_kitchen_at, in_preparation_at,
+                           ready_at, served_at, closed_at, created_at, updated_at
                     FROM orders
                     WHERE tenant_id = :tid
                       AND opened_at >= :day_start
@@ -207,7 +208,8 @@ async def get_dashboard_batch(
                 text("""
                     SELECT id, tenant_id, table_id, order_number, status,
                            subtotal, tax_amount, total, payment_status,
-                           notes, opened_at, closed_at, created_at, updated_at
+                           notes, opened_at, sent_to_kitchen_at, in_preparation_at,
+                           ready_at, served_at, closed_at, created_at, updated_at
                     FROM orders
                     WHERE tenant_id = :tid
                       AND opened_at >= :day_start
@@ -319,7 +321,8 @@ async def get_kitchen_data(
             text("""
                 SELECT id, tenant_id, table_id, order_number, status,
                        subtotal, tax_amount, total, payment_status,
-                       notes, opened_at, closed_at, created_at, updated_at
+                       notes, opened_at, sent_to_kitchen_at, in_preparation_at,
+                       ready_at, served_at, closed_at, created_at, updated_at
                 FROM orders
                 WHERE tenant_id = :tid
                   AND status IN ('open', 'in_preparation', 'ready', 'confirmed', 'sent_to_kitchen')

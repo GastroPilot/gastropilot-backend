@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user_or_device, get_db
 from app.models.order import Order, OrderItem
+from app.services.order_timing import apply_order_status_timestamps
 from app.websocket.manager import manager
 
 router = APIRouter(prefix="/kitchen", tags=["kitchen"])
@@ -73,6 +74,12 @@ async def get_kitchen_queue(
             "source": "qr" if (o.order_number or "").startswith("PUB-") else "service",
             "notes": o.notes if not (o.notes or "").startswith("Public order,") else None,
             "opened_at": o.opened_at.isoformat() if o.opened_at else None,
+            "sent_to_kitchen_at": (
+                o.sent_to_kitchen_at.isoformat() if o.sent_to_kitchen_at else None
+            ),
+            "in_preparation_at": (o.in_preparation_at.isoformat() if o.in_preparation_at else None),
+            "ready_at": o.ready_at.isoformat() if o.ready_at else None,
+            "served_at": o.served_at.isoformat() if o.served_at else None,
             "created_at": o.created_at.isoformat() if o.created_at else None,
         }
         for o in orders
@@ -92,7 +99,9 @@ async def mark_order_ready(
         raise HTTPException(status_code=404, detail="Order not found")
 
     order.status = "ready"
+    apply_order_status_timestamps(order, "ready")
     await session.commit()
+    await session.refresh(order)
 
     tenant_id = getattr(request.state, "tenant_id", None)
     if tenant_id:
@@ -101,4 +110,9 @@ async def mark_order_ready(
             {"type": "order_ready", "data": {"id": str(order_id), "status": "ready"}},
         )
 
-    return {"id": str(order_id), "status": "ready"}
+    return {
+        "id": str(order.id),
+        "status": order.status,
+        "ready_at": order.ready_at.isoformat() if order.ready_at else None,
+        "served_at": order.served_at.isoformat() if order.served_at else None,
+    }

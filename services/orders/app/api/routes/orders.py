@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db
 from app.models.order import Order, OrderItem
+from app.services.order_timing import apply_order_status_timestamps
 from app.services.table_group_service import normalize_order_table_ids, resolve_group_table_ids
 from app.services.tax_service import calculate_totals
 from app.websocket.manager import manager
@@ -200,6 +201,33 @@ def _serialize_item(item: OrderItem) -> dict:
     }
 
 
+def _serialize_order(order: Order, include_items: list[dict] | None = None) -> dict:
+    payload: dict[str, Any] = {
+        "id": str(order.id),
+        "order_number": order.order_number,
+        "status": order.status,
+        "table_id": str(order.table_id) if order.table_id else None,
+        "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
+        "reservation_id": str(order.reservation_id) if order.reservation_id else None,
+        "total": order.total,
+        "payment_status": order.payment_status,
+        "opened_at": order.opened_at.isoformat() if order.opened_at else None,
+        "sent_to_kitchen_at": (
+            order.sent_to_kitchen_at.isoformat() if order.sent_to_kitchen_at else None
+        ),
+        "in_preparation_at": (
+            order.in_preparation_at.isoformat() if order.in_preparation_at else None
+        ),
+        "ready_at": order.ready_at.isoformat() if order.ready_at else None,
+        "served_at": order.served_at.isoformat() if order.served_at else None,
+        "closed_at": order.closed_at.isoformat() if order.closed_at else None,
+        "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+    }
+    if include_items is not None:
+        payload["items"] = include_items
+    return payload
+
+
 @router.get("/")
 async def list_orders(
     request: Request,
@@ -212,20 +240,7 @@ async def list_orders(
         query = query.where(Order.status == status)
     result = await session.execute(query.order_by(Order.opened_at.desc()))
     orders = result.scalars().all()
-    return [
-        {
-            "id": str(o.id),
-            "order_number": o.order_number,
-            "status": o.status,
-            "table_id": str(o.table_id) if o.table_id else None,
-            "table_ids": normalize_order_table_ids(o.table_ids, o.table_id),
-            "reservation_id": str(o.reservation_id) if o.reservation_id else None,
-            "total": o.total,
-            "payment_status": o.payment_status,
-            "opened_at": o.opened_at.isoformat() if o.opened_at else None,
-        }
-        for o in orders
-    ]
+    return [_serialize_order(o) for o in orders]
 
 
 @router.post("/", status_code=201)
@@ -337,14 +352,7 @@ async def create_order(
         },
     )
 
-    return {
-        "id": str(order.id),
-        "order_number": order.order_number,
-        "status": order.status,
-        "table_id": str(order.table_id) if order.table_id else None,
-        "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
-        "reservation_id": str(order.reservation_id) if order.reservation_id else None,
-    }
+    return _serialize_order(order)
 
 
 @router.get("/{order_id}")
@@ -361,19 +369,9 @@ async def get_order(
     items_result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
     items = items_result.scalars().all()
 
-    return {
-        "id": str(order.id),
-        "order_number": order.order_number,
-        "status": order.status,
-        "table_id": str(order.table_id) if order.table_id else None,
-        "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
-        "reservation_id": str(order.reservation_id) if order.reservation_id else None,
-        "subtotal": order.subtotal,
-        "tax_amount": order.tax_amount,
-        "total": order.total,
-        "payment_status": order.payment_status,
-        "opened_at": order.opened_at.isoformat() if order.opened_at else None,
-        "items": [
+    payload = _serialize_order(
+        order,
+        include_items=[
             {
                 "id": str(i.id),
                 "item_name": i.item_name,
@@ -385,7 +383,10 @@ async def get_order(
             }
             for i in items
         ],
-    }
+    )
+    payload["subtotal"] = order.subtotal
+    payload["tax_amount"] = order.tax_amount
+    return payload
 
 
 @router.patch("/{order_id}/status")
@@ -405,7 +406,9 @@ async def update_order_status(
         raise HTTPException(status_code=404, detail="Order not found")
 
     order.status = data.status
+    apply_order_status_timestamps(order, data.status)
     await session.commit()
+    await session.refresh(order)
 
     tenant_id = getattr(request.state, "tenant_id", None)
     if tenant_id:
@@ -414,7 +417,7 @@ async def update_order_status(
             {"type": "order_updated", "data": {"id": str(order_id), "status": data.status}},
         )
 
-    return {"id": str(order_id), "status": data.status}
+    return _serialize_order(order)
 
 
 @router.patch("/{order_id}")
@@ -506,6 +509,8 @@ async def update_order(
     for key, value in update_data.items():
         if key in valid_fields:
             setattr(order, key, value)
+            if key == "status" and isinstance(value, str):
+                apply_order_status_timestamps(order, value)
 
     # Recalculate total
     subtotal = order.subtotal or 0.0
@@ -523,15 +528,10 @@ async def update_order(
             {"type": "order_updated", "data": {"id": str(order_id)}},
         )
 
-    return {
-        "id": str(order.id),
-        "status": order.status,
-        "table_id": str(order.table_id) if order.table_id else None,
-        "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
-        "reservation_id": str(order.reservation_id) if order.reservation_id else None,
-        "total": order.total,
-        "payment_status": order.payment_status,
-    }
+    payload = _serialize_order(order)
+    payload["total"] = order.total
+    payload["payment_status"] = order.payment_status
+    return payload
 
 
 @router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)

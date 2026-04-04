@@ -57,6 +57,14 @@ class Order(Base):
     opened_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
+    sent_to_kitchen_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    in_preparation_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ready_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    served_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paid_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
