@@ -2,12 +2,13 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import (
     Guest,
+    Order,
     Reservation,
     ReservationTable,
     Restaurant,
@@ -363,6 +364,16 @@ async def update_reservation(
                         end_at=end_at,
                     )
                     session.add(rt)
+
+        await session.execute(
+            update(Order)
+            .where(
+                Order.restaurant_id == restaurant_id,
+                Order.reservation_id == reservation.id,
+                Order.status.notin_(["paid", "canceled"]),
+            )
+            .values(table_id=new_table_id)
+        )
 
     try:
         await session.commit()

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_staff_or_above
@@ -49,6 +50,37 @@ def _require_tenant_context(request: Request, current_user: User) -> UUID:
     if not effective_tenant_id:
         raise HTTPException(status_code=400, detail="Tenant context required")
     return effective_tenant_id
+
+
+async def _sync_active_order_tables_for_reservation(
+    db: AsyncSession,
+    tenant_id: UUID,
+    reservation_id: UUID,
+    table_ids: list[UUID],
+) -> None:
+    normalized_table_ids = [str(table_id) for table_id in table_ids]
+    primary_table_id = normalized_table_ids[0] if normalized_table_ids else None
+    table_ids_payload = json.dumps(normalized_table_ids) if normalized_table_ids else None
+
+    await db.execute(
+        text(
+            """
+            UPDATE orders
+            SET table_id = CAST(:table_id AS uuid),
+                table_ids = CAST(:table_ids AS jsonb),
+                updated_at = NOW()
+            WHERE tenant_id = CAST(:tenant_id AS uuid)
+              AND reservation_id = CAST(:reservation_id AS uuid)
+              AND status IN ('open', 'sent_to_kitchen', 'in_preparation', 'ready', 'served')
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "reservation_id": str(reservation_id),
+            "table_id": primary_table_id,
+            "table_ids": table_ids_payload,
+        },
+    )
 
 
 async def _resolve_tenant_context_for_create(
@@ -321,9 +353,11 @@ async def update_reservation(
         model_field = field_map.get(field, field)
         setattr(reservation, model_field, value)
 
+    resolved_table_ids_for_orders: list[UUID] | None = None
     if should_resync_table_links:
         if reservation.table_id is None:
-            await sync_reservation_table_links(db, reservation, [])
+            resolved_table_ids_for_orders = []
+            await sync_reservation_table_links(db, reservation, resolved_table_ids_for_orders)
         else:
             try:
                 resolved_table_ids = await resolve_group_table_ids(
@@ -334,7 +368,16 @@ async def update_reservation(
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=404, detail=str(exc))
+            resolved_table_ids_for_orders = resolved_table_ids
             await sync_reservation_table_links(db, reservation, resolved_table_ids)
+
+    if should_resync_table_links and resolved_table_ids_for_orders is not None:
+        await _sync_active_order_tables_for_reservation(
+            db=db,
+            tenant_id=effective_tenant_id,
+            reservation_id=reservation.id,
+            table_ids=resolved_table_ids_for_orders,
+        )
 
     await db.commit()
     await db.refresh(reservation)

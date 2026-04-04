@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -27,6 +28,7 @@ ORDER_STATUSES = [
     "canceled",
 ]
 TABLE_ID_UNSET = object()
+RESERVATION_ID_UNSET = object()
 
 
 class OrderCreate(BaseModel):
@@ -102,6 +104,86 @@ async def _recalculate_order_totals(order: Order, session: AsyncSession) -> None
     order.total = totals["total"]
 
 
+def _deduplicate_uuid_values(values: list[uuid.UUID]) -> list[uuid.UUID]:
+    deduped: list[uuid.UUID] = []
+    seen: set[uuid.UUID] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return deduped
+
+
+def _reference_date_from_datetime(value: datetime | None) -> datetime.date:
+    if value and value.tzinfo is not None:
+        return value.astimezone(UTC).date()
+    if value:
+        return value.date()
+    return datetime.now(UTC).date()
+
+
+async def _resolve_order_table_assignment_from_reservation(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    reservation_id: uuid.UUID,
+) -> tuple[uuid.UUID | None, list[uuid.UUID]]:
+    reservation_result = await session.execute(
+        text(
+            """
+            SELECT id, table_id, start_at
+            FROM reservations
+            WHERE id = :reservation_id
+              AND tenant_id = :tenant_id
+            LIMIT 1
+            """
+        ),
+        {"reservation_id": str(reservation_id), "tenant_id": str(tenant_id)},
+    )
+    reservation_row = reservation_result.first()
+    if reservation_row is None:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+
+    reservation_table_id = (
+        uuid.UUID(str(reservation_row.table_id)) if reservation_row.table_id is not None else None
+    )
+    reservation_start_at: datetime | None = reservation_row.start_at
+    resolved_table_ids: list[uuid.UUID] = []
+
+    if reservation_table_id is not None:
+        reference_date = _reference_date_from_datetime(reservation_start_at)
+        try:
+            resolved_table_ids = await resolve_group_table_ids(
+                session,
+                tenant_id,
+                reservation_table_id,
+                reference_date,
+            )
+        except ValueError:
+            resolved_table_ids = [reservation_table_id]
+    else:
+        reservation_tables_result = await session.execute(
+            text(
+                """
+                SELECT table_id
+                FROM reservation_tables
+                WHERE tenant_id = :tenant_id
+                  AND reservation_id = :reservation_id
+                """
+            ),
+            {"tenant_id": str(tenant_id), "reservation_id": str(reservation_id)},
+        )
+        resolved_table_ids = [
+            uuid.UUID(str(row.table_id))
+            for row in reservation_tables_result
+            if row.table_id is not None
+        ]
+
+    deduped_table_ids = _deduplicate_uuid_values(resolved_table_ids)
+    primary_table_id = deduped_table_ids[0] if deduped_table_ids else reservation_table_id
+    return primary_table_id, deduped_table_ids
+
+
 def _serialize_item(item: OrderItem) -> dict:
     return {
         "id": str(item.id),
@@ -141,6 +223,7 @@ async def list_orders(
             "status": o.status,
             "table_id": str(o.table_id) if o.table_id else None,
             "table_ids": normalize_order_table_ids(o.table_ids, o.table_id),
+            "reservation_id": str(o.reservation_id) if o.reservation_id else None,
             "total": o.total,
             "payment_status": o.payment_status,
             "opened_at": o.opened_at.isoformat() if o.opened_at else None,
@@ -160,18 +243,23 @@ async def create_order(
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant context required")
 
-    resolved_table_ids: list[uuid.UUID] = []
-    resolved_table_id = data.table_id
-    if data.table_id is not None:
-        try:
-            resolved_table_ids = await resolve_group_table_ids(
-                session,
-                tenant_id,
-                data.table_id,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
-        resolved_table_id = resolved_table_ids[0] if resolved_table_ids else data.table_id
+    if data.reservation_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Reservation is required for every order",
+        )
+
+    resolved_table_id, resolved_table_ids = await _resolve_order_table_assignment_from_reservation(
+        session,
+        tenant_id,
+        data.reservation_id,
+    )
+    allowed_table_ids = {str(table_id) for table_id in resolved_table_ids}
+    if data.table_id is not None and allowed_table_ids and str(data.table_id) not in allowed_table_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Table does not match reservation assignment",
+        )
 
     order_number = f"ORD-{secrets.token_hex(4).upper()}"
     order = Order(
@@ -255,6 +343,7 @@ async def create_order(
         "status": order.status,
         "table_id": str(order.table_id) if order.table_id else None,
         "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
+        "reservation_id": str(order.reservation_id) if order.reservation_id else None,
     }
 
 
@@ -278,6 +367,7 @@ async def get_order(
         "status": order.status,
         "table_id": str(order.table_id) if order.table_id else None,
         "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
+        "reservation_id": str(order.reservation_id) if order.reservation_id else None,
         "subtotal": order.subtotal,
         "tax_amount": order.tax_amount,
         "total": order.total,
@@ -353,6 +443,11 @@ async def update_order(
     table_id_update = (
         update_data.pop("table_id", None) if "table_id" in update_data else TABLE_ID_UNSET
     )
+    reservation_id_update: Any = (
+        update_data.pop("reservation_id", None)
+        if "reservation_id" in update_data
+        else RESERVATION_ID_UNSET
+    )
     update_data.pop("table_ids", None)
 
     if "status" in update_data and update_data["status"]:
@@ -366,7 +461,27 @@ async def update_order(
                 update_data[date_field].replace("Z", "+00:00")
             )
 
+    if reservation_id_update is not RESERVATION_ID_UNSET:
+        if reservation_id_update is None:
+            raise HTTPException(status_code=400, detail="Reservation is required for every order")
+
+        resolved_table_id, resolved_table_ids = (
+            await _resolve_order_table_assignment_from_reservation(
+                session,
+                order.tenant_id,
+                reservation_id_update,
+            )
+        )
+        order.reservation_id = reservation_id_update
+        order.table_id = resolved_table_id
+        order.table_ids = [str(table_id) for table_id in resolved_table_ids] or None
+
     if table_id_update is not TABLE_ID_UNSET:
+        if order.reservation_id is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Table assignment is derived from reservation. Update reservation instead.",
+            )
         if table_id_update is None:
             order.table_id = None
             order.table_ids = None
@@ -413,6 +528,7 @@ async def update_order(
         "status": order.status,
         "table_id": str(order.table_id) if order.table_id else None,
         "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
+        "reservation_id": str(order.reservation_id) if order.reservation_id else None,
         "total": order.total,
         "payment_status": order.payment_status,
     }

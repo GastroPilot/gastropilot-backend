@@ -164,6 +164,86 @@ class TestReservationCRUD:
         assert response.status_code == 200
         assert response.json()["message"] == "deleted"
 
+    async def test_table_move_syncs_active_order_tables(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """Moving a reservation updates active linked orders, but not paid ones."""
+        from app.database.models import Order, Reservation, Table
+
+        second_table = Table(
+            restaurant_id=test_restaurant.id,
+            number="T2",
+            capacity=4,
+            shape="rectangle",
+            position_x=220.0,
+            position_y=100.0,
+            width=120.0,
+            height=80.0,
+            is_active=True,
+        )
+        db_session.add(second_table)
+        await db_session.commit()
+        await db_session.refresh(second_table)
+
+        start_time = datetime.now(UTC) + timedelta(days=1)
+        reservation = Reservation(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            start_at=start_time,
+            end_at=start_time + timedelta(hours=2),
+            party_size=4,
+            status="confirmed",
+            channel="manual",
+            guest_name="Sync Test Guest",
+        )
+        db_session.add(reservation)
+        await db_session.commit()
+        await db_session.refresh(reservation)
+
+        open_order = Order(
+            restaurant_id=test_restaurant.id,
+            reservation_id=reservation.id,
+            table_id=test_table.id,
+            status="open",
+            party_size=4,
+            subtotal=0.0,
+            tax_amount=0.0,
+            tax_amount_7=0.0,
+            tax_amount_19=0.0,
+            total=0.0,
+        )
+        paid_order = Order(
+            restaurant_id=test_restaurant.id,
+            reservation_id=reservation.id,
+            table_id=test_table.id,
+            status="paid",
+            party_size=4,
+            subtotal=0.0,
+            tax_amount=0.0,
+            tax_amount_7=0.0,
+            tax_amount_19=0.0,
+            total=0.0,
+            payment_status="paid",
+        )
+        db_session.add_all([open_order, paid_order])
+        await db_session.commit()
+        await db_session.refresh(open_order)
+        await db_session.refresh(paid_order)
+
+        response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/reservations/{reservation.id}",
+            headers=admin_auth_headers,
+            json={"table_id": second_table.id},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["table_id"] == second_table.id
+
+        await db_session.refresh(open_order)
+        await db_session.refresh(paid_order)
+        assert open_order.table_id == second_table.id
+        assert paid_order.table_id == test_table.id
+
 
 class TestReservationStatus:
     """Tests for reservation status changes."""
