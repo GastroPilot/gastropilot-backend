@@ -2,7 +2,7 @@
 Tests for order endpoints.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -12,14 +12,31 @@ class TestOrderCRUD:
     """Tests for order CRUD operations."""
 
     async def test_create_order(
-        self, client: AsyncClient, test_restaurant, test_table, admin_auth_headers
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
     ):
         """Test creating a new order."""
+        from app.database.models import Reservation
+
+        start_time = datetime.now(UTC) + timedelta(hours=1)
+        reservation = Reservation(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            start_at=start_time,
+            end_at=start_time + timedelta(hours=2),
+            party_size=4,
+            status="confirmed",
+            channel="manual",
+            guest_name="Order Guest",
+        )
+        db_session.add(reservation)
+        await db_session.commit()
+        await db_session.refresh(reservation)
+
         response = await client.post(
             f"/v1/restaurants/{test_restaurant.id}/orders",
             headers=admin_auth_headers,
             json={
-                "table_id": test_table.id,
+                "reservation_id": reservation.id,
                 "party_size": 4,
                 "notes": "Test order",
             },
@@ -28,8 +45,26 @@ class TestOrderCRUD:
         assert response.status_code == 201
         data = response.json()
         assert data["table_id"] == test_table.id
+        assert data["reservation_id"] == reservation.id
         assert data["status"] == "open"
         assert data["party_size"] == 4
+
+    async def test_create_order_requires_reservation(
+        self, client: AsyncClient, test_restaurant, test_table, admin_auth_headers
+    ):
+        """Order creation must be rejected when reservation is missing."""
+        response = await client.post(
+            f"/v1/restaurants/{test_restaurant.id}/orders",
+            headers=admin_auth_headers,
+            json={
+                "table_id": test_table.id,
+                "party_size": 2,
+                "notes": "Missing reservation",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Reservation is required for every order"
 
     async def test_list_orders(
         self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
@@ -122,6 +157,70 @@ class TestOrderCRUD:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "sent_to_kitchen"
+
+    async def test_reject_manual_table_change_for_reservation_bound_order(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """Order table must not be changed directly when reservation-bound."""
+        from app.database.models import Order, Reservation, Table
+
+        second_table = Table(
+            restaurant_id=test_restaurant.id,
+            number="T2",
+            capacity=4,
+            shape="rectangle",
+            position_x=220.0,
+            position_y=100.0,
+            width=120.0,
+            height=80.0,
+            is_active=True,
+        )
+        db_session.add(second_table)
+        await db_session.commit()
+        await db_session.refresh(second_table)
+
+        start_time = datetime.now(UTC) + timedelta(hours=2)
+        reservation = Reservation(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            start_at=start_time,
+            end_at=start_time + timedelta(hours=2),
+            party_size=2,
+            status="confirmed",
+            channel="manual",
+            guest_name="Bound Guest",
+        )
+        db_session.add(reservation)
+        await db_session.commit()
+        await db_session.refresh(reservation)
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            reservation_id=reservation.id,
+            table_id=test_table.id,
+            status="open",
+            party_size=2,
+            subtotal=0.0,
+            tax_amount=0.0,
+            tax_amount_7=0.0,
+            tax_amount_19=0.0,
+            total=0.0,
+        )
+        db_session.add(order)
+        await db_session.commit()
+        await db_session.refresh(order)
+
+        response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}",
+            headers=admin_auth_headers,
+            json={"table_id": second_table.id},
+        )
+
+        assert response.status_code == 400
+        assert (
+            response.json()["detail"]
+            == "Table assignment is derived from reservation. Update reservation instead."
+        )
 
 
 class TestOrderItems:

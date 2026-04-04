@@ -157,8 +157,25 @@ async def create_order(
     """Erstellt eine neue Bestellung (Mitarbeiter oder höher)."""
     await _get_restaurant_or_404(restaurant_id, session)
 
-    if order_data.table_id:
-        table = await session.get(Table, order_data.table_id)
+    if not order_data.reservation_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reservation is required for every order",
+        )
+
+    reservation = await session.get(Reservation, order_data.reservation_id)
+    if not reservation or reservation.restaurant_id != restaurant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found")
+
+    resolved_table_id = reservation.table_id
+    if order_data.table_id and resolved_table_id and order_data.table_id != resolved_table_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Table does not match reservation assignment",
+        )
+
+    if resolved_table_id:
+        table = await session.get(Table, resolved_table_id)
         if not table or table.restaurant_id != restaurant_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
 
@@ -167,20 +184,13 @@ async def create_order(
         if not guest or guest.restaurant_id != restaurant_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guest not found")
 
-    if order_data.reservation_id:
-        reservation = await session.get(Reservation, order_data.reservation_id)
-        if not reservation or reservation.restaurant_id != restaurant_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found"
-            )
-
     order_number = await _generate_order_number(restaurant_id, session)
 
     order = Order(
         restaurant_id=restaurant_id,
-        table_id=order_data.table_id,
+        table_id=resolved_table_id,
         guest_id=order_data.guest_id,
-        reservation_id=order_data.reservation_id,
+        reservation_id=reservation.id,
         order_number=order_number,
         party_size=order_data.party_size,
         notes=order_data.notes,
@@ -342,7 +352,31 @@ async def update_order(
 
     update_data = order_data.model_dump(exclude_unset=True)
 
-    if "table_id" in update_data and update_data["table_id"]:
+    if "reservation_id" in update_data:
+        reservation_id = update_data["reservation_id"]
+        if not reservation_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reservation is required for every order",
+            )
+        reservation = await session.get(Reservation, reservation_id)
+        if not reservation or reservation.restaurant_id != restaurant_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found"
+            )
+        if "table_id" in update_data and update_data["table_id"] not in (None, reservation.table_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Table does not match reservation assignment",
+            )
+        update_data["table_id"] = reservation.table_id
+
+    if "table_id" in update_data and update_data["table_id"] and "reservation_id" not in update_data:
+        if order.reservation_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Table assignment is derived from reservation. Update reservation instead.",
+            )
         table = await session.get(Table, update_data["table_id"])
         if not table or table.restaurant_id != restaurant_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
@@ -351,13 +385,6 @@ async def update_order(
         guest = await session.get(Guest, update_data["guest_id"])
         if not guest or guest.restaurant_id != restaurant_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guest not found")
-
-    if "reservation_id" in update_data and update_data["reservation_id"]:
-        reservation = await session.get(Reservation, update_data["reservation_id"])
-        if not reservation or reservation.restaurant_id != restaurant_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found"
-            )
 
     if "split_payments" in update_data:
         update_data["split_payments"] = _serialize_split_payments(update_data["split_payments"])
