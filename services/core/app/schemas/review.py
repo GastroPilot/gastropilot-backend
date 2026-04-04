@@ -27,10 +27,12 @@ class ReviewResponse(BaseModel):
     title: str | None = None
     text: str | None = None
     author_name: str
+    is_mine: bool = False
     is_verified: bool = False
     staff_reply: str | None = None
     staff_reply_at: datetime | None = None
     created_at: datetime
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

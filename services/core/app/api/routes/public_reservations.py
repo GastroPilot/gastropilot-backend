@@ -15,6 +15,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
+from app.core.guest_deps import get_current_guest
 from app.models.block import Block, BlockAssignment
 from app.models.reservation import Guest, Reservation
 from app.models.restaurant import Restaurant, Table
@@ -288,6 +289,7 @@ async def check_availability(
 async def create_reservation(
     slug: str,
     body: PublicReservationCreate,
+    current_guest: GuestProfile = Depends(get_current_guest),
     db: AsyncSession = Depends(get_db),
 ):
     restaurant = await _get_restaurant_by_slug(slug, db)
@@ -322,15 +324,26 @@ async def create_reservation(
 
     # Create or find guest
     guest_result = await db.execute(
-        select(Guest).where(and_(Guest.tenant_id == restaurant.id, Guest.email == body.guest_email))
+        select(Guest).where(
+            and_(
+                Guest.tenant_id == restaurant.id,
+                Guest.guest_profile_id == current_guest.id,
+            )
+        )
     )
     guest = guest_result.scalar_one_or_none()
 
-    # Look up global guest profile by email to link reservation to profile
-    profile_result = await db.execute(
-        select(GuestProfile).where(GuestProfile.email == body.guest_email)
-    )
-    guest_profile = profile_result.scalar_one_or_none()
+    if not guest and current_guest.email:
+        # Backward-compatibility: link old guest records by account email.
+        guest_by_email_result = await db.execute(
+            select(Guest).where(
+                and_(
+                    Guest.tenant_id == restaurant.id,
+                    Guest.email == current_guest.email,
+                )
+            )
+        )
+        guest = guest_by_email_result.scalar_one_or_none()
 
     if not guest:
         name_parts = body.guest_name.strip().split(" ", 1)
@@ -340,13 +353,13 @@ async def create_reservation(
             last_name=name_parts[1] if len(name_parts) > 1 else "",
             email=body.guest_email,
             phone=body.guest_phone,
-            guest_profile_id=guest_profile.id if guest_profile else None,
+            guest_profile_id=current_guest.id,
         )
         db.add(guest)
         await db.flush()
-    elif guest_profile and not guest.guest_profile_id:
-        # Link existing guest to profile if not yet linked
-        guest.guest_profile_id = guest_profile.id
+    elif not guest.guest_profile_id:
+        # Link existing guest to authenticated profile if not yet linked.
+        guest.guest_profile_id = current_guest.id
 
     confirmation_code = secrets.token_urlsafe(6).upper()[:8]
 

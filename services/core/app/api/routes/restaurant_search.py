@@ -10,9 +10,11 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
+from app.core.guest_deps import get_optional_guest
 from app.models.menu import MenuCategory, MenuItem
 from app.models.restaurant import Restaurant
 from app.models.review import Review
+from app.models.user import GuestProfile
 from app.schemas.restaurant_search import (
     RestaurantSearchResponse,
 )
@@ -297,11 +299,10 @@ async def list_restaurant_reviews(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    current_guest: GuestProfile | None = Depends(get_optional_guest),
 ):
     """Paginated reviews for a restaurant."""
     restaurant = await _get_public_restaurant(slug, db)
-
-    from app.models.user import GuestProfile
 
     avg_rating, total = await _get_rating_stats(db, restaurant.id)
 
@@ -330,13 +331,19 @@ async def list_restaurant_reviews(
             rating=review.rating,
             title=review.title,
             text=review.text,
-            author_name=f"{guest.first_name} {guest.last_name[0]}.",
+            author_name=(
+                f"{review_author.first_name} {review_author.last_name[0]}."
+                if review_author.last_name
+                else review_author.first_name
+            ),
+            is_mine=bool(current_guest and review.guest_profile_id == current_guest.id),
             is_verified=getattr(review, "is_verified", False),
             staff_reply=review.staff_reply,
             staff_reply_at=review.staff_reply_at,
             created_at=review.created_at,
+            updated_at=review.updated_at,
         )
-        for review, guest in rows
+        for review, review_author in rows
     ]
 
     return ReviewListResponse(
