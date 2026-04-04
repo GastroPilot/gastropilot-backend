@@ -9,7 +9,6 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,8 +18,12 @@ from app.core.guest_deps import get_current_guest
 from app.models.block import Block, BlockAssignment
 from app.models.reservation import Guest, Reservation
 from app.models.restaurant import Restaurant, Table
-from app.models.table_config import ReservationTable, TableDayConfig
 from app.models.user import GuestProfile
+from app.services.table_group_service import (
+    fetch_reserved_table_ids,
+    resolve_group_table_ids,
+    sync_reservation_table_links,
+)
 from app.utils.ics_generator import generate_ics_file
 
 logger = logging.getLogger(__name__)
@@ -145,20 +148,13 @@ async def _find_available_table(
     blocked_result = await db.execute(blocks_query)
     blocked_table_ids = {row[0] for row in blocked_result.all()}
 
-    # Get reserved table IDs
-    reserved_query = select(Reservation.table_id).where(
-        and_(
-            Reservation.tenant_id == tenant_id,
-            Reservation.table_id.isnot(None),
-            Reservation.status.in_(["pending", "confirmed", "seated"]),
-            Reservation.start_at < end_at,
-            Reservation.end_at > start_at,
-        )
+    reserved_table_ids = await fetch_reserved_table_ids(
+        db,
+        tenant_id,
+        start_at,
+        end_at,
+        exclude_reservation_id=exclude_reservation_id,
     )
-    if exclude_reservation_id:
-        reserved_query = reserved_query.where(Reservation.id != exclude_reservation_id)
-    reserved_result = await db.execute(reserved_query)
-    reserved_table_ids = {row[0] for row in reserved_result.all()}
 
     unavailable = blocked_table_ids | reserved_table_ids
     for table in tables:
@@ -199,17 +195,7 @@ async def _count_available_tables(
     blocked_result = await db.execute(blocks_query)
     blocked_ids = {row[0] for row in blocked_result.all()}
 
-    reserved_query = select(Reservation.table_id).where(
-        and_(
-            Reservation.tenant_id == tenant_id,
-            Reservation.table_id.isnot(None),
-            Reservation.status.in_(["pending", "confirmed", "seated"]),
-            Reservation.start_at < end_at,
-            Reservation.end_at > start_at,
-        )
-    )
-    reserved_result = await db.execute(reserved_query)
-    reserved_ids = {row[0] for row in reserved_result.all()}
+    reserved_ids = await fetch_reserved_table_ids(db, tenant_id, start_at, end_at)
 
     unavailable = blocked_ids | reserved_ids
     return sum(1 for t in tables if t.id not in unavailable)
@@ -382,17 +368,16 @@ async def create_reservation(
 
     db.add(reservation)
     await db.flush()
-
-    # Reservation-Table junction
-    db.add(
-        ReservationTable(
-            reservation_id=reservation.id,
-            table_id=table.id,
-            tenant_id=restaurant.id,
-            start_at=start_utc,
-            end_at=end_utc,
+    try:
+        resolved_table_ids = await resolve_group_table_ids(
+            db,
+            restaurant.id,
+            table.id,
+            start_utc,
         )
-    )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    await sync_reservation_table_links(db, reservation, resolved_table_ids)
 
     await db.commit()
     await db.refresh(reservation)

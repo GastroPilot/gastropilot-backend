@@ -18,6 +18,7 @@ class Order(Base):
         index=True,
     )
     table_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    table_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     guest_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     reservation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     order_number: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)

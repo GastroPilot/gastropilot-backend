@@ -4,12 +4,16 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.reservation import Reservation
 from app.models.restaurant import Table
 from app.schemas.reservation import TimeSlot
+from app.services.table_group_service import (
+    fetch_reservation_table_ids_map,
+    fetch_reserved_table_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +50,6 @@ async def get_available_timeslots(
     if not suitable_tables:
         return []
 
-    table_ids = [t.id for t in suitable_tables]
-
     # Bestehende Reservierungen für den Tag laden
     day_start = datetime(target_date.year, target_date.month, target_date.day, 0, 0, tzinfo=UTC)
     day_end = day_start + timedelta(days=1)
@@ -55,7 +57,7 @@ async def get_available_timeslots(
     reservations_result = await session.execute(
         select(Reservation).where(
             and_(
-                Reservation.table_id.in_(table_ids),
+                Reservation.tenant_id == tenant_id,
                 Reservation.start_at >= day_start,
                 Reservation.start_at < day_end,
                 Reservation.status.in_(["pending", "confirmed", "seated"]),
@@ -63,6 +65,12 @@ async def get_available_timeslots(
         )
     )
     existing_reservations = reservations_result.scalars().all()
+    reservation_ids = [reservation.id for reservation in existing_reservations]
+    reservation_table_id_map = await fetch_reservation_table_ids_map(
+        session,
+        tenant_id,
+        reservation_ids,
+    )
 
     # Zeitslots generieren
     slots = []
@@ -82,7 +90,11 @@ async def get_available_timeslots(
             # Prüfe ob dieser Tisch in dem Zeitfenster frei ist
             conflict = False
             for res in existing_reservations:
-                if res.table_id != table.id:
+                affected_table_ids = reservation_table_id_map.get(str(res.id))
+                if affected_table_ids:
+                    if str(table.id) not in affected_table_ids:
+                        continue
+                elif res.table_id != table.id:
                     continue
                 res_end = res.end_at or (res.start_at + timedelta(minutes=DEFAULT_DURATION_MINUTES))
                 # Überlappungs-Check
@@ -126,24 +138,12 @@ async def find_available_table(
         .order_by(Table.capacity)  # kleinsten passenden zuerst
     )
     suitable_tables = tables_result.scalars().all()
+    if not suitable_tables:
+        return None
 
+    reserved_table_ids = await fetch_reserved_table_ids(session, tenant_id, starts_at, ends_at)
     for table in suitable_tables:
-        conflict_result = await session.execute(
-            select(func.count(Reservation.id)).where(
-                and_(
-                    Reservation.table_id == table.id,
-                    Reservation.status.in_(["pending", "confirmed", "seated"]),
-                    Reservation.start_at < ends_at,
-                    (
-                        Reservation.end_at > starts_at
-                        if Reservation.end_at is not None
-                        else Reservation.start_at >= starts_at
-                    ),
-                )
-            )
-        )
-        count = conflict_result.scalar_one()
-        if count == 0:
+        if table.id not in reserved_table_ids:
             return table
 
     return None

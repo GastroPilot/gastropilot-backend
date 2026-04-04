@@ -14,7 +14,7 @@ from app.core.deps import (
     require_manager_or_above,
     require_staff_or_above,
 )
-from app.models.restaurant import Restaurant, Table
+from app.models.restaurant import Area, Restaurant, Table
 from app.models.table_config import ReservationTableDayConfig, TableDayConfig
 from app.models.user import User
 
@@ -27,6 +27,7 @@ router = APIRouter(prefix="/table-day-configs", tags=["table-day-configs"])
 class TableDayConfigCreate(BaseModel):
     restaurant_id: UUID | None = None
     table_id: UUID | None = None
+    area_id: UUID | None = None
     date: date_type
     is_hidden: bool = False
     is_temporary: bool = False
@@ -46,6 +47,7 @@ class TableDayConfigCreate(BaseModel):
 
 
 class TableDayConfigUpdate(BaseModel):
+    area_id: UUID | None = None
     is_hidden: bool | None = None
     is_temporary: bool | None = None
     number: str | None = None
@@ -67,6 +69,7 @@ class TableDayConfigResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     table_id: UUID | None = None
+    area_id: UUID | None = None
     date: date_type
     is_hidden: bool
     is_temporary: bool
@@ -92,6 +95,7 @@ async def _resolve_tenant_context_for_config(
     db: AsyncSession,
     requested_tenant_id: UUID | None,
     table_id: UUID | None,
+    area_id: UUID | None,
 ) -> UUID:
     effective_tenant_id = getattr(request.state, "tenant_id", None) or current_user.tenant_id
     if effective_tenant_id:
@@ -109,6 +113,14 @@ async def _resolve_tenant_context_for_config(
                 raise HTTPException(
                     status_code=403,
                     detail="Table does not belong to tenant context",
+                )
+        if area_id:
+            area_tenant_result = await db.execute(select(Area.tenant_id).where(Area.id == area_id))
+            area_tenant_id = area_tenant_result.scalar_one_or_none()
+            if area_tenant_id and area_tenant_id != effective_tenant_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Area does not belong to tenant context",
                 )
         return effective_tenant_id
 
@@ -130,6 +142,14 @@ async def _resolve_tenant_context_for_config(
                 raise HTTPException(
                     status_code=403,
                     detail="Table does not belong to requested restaurant",
+                )
+        if area_id:
+            area_tenant_result = await db.execute(select(Area.tenant_id).where(Area.id == area_id))
+            area_tenant_id = area_tenant_result.scalar_one_or_none()
+            if area_tenant_id and area_tenant_id != requested_tenant_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Area does not belong to requested restaurant",
                 )
         return requested_tenant_id
 
@@ -184,12 +204,15 @@ async def create_or_update_config(
         db=db,
         requested_tenant_id=body.restaurant_id,
         table_id=body.table_id,
+        area_id=body.area_id,
     )
 
     if body.is_temporary and not body.number:
         raise HTTPException(status_code=400, detail="Temporary tables require a number")
     if body.is_temporary and body.capacity is None:
         raise HTTPException(status_code=400, detail="Temporary tables require a capacity")
+    if body.is_temporary and body.area_id is None:
+        raise HTTPException(status_code=400, detail="Temporary tables require an area_id")
 
     # Upsert: check if config already exists for this table+date
     if body.table_id:
@@ -205,7 +228,7 @@ async def create_or_update_config(
         existing = result.scalar_one_or_none()
         if existing:
             for field, value in body.model_dump(
-                exclude_none=True, exclude={"restaurant_id", "table_id", "date"}
+                exclude_unset=True, exclude={"restaurant_id", "table_id", "date"}
             ).items():
                 setattr(existing, field, value)
             await db.commit()
@@ -218,6 +241,8 @@ async def create_or_update_config(
         table_result = await db.execute(select(Table).where(Table.id == body.table_id))
         table = table_result.scalar_one_or_none()
         if table:
+            if "area_id" not in config_data:
+                config_data["area_id"] = table.area_id
             for field in (
                 "position_x",
                 "position_y",
@@ -251,7 +276,7 @@ async def update_config(
     if not config:
         raise HTTPException(status_code=404, detail="Config not found")
 
-    for field, value in body.model_dump(exclude_none=True).items():
+    for field, value in body.model_dump(exclude_unset=True).items():
         setattr(config, field, value)
 
     await db.commit()

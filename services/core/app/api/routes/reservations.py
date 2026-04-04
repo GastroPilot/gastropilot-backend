@@ -8,20 +8,23 @@ from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user, get_db, require_staff_or_above
+from app.core.deps import get_db, require_staff_or_above
 from app.models.reservation import Guest, Reservation
 from app.models.restaurant import Restaurant, Table
 from app.models.user import User
 from app.schemas.reservation import (
     ReservationCreate,
-    ReservationResponse,
     ReservationUpdate,
     TimeSlot,
-    TimeSlotRequest,
 )
 from app.services.reservation_service import (
     DEFAULT_DURATION_MINUTES,
     get_available_timeslots,
+)
+from app.services.table_group_service import (
+    fetch_reservation_table_ids_map,
+    resolve_group_table_ids,
+    sync_reservation_table_links,
 )
 
 router = APIRouter(prefix="/reservations", tags=["reservations"])
@@ -97,12 +100,17 @@ async def _resolve_tenant_context_for_create(
     )
 
 
-def _reservation_to_dict(r: Reservation) -> dict:
+def _reservation_to_dict(r: Reservation, table_ids: list[str] | None = None) -> dict:
+    resolved_table_ids = table_ids or ([str(r.table_id)] if r.table_id else [])
+    primary_table_id = (
+        str(r.table_id) if r.table_id else (resolved_table_ids[0] if resolved_table_ids else None)
+    )
     return {
         "id": str(r.id),
         "tenant_id": str(r.tenant_id),
         "guest_id": str(r.guest_id) if r.guest_id else None,
-        "table_id": str(r.table_id) if r.table_id else None,
+        "table_id": primary_table_id,
+        "table_ids": resolved_table_ids,
         "party_size": r.party_size,
         "starts_at": r.start_at.isoformat() if r.start_at else None,
         "ends_at": r.end_at.isoformat() if r.end_at else None,
@@ -164,8 +172,16 @@ async def list_reservations(
     query = query.order_by(Reservation.start_at)
     result = await db.execute(query)
     reservations = result.scalars().all()
+    table_ids_map: dict[str, list[str]] = {}
+    if effective_tenant_id:
+        reservation_ids = [reservation.id for reservation in reservations]
+        table_ids_map = await fetch_reservation_table_ids_map(
+            db,
+            effective_tenant_id,
+            reservation_ids,
+        )
 
-    return [_reservation_to_dict(r) for r in reservations]
+    return [_reservation_to_dict(r, table_ids_map.get(str(r.id))) for r in reservations]
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
@@ -201,6 +217,18 @@ async def create_reservation(
     # Kein automatisches Tisch-Matching mehr im Staff-Flow:
     # Ohne explizite Tischwahl bleibt die Reservierung unzugewiesen.
     table_id = body.table_id
+    resolved_table_ids: list[UUID] = []
+    if table_id is not None:
+        try:
+            resolved_table_ids = await resolve_group_table_ids(
+                db,
+                effective_tenant_id,
+                table_id,
+                body.starts_at,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        table_id = resolved_table_ids[0] if resolved_table_ids else table_id
 
     reservation = Reservation(
         tenant_id=effective_tenant_id,
@@ -219,9 +247,12 @@ async def create_reservation(
         status=body.status,
     )
     db.add(reservation)
+    await db.flush()
+    await sync_reservation_table_links(db, reservation, resolved_table_ids)
     await db.commit()
     await db.refresh(reservation)
-    return _reservation_to_dict(reservation)
+    table_ids_map = await fetch_reservation_table_ids_map(db, effective_tenant_id, [reservation.id])
+    return _reservation_to_dict(reservation, table_ids_map.get(str(reservation.id)))
 
 
 @router.get("/timeslots", response_model=list[TimeSlot])
@@ -260,7 +291,8 @@ async def get_reservation(
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
     if reservation.tenant_id != effective_tenant_id:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
-    return _reservation_to_dict(reservation)
+    table_ids_map = await fetch_reservation_table_ids_map(db, effective_tenant_id, [reservation.id])
+    return _reservation_to_dict(reservation, table_ids_map.get(str(reservation.id)))
 
 
 @router.patch("/{reservation_id}")
@@ -279,16 +311,35 @@ async def update_reservation(
     if reservation.tenant_id != effective_tenant_id:
         raise HTTPException(status_code=404, detail="Reservierung nicht gefunden")
 
-    update_data = body.model_dump(exclude_none=True)
+    update_data = body.model_dump(exclude_unset=True)
     # Map schema field names to model field names
     field_map = {"starts_at": "start_at", "ends_at": "end_at"}
+    should_resync_table_links = any(
+        field in update_data for field in ("table_id", "starts_at", "ends_at")
+    )
     for field, value in update_data.items():
         model_field = field_map.get(field, field)
         setattr(reservation, model_field, value)
 
+    if should_resync_table_links:
+        if reservation.table_id is None:
+            await sync_reservation_table_links(db, reservation, [])
+        else:
+            try:
+                resolved_table_ids = await resolve_group_table_ids(
+                    db,
+                    effective_tenant_id,
+                    reservation.table_id,
+                    reservation.start_at,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=404, detail=str(exc))
+            await sync_reservation_table_links(db, reservation, resolved_table_ids)
+
     await db.commit()
     await db.refresh(reservation)
-    return _reservation_to_dict(reservation)
+    table_ids_map = await fetch_reservation_table_ids_map(db, effective_tenant_id, [reservation.id])
+    return _reservation_to_dict(reservation, table_ids_map.get(str(reservation.id)))
 
 
 @router.delete("/{reservation_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -331,4 +382,5 @@ async def cancel_reservation_post(
     reservation.canceled_reason = body.canceled_reason
     await db.commit()
     await db.refresh(reservation)
-    return _reservation_to_dict(reservation)
+    table_ids_map = await fetch_reservation_table_ids_map(db, effective_tenant_id, [reservation.id])
+    return _reservation_to_dict(reservation, table_ids_map.get(str(reservation.id)))
