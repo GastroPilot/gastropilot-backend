@@ -36,4 +36,3 @@ def apply_order_status_timestamps(order: Order, new_status: str) -> None:
         if order.ready_at is None:
             order.ready_at = order.in_preparation_at or opened_at
         order.served_at = now
-

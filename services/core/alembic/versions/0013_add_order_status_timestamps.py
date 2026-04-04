@@ -22,38 +22,30 @@ def upgrade() -> None:
     op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS served_at TIMESTAMPTZ")
 
     # Best-effort backfill for existing rows based on current status.
-    op.execute(
-        """
+    op.execute("""
         UPDATE orders
         SET sent_to_kitchen_at = opened_at
         WHERE sent_to_kitchen_at IS NULL
           AND status IN ('sent_to_kitchen', 'in_preparation', 'ready', 'served', 'paid', 'canceled')
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         UPDATE orders
         SET in_preparation_at = COALESCE(sent_to_kitchen_at, opened_at)
         WHERE in_preparation_at IS NULL
           AND status IN ('in_preparation', 'ready', 'served', 'paid', 'canceled')
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         UPDATE orders
         SET ready_at = COALESCE(in_preparation_at, sent_to_kitchen_at, opened_at)
         WHERE ready_at IS NULL
           AND status IN ('ready', 'served', 'paid', 'canceled')
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         UPDATE orders
         SET served_at = COALESCE(ready_at, in_preparation_at, sent_to_kitchen_at, opened_at)
         WHERE served_at IS NULL
           AND status IN ('served', 'paid')
-        """
-    )
+        """)
 
 
 def downgrade() -> None:
@@ -61,4 +53,3 @@ def downgrade() -> None:
     op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS ready_at")
     op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS in_preparation_at")
     op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS sent_to_kitchen_at")
-

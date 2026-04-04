@@ -77,9 +77,7 @@ async def get_kitchen_queue(
             "sent_to_kitchen_at": (
                 o.sent_to_kitchen_at.isoformat() if o.sent_to_kitchen_at else None
             ),
-            "in_preparation_at": (
-                o.in_preparation_at.isoformat() if o.in_preparation_at else None
-            ),
+            "in_preparation_at": (o.in_preparation_at.isoformat() if o.in_preparation_at else None),
             "ready_at": o.ready_at.isoformat() if o.ready_at else None,
             "served_at": o.served_at.isoformat() if o.served_at else None,
             "created_at": o.created_at.isoformat() if o.created_at else None,

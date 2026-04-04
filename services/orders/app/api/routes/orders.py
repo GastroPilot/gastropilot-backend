@@ -240,10 +240,7 @@ async def list_orders(
         query = query.where(Order.status == status)
     result = await session.execute(query.order_by(Order.opened_at.desc()))
     orders = result.scalars().all()
-    return [
-        _serialize_order(o)
-        for o in orders
-    ]
+    return [_serialize_order(o) for o in orders]
 
 
 @router.post("/", status_code=201)
