@@ -129,9 +129,7 @@ def _reference_date_from_datetime(value: datetime | None) -> datetime.date:
 def _is_order_active(status: str | None, payment_status: str | None) -> bool:
     normalized_status = (status or "").lower()
     normalized_payment_status = (payment_status or "").lower()
-    return (
-        normalized_status not in TERMINAL_ORDER_STATUSES and normalized_payment_status != "paid"
-    )
+    return normalized_status not in TERMINAL_ORDER_STATUSES and normalized_payment_status != "paid"
 
 
 def _coerce_uuid_list(values: list[str]) -> list[uuid.UUID]:
@@ -198,7 +196,9 @@ async def _find_active_order_conflict(
             return candidate
 
         if requested_table_ids:
-            candidate_table_ids = set(normalize_order_table_ids(candidate.table_ids, candidate.table_id))
+            candidate_table_ids = set(
+                normalize_order_table_ids(candidate.table_ids, candidate.table_id)
+            )
             if candidate_table_ids.intersection(requested_table_ids):
                 return candidate
 
@@ -211,13 +211,15 @@ async def _resolve_order_table_assignment_from_reservation(
     reservation_id: uuid.UUID,
 ) -> tuple[uuid.UUID | None, list[uuid.UUID]]:
     reservation_result = await session.execute(
-        text("""
+        text(
+            """
             SELECT id, table_id, start_at
             FROM reservations
             WHERE id = :reservation_id
               AND tenant_id = :tenant_id
             LIMIT 1
-            """),
+            """
+        ),
         {"reservation_id": str(reservation_id), "tenant_id": str(tenant_id)},
     )
     reservation_row = reservation_result.first()
@@ -243,12 +245,14 @@ async def _resolve_order_table_assignment_from_reservation(
             resolved_table_ids = [reservation_table_id]
     else:
         reservation_tables_result = await session.execute(
-            text("""
+            text(
+                """
                 SELECT table_id
                 FROM reservation_tables
                 WHERE tenant_id = :tenant_id
                   AND reservation_id = :reservation_id
-                """),
+                """
+            ),
             {"tenant_id": str(tenant_id), "reservation_id": str(reservation_id)},
         )
         resolved_table_ids = [
@@ -390,7 +394,9 @@ async def create_order(
 
         # Resolve menu item allergens in bulk
         menu_item_ids = [
-            item_data.get("menu_item_id") for item_data in data.items if item_data.get("menu_item_id")
+            item_data.get("menu_item_id")
+            for item_data in data.items
+            if item_data.get("menu_item_id")
         ]
         allergens_map: dict[str, list] = {}
         if menu_item_ids:
@@ -625,7 +631,9 @@ async def update_order(
             if key == "status" and isinstance(value, str):
                 apply_order_status_timestamps(order, value)
 
-    effective_table_ids = _coerce_uuid_list(normalize_order_table_ids(order.table_ids, order.table_id))
+    effective_table_ids = _coerce_uuid_list(
+        normalize_order_table_ids(order.table_ids, order.table_id)
+    )
     if _is_order_active(order.status, order.payment_status):
         conflicting_order = await _find_active_order_conflict(
             session,
