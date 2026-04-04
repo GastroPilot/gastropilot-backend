@@ -75,9 +75,7 @@ async def resolve_group_table_ids(
         )
     )
     day_group_table_ids = [
-        table_id
-        for table_id in day_group_result.scalars().all()
-        if table_id is not None
+        table_id for table_id in day_group_result.scalars().all() if table_id is not None
     ]
     if day_group_table_ids:
         return _deduplicate_table_ids([table.id, *day_group_table_ids])
@@ -179,7 +177,9 @@ async def fetch_reserved_table_ids(
         )
     )
     if exclude_reservation_id is not None:
-        grouped_query = grouped_query.where(ReservationTable.reservation_id != exclude_reservation_id)
+        grouped_query = grouped_query.where(
+            ReservationTable.reservation_id != exclude_reservation_id
+        )
 
     grouped_result = await session.execute(grouped_query)
     reserved_table_ids.update(grouped_result.scalars().all())

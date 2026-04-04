@@ -177,7 +177,9 @@ async def create_order(
     order = Order(
         tenant_id=tenant_id,
         table_id=resolved_table_id,
-        table_ids=[str(table_id) for table_id in resolved_table_ids] if resolved_table_ids else None,
+        table_ids=(
+            [str(table_id) for table_id in resolved_table_ids] if resolved_table_ids else None
+        ),
         guest_id=data.guest_id,
         reservation_id=data.reservation_id,
         party_size=data.party_size,

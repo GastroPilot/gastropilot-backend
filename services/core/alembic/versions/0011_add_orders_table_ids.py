@@ -17,8 +17,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_ids JSONB")
-    op.execute(
-        """
+    op.execute("""
         UPDATE orders
         SET table_ids = jsonb_build_array(table_id)
         WHERE table_id IS NOT NULL
@@ -27,8 +26,7 @@ def upgrade() -> None:
             OR jsonb_typeof(table_ids) <> 'array'
             OR table_ids = '[]'::jsonb
           )
-        """
-    )
+        """)
 
 
 def downgrade() -> None:

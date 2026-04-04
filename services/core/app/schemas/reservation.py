@@ -23,9 +23,7 @@ class ReservationBase(BaseModel):
         default=None, validation_alias=AliasChoices("ends_at", "end_at")
     )
     notes: str | None = None
-    source: str = Field(
-        default="manual", validation_alias=AliasChoices("source", "channel")
-    )
+    source: str = Field(default="manual", validation_alias=AliasChoices("source", "channel"))
 
 
 class ReservationCreate(ReservationBase):

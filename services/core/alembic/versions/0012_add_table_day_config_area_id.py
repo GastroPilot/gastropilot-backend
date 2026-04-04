@@ -17,8 +17,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("ALTER TABLE table_day_configs ADD COLUMN IF NOT EXISTS area_id UUID")
-    op.execute(
-        """
+    op.execute("""
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -32,26 +31,22 @@ def upgrade() -> None:
             END IF;
         END
         $$;
-        """
-    )
+        """)
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_table_day_configs_area_id ON table_day_configs(area_id)"
     )
 
     # Backfill non-temporary configs from the linked permanent table.
-    op.execute(
-        """
+    op.execute("""
         UPDATE table_day_configs AS tdc
         SET area_id = t.area_id
         FROM tables AS t
         WHERE tdc.table_id = t.id
           AND tdc.area_id IS NULL
-        """
-    )
+        """)
 
     # Best effort backfill for temporary grouped tables.
-    op.execute(
-        """
+    op.execute("""
         UPDATE table_day_configs AS tmp
         SET area_id = src.area_id
         FROM (
@@ -71,16 +66,13 @@ def upgrade() -> None:
           AND tmp.tenant_id = src.tenant_id
           AND tmp.date = src.date
           AND tmp.join_group_id = src.join_group_id
-        """
-    )
+        """)
 
 
 def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS ix_table_day_configs_area_id")
-    op.execute(
-        """
+    op.execute("""
         ALTER TABLE table_day_configs
         DROP CONSTRAINT IF EXISTS fk_table_day_configs_area_id_areas
-        """
-    )
+        """)
     op.execute("ALTER TABLE table_day_configs DROP COLUMN IF EXISTS area_id")

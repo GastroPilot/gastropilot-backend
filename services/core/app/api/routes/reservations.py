@@ -102,7 +102,9 @@ async def _resolve_tenant_context_for_create(
 
 def _reservation_to_dict(r: Reservation, table_ids: list[str] | None = None) -> dict:
     resolved_table_ids = table_ids or ([str(r.table_id)] if r.table_id else [])
-    primary_table_id = str(r.table_id) if r.table_id else (resolved_table_ids[0] if resolved_table_ids else None)
+    primary_table_id = (
+        str(r.table_id) if r.table_id else (resolved_table_ids[0] if resolved_table_ids else None)
+    )
     return {
         "id": str(r.id),
         "tenant_id": str(r.tenant_id),

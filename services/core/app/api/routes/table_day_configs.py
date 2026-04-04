@@ -115,9 +115,7 @@ async def _resolve_tenant_context_for_config(
                     detail="Table does not belong to tenant context",
                 )
         if area_id:
-            area_tenant_result = await db.execute(
-                select(Area.tenant_id).where(Area.id == area_id)
-            )
+            area_tenant_result = await db.execute(select(Area.tenant_id).where(Area.id == area_id))
             area_tenant_id = area_tenant_result.scalar_one_or_none()
             if area_tenant_id and area_tenant_id != effective_tenant_id:
                 raise HTTPException(
@@ -146,9 +144,7 @@ async def _resolve_tenant_context_for_config(
                     detail="Table does not belong to requested restaurant",
                 )
         if area_id:
-            area_tenant_result = await db.execute(
-                select(Area.tenant_id).where(Area.id == area_id)
-            )
+            area_tenant_result = await db.execute(select(Area.tenant_id).where(Area.id == area_id))
             area_tenant_id = area_tenant_result.scalar_one_or_none()
             if area_tenant_id and area_tenant_id != requested_tenant_id:
                 raise HTTPException(
