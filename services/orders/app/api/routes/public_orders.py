@@ -14,11 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
 from app.models.order import Order, OrderItem
-from app.services.table_group_service import normalize_order_table_ids, resolve_group_table_ids
 from app.schemas.public_order import (
     PublicOrderCreateRequest,
     PublicPaymentRequest,
 )
+from app.services.table_group_service import normalize_order_table_ids, resolve_group_table_ids
 
 logger = logging.getLogger(__name__)
 
