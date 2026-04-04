@@ -63,8 +63,7 @@ async def _sync_active_order_tables_for_reservation(
     table_ids_payload = json.dumps(normalized_table_ids) if normalized_table_ids else None
 
     await db.execute(
-        text(
-            """
+        text("""
             UPDATE orders
             SET table_id = CAST(:table_id AS uuid),
                 table_ids = CAST(:table_ids AS jsonb),
@@ -72,8 +71,7 @@ async def _sync_active_order_tables_for_reservation(
             WHERE tenant_id = CAST(:tenant_id AS uuid)
               AND reservation_id = CAST(:reservation_id AS uuid)
               AND status IN ('open', 'sent_to_kitchen', 'in_preparation', 'ready', 'served')
-            """
-        ),
+            """),
         {
             "tenant_id": str(tenant_id),
             "reservation_id": str(reservation_id),

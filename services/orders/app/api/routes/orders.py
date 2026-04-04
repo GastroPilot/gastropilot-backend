@@ -129,15 +129,13 @@ async def _resolve_order_table_assignment_from_reservation(
     reservation_id: uuid.UUID,
 ) -> tuple[uuid.UUID | None, list[uuid.UUID]]:
     reservation_result = await session.execute(
-        text(
-            """
+        text("""
             SELECT id, table_id, start_at
             FROM reservations
             WHERE id = :reservation_id
               AND tenant_id = :tenant_id
             LIMIT 1
-            """
-        ),
+            """),
         {"reservation_id": str(reservation_id), "tenant_id": str(tenant_id)},
     )
     reservation_row = reservation_result.first()
@@ -163,14 +161,12 @@ async def _resolve_order_table_assignment_from_reservation(
             resolved_table_ids = [reservation_table_id]
     else:
         reservation_tables_result = await session.execute(
-            text(
-                """
+            text("""
                 SELECT table_id
                 FROM reservation_tables
                 WHERE tenant_id = :tenant_id
                   AND reservation_id = :reservation_id
-                """
-            ),
+                """),
             {"tenant_id": str(tenant_id), "reservation_id": str(reservation_id)},
         )
         resolved_table_ids = [
@@ -255,7 +251,11 @@ async def create_order(
         data.reservation_id,
     )
     allowed_table_ids = {str(table_id) for table_id in resolved_table_ids}
-    if data.table_id is not None and allowed_table_ids and str(data.table_id) not in allowed_table_ids:
+    if (
+        data.table_id is not None
+        and allowed_table_ids
+        and str(data.table_id) not in allowed_table_ids
+    ):
         raise HTTPException(
             status_code=400,
             detail="Table does not match reservation assignment",
