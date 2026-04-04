@@ -20,44 +20,79 @@ def upgrade() -> None:
         """
         DO $$
         DECLARE
-            duplicate_reservation_groups INTEGER;
-            duplicate_table_groups INTEGER;
+            canceled_by_reservation INTEGER := 0;
+            canceled_by_table INTEGER := 0;
         BEGIN
-            SELECT COUNT(*)
-            INTO duplicate_reservation_groups
-            FROM (
-                SELECT tenant_id, reservation_id
+            WITH ranked_duplicates AS (
+                SELECT
+                    id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY tenant_id, reservation_id
+                        ORDER BY
+                            COALESCE(opened_at, created_at) DESC,
+                            created_at DESC,
+                            id DESC
+                    ) AS row_num
                 FROM orders
                 WHERE reservation_id IS NOT NULL
                   AND status NOT IN ('paid', 'canceled')
                   AND payment_status <> 'paid'
-                GROUP BY tenant_id, reservation_id
-                HAVING COUNT(*) > 1
-            ) conflicts;
+            )
+            UPDATE orders AS o
+            SET
+                status = 'canceled',
+                closed_at = COALESCE(o.closed_at, NOW()),
+                notes = CASE
+                    WHEN o.notes IS NULL OR o.notes = '' THEN
+                        '[system] Auto-canceled by migration 0014 (duplicate active reservation order).'
+                    WHEN POSITION('[system] Auto-canceled by migration 0014' IN o.notes) > 0 THEN
+                        o.notes
+                    ELSE
+                        o.notes || E'\n[system] Auto-canceled by migration 0014 (duplicate active reservation order).'
+                END
+            FROM ranked_duplicates AS d
+            WHERE o.id = d.id
+              AND d.row_num > 1;
 
-            IF duplicate_reservation_groups > 0 THEN
-                RAISE EXCEPTION
-                    'Migration aborted: % duplicate active reservation-order groups found. Resolve duplicates in orders first.',
-                    duplicate_reservation_groups;
-            END IF;
+            GET DIAGNOSTICS canceled_by_reservation = ROW_COUNT;
 
-            SELECT COUNT(*)
-            INTO duplicate_table_groups
-            FROM (
-                SELECT tenant_id, table_id
+            WITH ranked_duplicates AS (
+                SELECT
+                    id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY tenant_id, table_id
+                        ORDER BY
+                            COALESCE(opened_at, created_at) DESC,
+                            created_at DESC,
+                            id DESC
+                    ) AS row_num
                 FROM orders
                 WHERE table_id IS NOT NULL
                   AND status NOT IN ('paid', 'canceled')
                   AND payment_status <> 'paid'
-                GROUP BY tenant_id, table_id
-                HAVING COUNT(*) > 1
-            ) conflicts;
+            )
+            UPDATE orders AS o
+            SET
+                status = 'canceled',
+                closed_at = COALESCE(o.closed_at, NOW()),
+                notes = CASE
+                    WHEN o.notes IS NULL OR o.notes = '' THEN
+                        '[system] Auto-canceled by migration 0014 (duplicate active table order).'
+                    WHEN POSITION('[system] Auto-canceled by migration 0014' IN o.notes) > 0 THEN
+                        o.notes
+                    ELSE
+                        o.notes || E'\n[system] Auto-canceled by migration 0014 (duplicate active table order).'
+                END
+            FROM ranked_duplicates AS d
+            WHERE o.id = d.id
+              AND d.row_num > 1;
 
-            IF duplicate_table_groups > 0 THEN
-                RAISE EXCEPTION
-                    'Migration aborted: % duplicate active table-order groups found. Resolve duplicates in orders first.',
-                    duplicate_table_groups;
-            END IF;
+            GET DIAGNOSTICS canceled_by_table = ROW_COUNT;
+
+            RAISE NOTICE
+                'Migration 0014 deduplication: canceled % orders by reservation and % orders by table.',
+                canceled_by_reservation,
+                canceled_by_table;
         END
         $$;
         """
