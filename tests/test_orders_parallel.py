@@ -77,28 +77,20 @@ async def test_parallel_create_order_allows_only_one_active_order(monkeypatch, t
         seed_session.add(user)
         await seed_session.flush()
 
-        await seed_session.execute(
-            text(
-                """
+        await seed_session.execute(text("""
                 CREATE UNIQUE INDEX uq_orders_active_reservation_test
                 ON orders(restaurant_id, reservation_id)
                 WHERE reservation_id IS NOT NULL
                   AND status NOT IN ('paid', 'canceled')
                   AND payment_status <> 'paid'
-                """
-            )
-        )
-        await seed_session.execute(
-            text(
-                """
+                """))
+        await seed_session.execute(text("""
                 CREATE UNIQUE INDEX uq_orders_active_table_test
                 ON orders(restaurant_id, table_id)
                 WHERE table_id IS NOT NULL
                   AND status NOT IN ('paid', 'canceled')
                   AND payment_status <> 'paid'
-                """
-            )
-        )
+                """))
 
         await seed_session.commit()
 

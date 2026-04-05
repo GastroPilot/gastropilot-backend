@@ -16,8 +16,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
         DO $$
         DECLARE
             canceled_by_reservation INTEGER := 0;
@@ -95,27 +94,22 @@ def upgrade() -> None:
                 canceled_by_table;
         END
         $$;
-        """
-    )
+        """)
 
-    op.execute(
-        """
+    op.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_active_reservation
         ON orders(tenant_id, reservation_id)
         WHERE reservation_id IS NOT NULL
           AND status NOT IN ('paid', 'canceled')
           AND payment_status <> 'paid'
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_active_table
         ON orders(tenant_id, table_id)
         WHERE table_id IS NOT NULL
           AND status NOT IN ('paid', 'canceled')
           AND payment_status <> 'paid'
-        """
-    )
+        """)
 
 
 def downgrade() -> None:
