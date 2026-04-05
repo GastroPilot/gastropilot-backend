@@ -21,6 +21,7 @@ class MenuCategory(Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category_type: Mapped[str] = mapped_column(String(16), nullable=False, default="food")
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[DateTime] = mapped_column(
