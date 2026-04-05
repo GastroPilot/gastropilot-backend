@@ -546,6 +546,68 @@ class TestOrderPayment:
         assert response.status_code == 403
         assert "owner or Servecta" in response.json()["detail"]
 
+    async def test_mitarbeiter_cannot_reopen_paid_order(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, auth_headers
+    ):
+        """Mitarbeiter darf eine bereits bezahlte Bestellung nicht wieder öffnen."""
+        from app.database.models import Order
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            status="paid",
+            party_size=2,
+            subtotal=40.0,
+            tax_amount=6.4,
+            tax_amount_7=0.0,
+            tax_amount_19=6.4,
+            total=40.0,
+            payment_status="paid",
+        )
+        db_session.add(order)
+        await db_session.commit()
+        await db_session.refresh(order)
+
+        response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}",
+            headers=auth_headers,
+            json={"status": "served"},
+        )
+
+        assert response.status_code == 403
+        assert "owner or Servecta" in response.json()["detail"]
+
+    async def test_mitarbeiter_cannot_reopen_canceled_order(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, auth_headers
+    ):
+        """Mitarbeiter darf eine stornierte Bestellung nicht wieder öffnen."""
+        from app.database.models import Order
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            status="canceled",
+            party_size=2,
+            subtotal=20.0,
+            tax_amount=3.2,
+            tax_amount_7=0.0,
+            tax_amount_19=3.2,
+            total=20.0,
+            payment_status="unpaid",
+        )
+        db_session.add(order)
+        await db_session.commit()
+        await db_session.refresh(order)
+
+        response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}",
+            headers=auth_headers,
+            json={"status": "open"},
+        )
+
+        assert response.status_code == 403
+        assert "owner or Servecta" in response.json()["detail"]
+
 
 class TestOrderStatistics:
     """Tests for order statistics endpoint."""

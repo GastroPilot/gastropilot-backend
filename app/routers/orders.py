@@ -433,11 +433,18 @@ async def update_order(
     status_transition_to_terminal = (
         requested_status in TERMINAL_ORDER_STATUSES and requested_status != order.status
     )
+    status_transition_from_terminal = (
+        order.status in TERMINAL_ORDER_STATUSES
+        and requested_status is not None
+        and requested_status != order.status
+    )
     payment_transition_to_paid = (
         requested_payment_status == "paid" and order.payment_status != "paid"
     )
     if (
-        status_transition_to_terminal or payment_transition_to_paid
+        status_transition_to_terminal
+        or status_transition_from_terminal
+        or payment_transition_to_paid
     ) and current_user.role not in TERMINAL_ORDER_ALLOWED_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
