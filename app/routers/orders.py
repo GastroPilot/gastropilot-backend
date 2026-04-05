@@ -81,10 +81,7 @@ async def _generate_order_number(restaurant_id: int, session: AsyncSession) -> s
 def _is_order_active(status_value: str | None, payment_status_value: str | None) -> bool:
     normalized_status = (status_value or "").lower()
     normalized_payment_status = (payment_status_value or "").lower()
-    return (
-        normalized_status not in TERMINAL_ORDER_STATUSES
-        and normalized_payment_status != "paid"
-    )
+    return normalized_status not in TERMINAL_ORDER_STATUSES and normalized_payment_status != "paid"
 
 
 def _is_active_order_uniqueness_violation(error: IntegrityError) -> bool:
@@ -442,14 +439,21 @@ async def update_order(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found"
             )
-        if "table_id" in update_data and update_data["table_id"] not in (None, reservation.table_id):
+        if "table_id" in update_data and update_data["table_id"] not in (
+            None,
+            reservation.table_id,
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Table does not match reservation assignment",
             )
         update_data["table_id"] = reservation.table_id
 
-    if "table_id" in update_data and update_data["table_id"] and "reservation_id" not in update_data:
+    if (
+        "table_id" in update_data
+        and update_data["table_id"]
+        and "reservation_id" not in update_data
+    ):
         if order.reservation_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
