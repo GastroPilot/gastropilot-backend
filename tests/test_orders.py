@@ -49,6 +49,88 @@ class TestOrderCRUD:
         assert data["status"] == "open"
         assert data["party_size"] == 4
 
+    async def test_create_order_rejects_duplicate_active_order(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """A second active order for the same reservation/table must be rejected."""
+        from app.database.models import Reservation
+
+        start_time = datetime.now(UTC) + timedelta(hours=1)
+        reservation = Reservation(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            start_at=start_time,
+            end_at=start_time + timedelta(hours=2),
+            party_size=2,
+            status="confirmed",
+            channel="manual",
+            guest_name="Duplicate Check",
+        )
+        db_session.add(reservation)
+        await db_session.commit()
+        await db_session.refresh(reservation)
+
+        first_response = await client.post(
+            f"/v1/restaurants/{test_restaurant.id}/orders",
+            headers=admin_auth_headers,
+            json={"reservation_id": reservation.id, "party_size": 2},
+        )
+        assert first_response.status_code == 201
+
+        second_response = await client.post(
+            f"/v1/restaurants/{test_restaurant.id}/orders",
+            headers=admin_auth_headers,
+            json={"reservation_id": reservation.id, "party_size": 2},
+        )
+        assert second_response.status_code == 409
+        assert (
+            second_response.json()["detail"]
+            == "An active order already exists for this reservation or table"
+        )
+
+    async def test_create_order_allows_new_order_after_previous_completed(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """After previous order is completed, a new order can be created."""
+        from app.database.models import Reservation
+
+        start_time = datetime.now(UTC) + timedelta(hours=1)
+        reservation = Reservation(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            start_at=start_time,
+            end_at=start_time + timedelta(hours=2),
+            party_size=2,
+            status="confirmed",
+            channel="manual",
+            guest_name="Completion Check",
+        )
+        db_session.add(reservation)
+        await db_session.commit()
+        await db_session.refresh(reservation)
+
+        create_response = await client.post(
+            f"/v1/restaurants/{test_restaurant.id}/orders",
+            headers=admin_auth_headers,
+            json={"reservation_id": reservation.id, "party_size": 2},
+        )
+        assert create_response.status_code == 201
+        first_order_id = create_response.json()["id"]
+
+        complete_response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/orders/{first_order_id}",
+            headers=admin_auth_headers,
+            json={"status": "paid", "payment_status": "paid"},
+        )
+        assert complete_response.status_code == 200
+
+        second_create_response = await client.post(
+            f"/v1/restaurants/{test_restaurant.id}/orders",
+            headers=admin_auth_headers,
+            json={"reservation_id": reservation.id, "party_size": 2},
+        )
+        assert second_create_response.status_code == 201
+
     async def test_create_order_requires_reservation(
         self, client: AsyncClient, test_restaurant, test_table, admin_auth_headers
     ):

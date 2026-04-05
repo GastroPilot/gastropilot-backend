@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,7 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/orders", tags=["orders"])
+TERMINAL_ORDER_STATUSES = {"paid", "canceled"}
 
 
 async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> Restaurant:
@@ -75,6 +76,63 @@ async def _generate_order_number(restaurant_id: int, session: AsyncSession) -> s
         new_num = 1
 
     return f"{prefix}{new_num:04d}"
+
+
+def _is_order_active(status_value: str | None, payment_status_value: str | None) -> bool:
+    normalized_status = (status_value or "").lower()
+    normalized_payment_status = (payment_status_value or "").lower()
+    return normalized_status not in TERMINAL_ORDER_STATUSES and normalized_payment_status != "paid"
+
+
+def _is_active_order_uniqueness_violation(error: IntegrityError) -> bool:
+    message = str(getattr(error, "orig", error)).lower()
+    signatures = (
+        "uq_orders_active_reservation",
+        "uq_orders_active_table",
+        "orders.tenant_id, orders.reservation_id",
+        "orders.tenant_id, orders.table_id",
+        "orders.restaurant_id, orders.reservation_id",
+        "orders.restaurant_id, orders.table_id",
+    )
+    return any(signature in message for signature in signatures)
+
+
+async def _find_active_order_conflict(
+    restaurant_id: int,
+    session: AsyncSession,
+    reservation_id: int | None,
+    table_id: int | None,
+    *,
+    exclude_order_id: int | None = None,
+) -> Order | None:
+    if reservation_id is None and table_id is None:
+        return None
+
+    query = select(Order).where(
+        Order.restaurant_id == restaurant_id,
+        Order.status.notin_(tuple(TERMINAL_ORDER_STATUSES)),
+        Order.payment_status != "paid",
+    )
+    if exclude_order_id is not None:
+        query = query.where(Order.id != exclude_order_id)
+
+    lookup_filters = []
+    if reservation_id is not None:
+        lookup_filters.append(Order.reservation_id == reservation_id)
+    if table_id is not None:
+        lookup_filters.append(Order.table_id == table_id)
+
+    query = query.where(or_(*lookup_filters)).order_by(Order.opened_at.desc())
+    result = await session.execute(query)
+
+    for candidate in result.scalars().all():
+        if not _is_order_active(candidate.status, candidate.payment_status):
+            continue
+        same_reservation = reservation_id is not None and candidate.reservation_id == reservation_id
+        same_table = table_id is not None and candidate.table_id == table_id
+        if same_reservation or same_table:
+            return candidate
+    return None
 
 
 def _calculate_totals(
@@ -184,6 +242,18 @@ async def create_order(
         if not guest or guest.restaurant_id != restaurant_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guest not found")
 
+    conflicting_order = await _find_active_order_conflict(
+        restaurant_id=restaurant_id,
+        session=session,
+        reservation_id=reservation.id,
+        table_id=resolved_table_id,
+    )
+    if conflicting_order is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An active order already exists for this reservation or table",
+        )
+
     order_number = await _generate_order_number(restaurant_id, session)
 
     order = Order(
@@ -267,8 +337,13 @@ async def create_order(
 
         await session.commit()
         await session.refresh(order)
-    except IntegrityError:
+    except IntegrityError as exc:
         await session.rollback()
+        if _is_active_order_uniqueness_violation(exc):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An active order already exists for this reservation or table",
+            )
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order conflict")
 
     return order
@@ -364,14 +439,21 @@ async def update_order(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found"
             )
-        if "table_id" in update_data and update_data["table_id"] not in (None, reservation.table_id):
+        if "table_id" in update_data and update_data["table_id"] not in (
+            None,
+            reservation.table_id,
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Table does not match reservation assignment",
             )
         update_data["table_id"] = reservation.table_id
 
-    if "table_id" in update_data and update_data["table_id"] and "reservation_id" not in update_data:
+    if (
+        "table_id" in update_data
+        and update_data["table_id"]
+        and "reservation_id" not in update_data
+    ):
         if order.reservation_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -393,6 +475,27 @@ async def update_order(
         update_data["closed_at"] = normalize_datetime_to_utc(update_data["closed_at"])
     if "paid_at" in update_data and update_data["paid_at"]:
         update_data["paid_at"] = normalize_datetime_to_utc(update_data["paid_at"])
+
+    effective_reservation_id = (
+        update_data["reservation_id"] if "reservation_id" in update_data else order.reservation_id
+    )
+    effective_table_id = update_data["table_id"] if "table_id" in update_data else order.table_id
+    effective_status = update_data.get("status", order.status)
+    effective_payment_status = update_data.get("payment_status", order.payment_status)
+
+    if _is_order_active(effective_status, effective_payment_status):
+        conflicting_order = await _find_active_order_conflict(
+            restaurant_id=restaurant_id,
+            session=session,
+            reservation_id=effective_reservation_id,
+            table_id=effective_table_id,
+            exclude_order_id=order.id,
+        )
+        if conflicting_order is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An active order already exists for this reservation or table",
+            )
 
     # Berechne Totals neu wenn relevante Felder geändert wurden
     recalculate_totals = any(
@@ -421,8 +524,13 @@ async def update_order(
     try:
         await session.commit()
         await session.refresh(order)
-    except IntegrityError:
+    except IntegrityError as exc:
         await session.rollback()
+        if _is_active_order_uniqueness_violation(exc):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An active order already exists for this reservation or table",
+            )
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order conflict")
 
     return order

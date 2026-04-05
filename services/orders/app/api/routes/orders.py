@@ -7,7 +7,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db
@@ -28,6 +29,7 @@ ORDER_STATUSES = [
     "paid",
     "canceled",
 ]
+TERMINAL_ORDER_STATUSES = {"paid", "canceled"}
 TABLE_ID_UNSET = object()
 RESERVATION_ID_UNSET = object()
 
@@ -122,6 +124,85 @@ def _reference_date_from_datetime(value: datetime | None) -> datetime.date:
     if value:
         return value.date()
     return datetime.now(UTC).date()
+
+
+def _is_order_active(status: str | None, payment_status: str | None) -> bool:
+    normalized_status = (status or "").lower()
+    normalized_payment_status = (payment_status or "").lower()
+    return normalized_status not in TERMINAL_ORDER_STATUSES and normalized_payment_status != "paid"
+
+
+def _coerce_uuid_list(values: list[str]) -> list[uuid.UUID]:
+    coerced: list[uuid.UUID] = []
+    for value in values:
+        try:
+            coerced.append(uuid.UUID(str(value)))
+        except (TypeError, ValueError):
+            continue
+    return coerced
+
+
+def _is_active_order_uniqueness_violation(error: IntegrityError) -> bool:
+    message = str(getattr(error, "orig", error)).lower()
+    signatures = (
+        "uq_orders_active_reservation",
+        "uq_orders_active_table",
+        "orders.tenant_id, orders.reservation_id",
+        "orders.tenant_id, orders.table_id",
+        "orders.restaurant_id, orders.reservation_id",
+        "orders.restaurant_id, orders.table_id",
+    )
+    return any(signature in message for signature in signatures)
+
+
+async def _find_active_order_conflict(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    reservation_id: uuid.UUID | None,
+    table_ids: list[uuid.UUID],
+    *,
+    exclude_order_id: uuid.UUID | None = None,
+) -> Order | None:
+    if reservation_id is None and not table_ids:
+        return None
+
+    query = select(Order).where(
+        Order.tenant_id == tenant_id,
+        Order.status.notin_(tuple(TERMINAL_ORDER_STATUSES)),
+        Order.payment_status != "paid",
+    )
+
+    if exclude_order_id is not None:
+        query = query.where(Order.id != exclude_order_id)
+
+    lookup_filters = []
+    if reservation_id is not None:
+        lookup_filters.append(Order.reservation_id == reservation_id)
+    if table_ids:
+        lookup_filters.append(Order.table_id.in_(table_ids))
+        lookup_filters.append(Order.table_ids.is_not(None))
+
+    query = query.where(or_(*lookup_filters)).order_by(Order.opened_at.desc())
+    result = await session.execute(query)
+    candidates = result.scalars().all()
+
+    requested_table_ids = {str(table_id) for table_id in table_ids}
+
+    for candidate in candidates:
+        if not _is_order_active(candidate.status, candidate.payment_status):
+            continue
+
+        if reservation_id is not None and candidate.reservation_id == reservation_id:
+            return candidate
+
+        if requested_table_ids:
+            candidate_table_ids = set(
+                normalize_order_table_ids(candidate.table_ids, candidate.table_id)
+            )
+            if candidate_table_ids.intersection(requested_table_ids):
+                return candidate
+
+    return None
 
 
 async def _resolve_order_table_assignment_from_reservation(
@@ -276,6 +357,18 @@ async def create_order(
             detail="Table does not match reservation assignment",
         )
 
+    conflicting_order = await _find_active_order_conflict(
+        session,
+        tenant_id,
+        data.reservation_id,
+        resolved_table_ids,
+    )
+    if conflicting_order is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="An active order already exists for this reservation or table",
+        )
+
     order_number = f"ORD-{secrets.token_hex(4).upper()}"
     order = Order(
         tenant_id=tenant_id,
@@ -290,58 +383,71 @@ async def create_order(
         order_number=order_number,
         created_by_user_id=current_user.id,
     )
-    session.add(order)
-    await session.flush()
 
-    # Resolve menu item allergens in bulk
-    menu_item_ids = [
-        item_data.get("menu_item_id") for item_data in data.items if item_data.get("menu_item_id")
-    ]
-    allergens_map: dict[str, list] = {}
-    if menu_item_ids:
-        rows = await session.execute(
-            text("SELECT id, allergens FROM menu_items WHERE id = ANY(:ids)"),
-            {"ids": menu_item_ids},
-        )
-        for row in rows:
-            allergens_map[str(row.id)] = row.allergens or []
+    try:
+        session.add(order)
+        await session.flush()
 
-    # Resolve guest allergen profile if guest_id is set
-    guest_allergens: list[str] = []
-    if data.guest_id:
-        gp_row = await session.execute(
-            text(
-                "SELECT gp.allergen_profile FROM guest_profiles gp "
-                "JOIN guests g ON g.guest_profile_id = gp.id "
-                "WHERE g.id = :guest_id"
-            ),
-            {"guest_id": data.guest_id},
-        )
-        gp = gp_row.first()
-        if gp and gp.allergen_profile:
-            guest_allergens = gp.allergen_profile
-    if guest_allergens:
-        order.guest_allergens = guest_allergens
+        # Resolve menu item allergens in bulk
+        menu_item_ids = [
+            item_data.get("menu_item_id")
+            for item_data in data.items
+            if item_data.get("menu_item_id")
+        ]
+        allergens_map: dict[str, list] = {}
+        if menu_item_ids:
+            rows = await session.execute(
+                text("SELECT id, allergens FROM menu_items WHERE id = ANY(:ids)"),
+                {"ids": menu_item_ids},
+            )
+            for row in rows:
+                allergens_map[str(row.id)] = row.allergens or []
 
-    for item_data in data.items:
-        qty = item_data.get("quantity", 1)
-        price = item_data.get("unit_price", 0.0)
-        mid = item_data.get("menu_item_id")
-        item_allergens = allergens_map.get(str(mid), []) if mid else []
-        item = OrderItem(
-            order_id=order.id,
-            item_name=item_data.get("item_name", "Unknown"),
-            quantity=qty,
-            unit_price=price,
-            total_price=qty * price,
-            tax_rate=item_data.get("tax_rate", 0.19),
-            notes=item_data.get("notes"),
-            menu_item_id=mid,
-            allergens=item_allergens,
-        )
-        session.add(item)
+        # Resolve guest allergen profile if guest_id is set
+        guest_allergens: list[str] = []
+        if data.guest_id:
+            gp_row = await session.execute(
+                text(
+                    "SELECT gp.allergen_profile FROM guest_profiles gp "
+                    "JOIN guests g ON g.guest_profile_id = gp.id "
+                    "WHERE g.id = :guest_id"
+                ),
+                {"guest_id": data.guest_id},
+            )
+            gp = gp_row.first()
+            if gp and gp.allergen_profile:
+                guest_allergens = gp.allergen_profile
+        if guest_allergens:
+            order.guest_allergens = guest_allergens
 
-    await session.commit()
+        for item_data in data.items:
+            qty = item_data.get("quantity", 1)
+            price = item_data.get("unit_price", 0.0)
+            mid = item_data.get("menu_item_id")
+            item_allergens = allergens_map.get(str(mid), []) if mid else []
+            item = OrderItem(
+                order_id=order.id,
+                item_name=item_data.get("item_name", "Unknown"),
+                quantity=qty,
+                unit_price=price,
+                total_price=qty * price,
+                tax_rate=item_data.get("tax_rate", 0.19),
+                notes=item_data.get("notes"),
+                menu_item_id=mid,
+                allergens=item_allergens,
+            )
+            session.add(item)
+
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        if _is_active_order_uniqueness_violation(exc):
+            raise HTTPException(
+                status_code=409,
+                detail="An active order already exists for this reservation or table",
+            )
+        raise HTTPException(status_code=409, detail="Order conflict")
+
     await session.refresh(order)
 
     await manager.broadcast_to_tenant(
@@ -407,8 +513,17 @@ async def update_order_status(
 
     order.status = data.status
     apply_order_status_timestamps(order, data.status)
-    await session.commit()
-    await session.refresh(order)
+    try:
+        await session.commit()
+        await session.refresh(order)
+    except IntegrityError as exc:
+        await session.rollback()
+        if _is_active_order_uniqueness_violation(exc):
+            raise HTTPException(
+                status_code=409,
+                detail="An active order already exists for this reservation or table",
+            )
+        raise HTTPException(status_code=409, detail="Order conflict")
 
     tenant_id = getattr(request.state, "tenant_id", None)
     if tenant_id:
@@ -512,14 +627,40 @@ async def update_order(
             if key == "status" and isinstance(value, str):
                 apply_order_status_timestamps(order, value)
 
+    effective_table_ids = _coerce_uuid_list(
+        normalize_order_table_ids(order.table_ids, order.table_id)
+    )
+    if _is_order_active(order.status, order.payment_status):
+        conflicting_order = await _find_active_order_conflict(
+            session,
+            order.tenant_id,
+            order.reservation_id,
+            effective_table_ids,
+            exclude_order_id=order.id,
+        )
+        if conflicting_order is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="An active order already exists for this reservation or table",
+            )
+
     # Recalculate total
     subtotal = order.subtotal or 0.0
     discount = order.discount_amount or 0.0
     tip = order.tip_amount or 0.0
     order.total = subtotal - discount + tip
 
-    await session.commit()
-    await session.refresh(order)
+    try:
+        await session.commit()
+        await session.refresh(order)
+    except IntegrityError as exc:
+        await session.rollback()
+        if _is_active_order_uniqueness_violation(exc):
+            raise HTTPException(
+                status_code=409,
+                detail="An active order already exists for this reservation or table",
+            )
+        raise HTTPException(status_code=409, detail="Order conflict")
 
     tenant_id = getattr(request.state, "tenant_id", None)
     if tenant_id:
