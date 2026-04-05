@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
+
+MenuCategoryType = Literal["food", "drink"]
 
 
 class MenuCategoryBase(BaseModel):
     name: str
     description: str | None = None
+    category_type: MenuCategoryType = "food"
     sort_order: int = 0
     is_active: bool = True
 
@@ -20,6 +24,7 @@ class MenuCategoryCreate(MenuCategoryBase):
 class MenuCategoryUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+    category_type: MenuCategoryType | None = None
     sort_order: int | None = None
     is_active: bool | None = None
 
