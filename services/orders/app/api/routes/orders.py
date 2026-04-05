@@ -766,7 +766,9 @@ async def update_order_item(
     session: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    result = await session.execute(select(Order).where(Order.id == order_id))
+    result = await session.execute(
+        select(Order).where(Order.id == order_id).with_for_update()
+    )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")

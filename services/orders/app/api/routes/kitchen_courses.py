@@ -166,6 +166,13 @@ async def update_item_status(
             detail=f"Invalid status: {body.status}",
         )
 
+    order_result = await session.execute(
+        select(Order).where(Order.id == order_id).with_for_update()
+    )
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
     result = await session.execute(
         select(OrderItem).where(
             and_(
@@ -191,11 +198,6 @@ async def update_item_status(
     item.status = normalized_next_status
     if normalized_next_status == "sent" and item.sent_to_kitchen_at is None:
         item.sent_to_kitchen_at = datetime.now(UTC)
-
-    order_result = await session.execute(select(Order).where(Order.id == order_id))
-    order = order_result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
 
     previous_order_status = order.status
     items_result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
