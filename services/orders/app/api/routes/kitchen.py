@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from app.services.order_timing import apply_order_status_timestamps
 from app.websocket.manager import manager
 
 router = APIRouter(prefix="/kitchen", tags=["kitchen"])
+KITCHEN_ACTIVE_ITEM_STATUSES = ("sent", "in_preparation", "ready")
 
 
 @router.get("/queue")
@@ -19,12 +21,34 @@ async def get_kitchen_queue(
     session: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user_or_device),
 ):
+    # Kitchen queue is item-driven: only already sent/active kitchen items are relevant.
+    item_result = await session.execute(
+        select(OrderItem)
+        .where(OrderItem.status.in_(KITCHEN_ACTIVE_ITEM_STATUSES))
+        .order_by(
+            OrderItem.sent_to_kitchen_at.asc(),
+            OrderItem.kitchen_ticket_no.asc(),
+            OrderItem.sort_order.asc(),
+            OrderItem.created_at.asc(),
+        )
+    )
+    active_items = item_result.scalars().all()
+
+    if not active_items:
+        return []
+
+    order_ids = sorted({item.order_id for item in active_items}, key=str)
     result = await session.execute(
         select(Order)
-        .where(Order.status.in_(["sent_to_kitchen", "in_preparation"]))
+        .where(Order.id.in_(order_ids), Order.status.notin_(["paid", "canceled"]))
         .order_by(Order.opened_at.asc())
     )
     orders = result.scalars().all()
+
+    if not orders:
+        return []
+
+    order_ids_set = {order.id for order in orders}
 
     # Resolve table numbers
     table_ids = [o.table_id for o in orders if o.table_id]
@@ -39,28 +63,33 @@ async def get_kitchen_queue(
         for row in rows:
             table_numbers[str(row.id)] = row.number or str(row.id)
 
-    # Load items for all orders
-    order_ids = [o.id for o in orders]
-    items_by_order: dict[str, list[dict]] = {str(oid): [] for oid in order_ids}
-    if order_ids:
-        item_result = await session.execute(
-            select(OrderItem)
-            .where(OrderItem.order_id.in_(order_ids))
-            .order_by(OrderItem.sort_order.asc())
-        )
-        for item in item_result.scalars().all():
-            items_by_order[str(item.order_id)].append(
-                {
-                    "id": str(item.id),
-                    "item_name": item.item_name,
-                    "quantity": item.quantity,
-                    "status": item.status,
-                    "course": item.course or 1,
-                    "notes": item.notes,
-                    "category": item.category,
-                    "allergens": item.allergens or [],
-                }
-            )
+    items_by_order: dict[str, list[dict]] = defaultdict(list)
+    tickets_by_order: dict[str, dict[int | None, list[dict]]] = defaultdict(dict)
+    for item in active_items:
+        if item.order_id not in order_ids_set:
+            continue
+        item_payload = {
+            "id": str(item.id),
+            "item_name": item.item_name,
+            "quantity": item.quantity,
+            "status": item.status,
+            "kitchen_ticket_no": item.kitchen_ticket_no,
+            "sent_to_kitchen_at": (
+                item.sent_to_kitchen_at.isoformat() if item.sent_to_kitchen_at else None
+            ),
+            "course": item.course or 1,
+            "notes": item.notes,
+            "category": item.category,
+            "allergens": item.allergens or [],
+        }
+        order_key = str(item.order_id)
+        items_by_order[order_key].append(item_payload)
+
+        ticket_key = item.kitchen_ticket_no
+        ticket_map = tickets_by_order[order_key]
+        if ticket_key not in ticket_map:
+            ticket_map[ticket_key] = []
+        ticket_map[ticket_key].append(item_payload)
 
     return [
         {
@@ -70,6 +99,29 @@ async def get_kitchen_queue(
             "table_id": str(o.table_id) if o.table_id else None,
             "table_number": table_numbers.get(str(o.table_id), None) if o.table_id else None,
             "items": items_by_order.get(str(o.id), []),
+            "tickets": [
+                {
+                    "kitchen_ticket_no": ticket_no,
+                    "sent_to_kitchen_at": (
+                        min(valid_sent_times) if valid_sent_times else None
+                    ),
+                    "items_count": sum(max(item.get("quantity", 1), 1) for item in ticket_items),
+                    "items": ticket_items,
+                }
+                for ticket_no, ticket_items in sorted(
+                    tickets_by_order.get(str(o.id), {}).items(),
+                    key=lambda entry: (entry[0] is None, entry[0] or 0),
+                )
+                for valid_sent_times in [
+                    sorted(
+                        [
+                            item.get("sent_to_kitchen_at")
+                            for item in ticket_items
+                            if item.get("sent_to_kitchen_at")
+                        ]
+                    )
+                ]
+            ],
             "guest_allergens": o.guest_allergens or [],
             "source": "qr" if (o.order_number or "").startswith("PUB-") else "service",
             "notes": o.notes if not (o.notes or "").startswith("Public order,") else None,

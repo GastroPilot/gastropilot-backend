@@ -75,6 +75,7 @@ class Order(Base):
 
     discount_percentage: Mapped[float | None] = mapped_column(Float, nullable=True)
     guest_allergens: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    kitchen_ticket_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class OrderItem(Base):
@@ -104,6 +105,10 @@ class OrderItem(Base):
         ),
         nullable=False,
         default="pending",
+    )
+    kitchen_ticket_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sent_to_kitchen_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)

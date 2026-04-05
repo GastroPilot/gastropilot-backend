@@ -370,6 +370,185 @@ class TestOrderItems:
         assert data["quantity"] == 2
         assert data["unit_price"] == 15.90
 
+    async def test_add_order_item_reopens_served_order(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """Adding a new item to a served order must reopen it."""
+        from app.database.models import Order
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            status="served",
+            party_size=2,
+            subtotal=0.0,
+            tax_amount=0.0,
+            tax_amount_7=0.0,
+            tax_amount_19=0.0,
+            total=0.0,
+            payment_status="unpaid",
+        )
+        db_session.add(order)
+        await db_session.commit()
+        await db_session.refresh(order)
+
+        response = await client.post(
+            f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}/items",
+            headers=admin_auth_headers,
+            json={
+                "item_name": "Dessert",
+                "quantity": 1,
+                "unit_price": 6.5,
+                "tax_rate": 0.19,
+            },
+        )
+
+        assert response.status_code == 201
+        await db_session.refresh(order)
+        assert order.status == "open"
+
+    async def test_add_order_item_reopens_ready_order(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """Adding a pending item to a ready order must move it back to open."""
+        from app.database.models import Order
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            status="ready",
+            party_size=2,
+            subtotal=0.0,
+            tax_amount=0.0,
+            tax_amount_7=0.0,
+            tax_amount_19=0.0,
+            total=0.0,
+            payment_status="unpaid",
+        )
+        db_session.add(order)
+        await db_session.commit()
+        await db_session.refresh(order)
+
+        response = await client.post(
+            f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}/items",
+            headers=admin_auth_headers,
+            json={
+                "item_name": "Espresso",
+                "quantity": 1,
+                "unit_price": 2.9,
+                "tax_rate": 0.19,
+            },
+        )
+
+        assert response.status_code == 201
+        await db_session.refresh(order)
+        assert order.status == "open"
+
+    async def test_order_status_tracks_item_status_progression(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """Order status should follow the aggregate item kitchen progress."""
+        from app.database.models import Order, OrderItem
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            status="open",
+            party_size=2,
+            subtotal=12.0,
+            tax_amount=1.92,
+            tax_amount_7=0.0,
+            tax_amount_19=1.92,
+            total=12.0,
+            payment_status="unpaid",
+        )
+        db_session.add(order)
+        await db_session.commit()
+        await db_session.refresh(order)
+
+        item = OrderItem(
+            order_id=order.id,
+            item_name="Pasta",
+            quantity=1,
+            unit_price=12.0,
+            total_price=12.0,
+            tax_rate=0.19,
+            status="pending",
+        )
+        db_session.add(item)
+        await db_session.commit()
+        await db_session.refresh(item)
+
+        expected_progress = [
+            ("sent", "sent_to_kitchen"),
+            ("in_preparation", "in_preparation"),
+            ("ready", "ready"),
+            ("served", "served"),
+        ]
+        for item_status, expected_order_status in expected_progress:
+            response = await client.patch(
+                f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}/items/{item.id}",
+                headers=admin_auth_headers,
+                json={"status": item_status},
+            )
+            assert response.status_code == 200
+            await db_session.refresh(order)
+            assert order.status == expected_order_status
+
+    async def test_order_status_remains_open_while_pending_items_exist(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """Any pending item must keep the order in open status."""
+        from app.database.models import Order, OrderItem
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            status="ready",
+            party_size=2,
+            subtotal=18.0,
+            tax_amount=2.87,
+            tax_amount_7=0.0,
+            tax_amount_19=2.87,
+            total=18.0,
+            payment_status="unpaid",
+        )
+        db_session.add(order)
+        await db_session.commit()
+        await db_session.refresh(order)
+
+        ready_item = OrderItem(
+            order_id=order.id,
+            item_name="Steak",
+            quantity=1,
+            unit_price=14.0,
+            total_price=14.0,
+            tax_rate=0.19,
+            status="ready",
+        )
+        pending_item = OrderItem(
+            order_id=order.id,
+            item_name="Dessert",
+            quantity=1,
+            unit_price=4.0,
+            total_price=4.0,
+            tax_rate=0.19,
+            status="pending",
+        )
+        db_session.add_all([ready_item, pending_item])
+        await db_session.commit()
+        await db_session.refresh(ready_item)
+
+        response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}/items/{ready_item.id}",
+            headers=admin_auth_headers,
+            json={"notes": "Bitte sofort servieren"},
+        )
+
+        assert response.status_code == 200
+        await db_session.refresh(order)
+        assert order.status == "open"
+
 
 class TestOrderPayment:
     """Tests for order payment."""

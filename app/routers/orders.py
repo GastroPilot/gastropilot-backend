@@ -36,6 +36,7 @@ from app.schemas import (
 router = APIRouter(prefix="/restaurants/{restaurant_id}/orders", tags=["orders"])
 TERMINAL_ORDER_STATUSES = {"paid", "canceled"}
 TERMINAL_ORDER_ALLOWED_ROLES = {"servecta", "restaurantinhaber"}
+ORDER_ITEM_STATUSES = {"pending", "sent", "in_preparation", "ready", "served", "canceled"}
 
 
 async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> Restaurant:
@@ -191,6 +192,40 @@ def _calculate_totals(
         "tip_amount": round(tip_amount, 2),
         "total": round(total, 2),
     }
+
+
+def _normalize_order_item_status(value: str | None) -> str:
+    normalized = (value or "").strip().lower()
+    return normalized if normalized in ORDER_ITEM_STATUSES else "pending"
+
+
+def _derive_order_status_from_items(items: list[OrderItem]) -> str:
+    normalized_statuses = [_normalize_order_item_status(item.status) for item in items]
+    active_statuses = [status for status in normalized_statuses if status != "canceled"]
+
+    if not active_statuses:
+        return "open"
+    if "pending" in active_statuses:
+        return "open"
+    if "sent" in active_statuses:
+        return "sent_to_kitchen"
+    if "in_preparation" in active_statuses:
+        return "in_preparation"
+    if "ready" in active_statuses:
+        return "ready"
+    if all(status == "served" for status in active_statuses):
+        return "served"
+    return "open"
+
+
+def _sync_order_status_from_items(order: Order, items: list[OrderItem]) -> str:
+    if order.status in TERMINAL_ORDER_STATUSES:
+        return order.status
+
+    next_status = _derive_order_status_from_items(items)
+    if next_status != order.status:
+        order.status = next_status
+    return order.status
 
 
 def _serialize_split_payments(data):
@@ -605,6 +640,10 @@ async def create_order_item(
             detail="Cannot add items to paid or canceled orders",
         )
 
+    # Nachbestellung nach "served": Bestellung wieder aktiv markieren.
+    if order.status == "served":
+        order.status = "open"
+
     total_price = item_data.quantity * item_data.unit_price
 
     # Versuche menu_item_id zu finden falls item_name übereinstimmt
@@ -649,6 +688,7 @@ async def create_order_item(
         # Aktualisiere Totals der Bestellung
         result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
         items = result.scalars().all()
+        _sync_order_status_from_items(order, items)
         totals = _calculate_totals(
             items,
             discount_amount=order.discount_amount,
@@ -699,6 +739,8 @@ async def update_order_item(
         )
 
     update_data = item_data.model_dump(exclude_unset=True)
+    if "status" in update_data:
+        update_data["status"] = _normalize_order_item_status(update_data["status"])
 
     # Berechne neue total_price wenn quantity oder unit_price geändert wird
     quantity = update_data.get("quantity", order_item.quantity)
@@ -718,6 +760,7 @@ async def update_order_item(
         # Aktualisiere Totals der Bestellung
         result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
         items = result.scalars().all()
+        _sync_order_status_from_items(order, items)
         totals = _calculate_totals(
             items,
             discount_amount=order.discount_amount,
@@ -773,6 +816,7 @@ async def delete_order_item(
         # Aktualisiere Totals der Bestellung
         result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
         items = result.scalars().all()
+        _sync_order_status_from_items(order, items)
         totals = _calculate_totals(
             items,
             discount_amount=order.discount_amount,
