@@ -11,7 +11,7 @@ from sqlalchemy import or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user, get_db
+from app.core.deps import get_current_user, get_db, require_owner_or_above
 from app.models.order import Order, OrderItem
 from app.services.order_item_status import (
     can_transition_order_item_status,
@@ -685,7 +685,7 @@ async def delete_order(
     order_id: uuid.UUID,
     request: Request,
     session: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_owner_or_above),
 ):
     result = await session.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()

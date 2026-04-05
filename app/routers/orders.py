@@ -21,7 +21,7 @@ from app.dependencies import (
     normalize_datetime_to_utc,
     require_mitarbeiter_role,
     require_orders_module,
-    require_schichtleiter_role,
+    require_restaurantinhaber_role,
 )
 from app.schemas import (
     OrderCreate,
@@ -601,9 +601,9 @@ async def delete_order(
     order_id: int,
     session: AsyncSession = Depends(get_session),
     _license: User = Depends(require_orders_module),
-    current_user: User = Depends(require_schichtleiter_role),
+    current_user: User = Depends(require_restaurantinhaber_role),
 ):
-    """Löscht eine Bestellung (Schichtleiter oder höher)."""
+    """Löscht eine Bestellung (Restaurantinhaber oder Servecta)."""
     await _get_restaurant_or_404(restaurant_id, session)
     order = await _get_order_or_404(order_id, restaurant_id, session)
 
