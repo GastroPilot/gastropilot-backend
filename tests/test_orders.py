@@ -453,6 +453,99 @@ class TestOrderPayment:
         assert data["payment_method"] == "split"
         assert len(data["split_payments"]) == 2
 
+    async def test_mitarbeiter_cannot_set_status_paid(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, auth_headers
+    ):
+        """Mitarbeiter darf Bestellung nicht direkt auf paid setzen."""
+        from app.database.models import Order
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            status="served",
+            party_size=2,
+            subtotal=50.0,
+            tax_amount=8.0,
+            tax_amount_7=0.0,
+            tax_amount_19=8.0,
+            total=50.0,
+            payment_status="unpaid",
+        )
+        db_session.add(order)
+        await db_session.commit()
+        await db_session.refresh(order)
+
+        response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}",
+            headers=auth_headers,
+            json={"status": "paid"},
+        )
+
+        assert response.status_code == 403
+        assert "owner or Servecta" in response.json()["detail"]
+
+    async def test_mitarbeiter_cannot_set_status_canceled(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, auth_headers
+    ):
+        """Mitarbeiter darf Bestellung nicht direkt auf canceled setzen."""
+        from app.database.models import Order
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            status="open",
+            party_size=2,
+            subtotal=25.0,
+            tax_amount=4.0,
+            tax_amount_7=0.0,
+            tax_amount_19=4.0,
+            total=25.0,
+            payment_status="unpaid",
+        )
+        db_session.add(order)
+        await db_session.commit()
+        await db_session.refresh(order)
+
+        response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}",
+            headers=auth_headers,
+            json={"status": "canceled"},
+        )
+
+        assert response.status_code == 403
+        assert "owner or Servecta" in response.json()["detail"]
+
+    async def test_mitarbeiter_cannot_set_payment_status_paid(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, auth_headers
+    ):
+        """Mitarbeiter darf payment_status nicht direkt auf paid setzen."""
+        from app.database.models import Order
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            status="served",
+            party_size=2,
+            subtotal=40.0,
+            tax_amount=6.4,
+            tax_amount_7=0.0,
+            tax_amount_19=6.4,
+            total=40.0,
+            payment_status="unpaid",
+        )
+        db_session.add(order)
+        await db_session.commit()
+        await db_session.refresh(order)
+
+        response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/orders/{order.id}",
+            headers=auth_headers,
+            json={"payment_status": "paid"},
+        )
+
+        assert response.status_code == 403
+        assert "owner or Servecta" in response.json()["detail"]
+
 
 class TestOrderStatistics:
     """Tests for order statistics endpoint."""

@@ -35,6 +35,7 @@ from app.schemas import (
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/orders", tags=["orders"])
 TERMINAL_ORDER_STATUSES = {"paid", "canceled"}
+TERMINAL_ORDER_ALLOWED_ROLES = {"servecta", "restaurantinhaber"}
 
 
 async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> Restaurant:
@@ -426,6 +427,22 @@ async def update_order(
     order = await _get_order_or_404(order_id, restaurant_id, session)
 
     update_data = order_data.model_dump(exclude_unset=True)
+    requested_status = update_data.get("status")
+    requested_payment_status = update_data.get("payment_status")
+
+    status_transition_to_terminal = (
+        requested_status in TERMINAL_ORDER_STATUSES and requested_status != order.status
+    )
+    payment_transition_to_paid = (
+        requested_payment_status == "paid" and order.payment_status != "paid"
+    )
+    if (
+        status_transition_to_terminal or payment_transition_to_paid
+    ) and current_user.role not in TERMINAL_ORDER_ALLOWED_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only restaurant owner or Servecta can set order to paid/canceled.",
+        )
 
     if "reservation_id" in update_data:
         reservation_id = update_data["reservation_id"]
