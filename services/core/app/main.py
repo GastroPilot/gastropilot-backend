@@ -15,6 +15,7 @@ import app.models  # noqa: F401  — register all models for FK resolution
 from app.core.config import settings
 from app.core.database import close_engines, get_engines
 from app.core.tenant import TenantMiddleware
+from app.middleware.audit_logging import AuditLoggingMiddleware
 
 # Add shared packages to path
 _shared_path = Path(__file__).parent.parent.parent.parent / "packages"
@@ -83,6 +84,7 @@ app.add_middleware(
 )
 
 app.add_middleware(TenantMiddleware)
+app.add_middleware(AuditLoggingMiddleware)
 
 from app.api.routes import (  # noqa: E402
     admin,
