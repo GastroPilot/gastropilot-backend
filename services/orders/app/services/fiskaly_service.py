@@ -204,13 +204,22 @@ async def enable_organization_env(org_id: str, env: str = "TEST") -> dict:
     )
 
 
-async def create_api_key_for_org(org_id: str, name: str = "GastroPilot") -> dict:
+async def create_api_key_for_org(
+    org_id: str, name: str = "gastropilot", managed_by_org_id: str | None = None
+) -> dict:
     """Create an API key for a managed organization."""
-    return await _mgmt_request(
-        "POST",
-        f"/organizations/{org_id}/api-keys",
-        json_body={"name": name, "status": "enabled"},
-    )
+    import re
+
+    # Name must match ^[a-z0-9\-]{3,30}$
+    safe_name = re.sub(r"[^a-z0-9\-]", "", name.lower())[:30]
+    if len(safe_name) < 3:
+        safe_name = "gastropilot"
+
+    body: dict = {"name": safe_name, "status": "enabled"}
+    if managed_by_org_id:
+        body["managed_by_organization_id"] = managed_by_org_id
+
+    return await _mgmt_request("POST", f"/organizations/{org_id}/api-keys", json_body=body)
 
 
 async def provision_tenant_organization(
@@ -241,8 +250,10 @@ async def provision_tenant_organization(
     except httpx.HTTPError as exc:
         logger.warning("enable-env for org %s failed (non-critical): %s", org_id, exc)
 
-    # 3. Create API key for the org
-    key_resp = await create_api_key_for_org(org_id, f"GastroPilot-{restaurant_name[:20]}")
+    # 3. Create API key for the org (managed key needs parent org reference)
+    master_org_id = org_resp.get("managed_by_organization_id") or await get_master_org_id()
+    safe_name = f"gp-{restaurant_name[:20].lower().replace(' ', '-')}"
+    key_resp = await create_api_key_for_org(org_id, safe_name, managed_by_org_id=master_org_id)
 
     return {
         "org_id": org_id,
