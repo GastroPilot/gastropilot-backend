@@ -240,6 +240,9 @@ async def create_public_order(
             unit_price=mi[1],
             total_price=item_total,
             tax_rate=mi[2] if mi[2] else 0.19,
+            status="pending",
+            kitchen_ticket_no=None,
+            sent_to_kitchen_at=None,
             notes=item_req.special_instructions,
         )
         db.add(oi)

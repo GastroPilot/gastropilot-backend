@@ -29,6 +29,7 @@ from app.schemas import ReservationCreate, ReservationRead, ReservationUpdate
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/reservations", tags=["reservations"])
+TERMINAL_ORDER_STATUSES = {"paid", "canceled"}
 
 
 async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> Restaurant:
@@ -45,6 +46,22 @@ async def _get_reservation_or_404(
     if not reservation or reservation.restaurant_id != restaurant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found")
     return reservation
+
+
+async def _has_active_unpaid_order_for_reservation(
+    reservation_id: int, restaurant_id: int, session: AsyncSession
+) -> bool:
+    result = await session.execute(
+        select(Order.id)
+        .where(
+            Order.restaurant_id == restaurant_id,
+            Order.reservation_id == reservation_id,
+            Order.status.notin_(tuple(TERMINAL_ORDER_STATUSES)),
+            Order.payment_status != "paid",
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
 
 
 @router.post(
@@ -253,6 +270,49 @@ async def update_reservation(
     reservation = await _get_reservation_or_404(reservation_id, restaurant_id, session)
 
     update_data = reservation_data.model_dump(exclude_unset=True)
+    requested_status = update_data.get("status")
+    clears_table_assignment = "table_id" in update_data and update_data["table_id"] is None
+
+    should_check_active_orders = (
+        requested_status in {"canceled", "completed"} or clears_table_assignment
+    )
+    has_active_unpaid_order = False
+    if should_check_active_orders:
+        has_active_unpaid_order = await _has_active_unpaid_order_for_reservation(
+            reservation_id=reservation.id,
+            restaurant_id=restaurant_id,
+            session=session,
+        )
+
+    if has_active_unpaid_order and requested_status == "canceled":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Reservation with active unpaid order cannot be canceled. "
+                "Complete payment first."
+            ),
+        )
+
+    if has_active_unpaid_order and requested_status == "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Table can only be released after linked order is fully paid.",
+        )
+
+    if has_active_unpaid_order and requested_status == "no_show":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No-show is not allowed while a linked order is active and unpaid.",
+        )
+
+    if has_active_unpaid_order and clears_table_assignment:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Reservation cannot be detached from the table while a linked unpaid order exists. "
+                "Complete payment first."
+            ),
+        )
 
     # Prüfe ob Status auf "canceled" gesetzt wird (nur Schichtleiter)
     if "status" in update_data and update_data["status"] == "canceled":
@@ -412,6 +472,19 @@ async def cancel_reservation(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Reservierung ist bereits storniert"
         )
 
+    if await _has_active_unpaid_order_for_reservation(
+        reservation_id=reservation.id,
+        restaurant_id=restaurant_id,
+        session=session,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Reservation with active unpaid order cannot be canceled. "
+                "Complete payment first."
+            ),
+        )
+
     # Aktualisiere Reservierung
     reservation.status = "canceled"
     reservation.canceled_at = datetime.now(UTC)
@@ -490,6 +563,19 @@ async def delete_reservation(
     """Löscht eine Reservierung komplett (Restaurantinhaber oder höher)."""
     await _get_restaurant_or_404(restaurant_id, session)
     reservation = await _get_reservation_or_404(reservation_id, restaurant_id, session)
+
+    if await _has_active_unpaid_order_for_reservation(
+        reservation_id=reservation.id,
+        restaurant_id=restaurant_id,
+        session=session,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Reservation with active unpaid order cannot be deleted. "
+                "Complete payment first."
+            ),
+        )
 
     try:
         await session.delete(reservation)

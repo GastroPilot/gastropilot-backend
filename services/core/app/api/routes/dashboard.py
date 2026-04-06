@@ -300,8 +300,8 @@ async def get_kitchen_data(
     current_user: User = Depends(require_staff_or_above),
 ) -> dict:
     """
-    Küchen-Ansicht: aktive Orders mit allen OrderItems und Tischen.
-    Gibt nur Orders mit Status open/in_preparation/ready zurück.
+    Küchen-Ansicht: aktive Orders mit kitchen-relevanten Items und Tischen.
+    Die Queue ist item-getrieben (sent/in_preparation/ready), nicht nur order.status-getrieben.
     """
     restaurant = await _get_scoped_restaurant_or_404(
         request=request,
@@ -315,38 +315,119 @@ async def get_kitchen_data(
     tables_result = await session.execute(select(Table).where(Table.tenant_id == rid))
     tables = [_serialize(r) for r in tables_result.scalars().all()]
 
-    # Aktive Orders
+    # Aktive Kitchen-Items (item-getrieben) + dazugehörige Orders
     try:
-        orders_result = await session.execute(
+        kitchen_rows_result = await session.execute(
             text("""
-                SELECT id, tenant_id, table_id, order_number, status,
-                       subtotal, tax_amount, total, payment_status,
-                       notes, opened_at, sent_to_kitchen_at, in_preparation_at,
-                       ready_at, served_at, closed_at, created_at, updated_at
-                FROM orders
-                WHERE tenant_id = :tid
-                  AND status IN ('open', 'in_preparation', 'ready', 'confirmed', 'sent_to_kitchen')
-                ORDER BY opened_at ASC
-                LIMIT 200
+                SELECT
+                    o.id AS order_id,
+                    o.tenant_id AS order_tenant_id,
+                    o.table_id AS order_table_id,
+                    o.order_number AS order_number,
+                    o.status AS order_status,
+                    o.subtotal AS order_subtotal,
+                    o.tax_amount AS order_tax_amount,
+                    o.total AS order_total,
+                    o.payment_status AS order_payment_status,
+                    o.notes AS order_notes,
+                    o.opened_at AS order_opened_at,
+                    o.sent_to_kitchen_at AS order_sent_to_kitchen_at,
+                    o.in_preparation_at AS order_in_preparation_at,
+                    o.ready_at AS order_ready_at,
+                    o.served_at AS order_served_at,
+                    o.closed_at AS order_closed_at,
+                    o.created_at AS order_created_at,
+                    o.updated_at AS order_updated_at,
+                    oi.id AS item_id,
+                    oi.order_id AS item_order_id,
+                    oi.menu_item_id AS item_menu_item_id,
+                    oi.item_name AS item_name,
+                    oi.item_description AS item_description,
+                    oi.category AS item_category,
+                    oi.quantity AS item_quantity,
+                    oi.unit_price AS item_unit_price,
+                    oi.total_price AS item_total_price,
+                    oi.tax_rate AS item_tax_rate,
+                    oi.status AS item_status,
+                    oi.notes AS item_notes,
+                    oi.sort_order AS item_sort_order,
+                    oi.kitchen_ticket_no AS item_kitchen_ticket_no,
+                    oi.sent_to_kitchen_at AS item_sent_to_kitchen_at,
+                    oi.created_at AS item_created_at,
+                    oi.updated_at AS item_updated_at
+                FROM orders o
+                JOIN order_items oi ON oi.order_id = o.id
+                WHERE o.tenant_id = :tid
+                  AND o.status NOT IN ('paid', 'canceled')
+                  AND oi.status IN ('sent', 'in_preparation', 'ready')
+                ORDER BY
+                    COALESCE(oi.sent_to_kitchen_at, oi.created_at) ASC,
+                    oi.kitchen_ticket_no ASC NULLS LAST,
+                    oi.sort_order ASC,
+                    oi.created_at ASC
                 """),
             {"tid": str(rid)},
         )
-        orders = [dict(row._mapping) for row in orders_result]
+        kitchen_rows = [dict(row._mapping) for row in kitchen_rows_result]
 
-        order_ids = [o["id"] for o in orders]
-
+        orders_map: dict[str, dict] = {}
         order_items: list[dict] = []
-        if order_ids:
-            ids_literal = ", ".join(f"'{oid}'" for oid in order_ids)
-            items_result = await session.execute(text(f"""
-                    SELECT id, order_id, menu_item_id, item_name, item_description,
-                           category, quantity, unit_price, total_price,
-                           tax_rate, status, notes, sort_order, created_at, updated_at
-                    FROM order_items
-                    WHERE order_id IN ({ids_literal})
-                    ORDER BY sort_order ASC
-                    """))
-            order_items = [dict(row._mapping) for row in items_result]
+        ordered_order_ids: list[str] = []
+        max_orders = 200
+
+        for row in kitchen_rows:
+            order_id = str(row["order_id"])
+            if order_id not in orders_map:
+                if len(ordered_order_ids) >= max_orders:
+                    continue
+                ordered_order_ids.append(order_id)
+                orders_map[order_id] = {
+                    "id": row["order_id"],
+                    "tenant_id": row["order_tenant_id"],
+                    "table_id": row["order_table_id"],
+                    "order_number": row["order_number"],
+                    "status": row["order_status"],
+                    "subtotal": row["order_subtotal"],
+                    "tax_amount": row["order_tax_amount"],
+                    "total": row["order_total"],
+                    "payment_status": row["order_payment_status"],
+                    "notes": row["order_notes"],
+                    "opened_at": row["order_opened_at"],
+                    "sent_to_kitchen_at": row["order_sent_to_kitchen_at"],
+                    "in_preparation_at": row["order_in_preparation_at"],
+                    "ready_at": row["order_ready_at"],
+                    "served_at": row["order_served_at"],
+                    "closed_at": row["order_closed_at"],
+                    "created_at": row["order_created_at"],
+                    "updated_at": row["order_updated_at"],
+                }
+
+            if order_id not in orders_map:
+                continue
+
+            order_items.append(
+                {
+                    "id": row["item_id"],
+                    "order_id": row["item_order_id"],
+                    "menu_item_id": row["item_menu_item_id"],
+                    "item_name": row["item_name"],
+                    "item_description": row["item_description"],
+                    "category": row["item_category"],
+                    "quantity": row["item_quantity"],
+                    "unit_price": row["item_unit_price"],
+                    "total_price": row["item_total_price"],
+                    "tax_rate": row["item_tax_rate"],
+                    "status": row["item_status"],
+                    "notes": row["item_notes"],
+                    "sort_order": row["item_sort_order"],
+                    "kitchen_ticket_no": row["item_kitchen_ticket_no"],
+                    "sent_to_kitchen_at": row["item_sent_to_kitchen_at"],
+                    "created_at": row["item_created_at"],
+                    "updated_at": row["item_updated_at"],
+                }
+            )
+
+        orders = [orders_map[order_id] for order_id in ordered_order_ids]
 
         # Serialisieren
         for collection in (orders, order_items):

@@ -448,6 +448,7 @@ class Order(Base):
 
     notes = Column(Text, nullable=True)
     special_requests = Column(Text, nullable=True)
+    kitchen_ticket_seq = Column(Integer, nullable=False, default=0)
 
     opened_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
@@ -490,6 +491,8 @@ class OrderItem(Base):
     status = Column(
         String(32), nullable=False, default="pending"
     )  # pending, sent, in_preparation, ready, served, canceled
+    kitchen_ticket_no = Column(Integer, nullable=True)
+    sent_to_kitchen_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
 
     sort_order = Column(Integer, nullable=True, default=0)  # Für Sortierung in der UI

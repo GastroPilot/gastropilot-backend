@@ -242,8 +242,8 @@ async def get_kitchen_data(
     Fetch all kitchen view data in a single request.
 
     Optimized for the kitchen display showing:
-    - Active orders (not paid/canceled)
-    - Order items with status
+    - Orders with active kitchen items
+    - Kitchen-relevant order items (sent/in_preparation/ready)
     - Table info for context
     """
     from app.database.models import OrderItem
@@ -257,35 +257,37 @@ async def get_kitchen_data(
     if not restaurant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found")
 
-    # Active orders for kitchen
-    orders_result = await session.execute(
-        select(Order)
+    # Item-getriebene Kitchen Queue: nur bereits gesendete/aktive Küchen-Items.
+    items_result = await session.execute(
+        select(OrderItem, Order)
+        .join(Order, Order.id == OrderItem.order_id)
         .where(
             and_(
                 Order.restaurant_id == restaurant_id,
-                Order.status.in_(["open", "sent_to_kitchen", "in_preparation", "ready"]),
+                Order.status.not_in(["paid", "canceled"]),
+                OrderItem.status.in_(["sent", "in_preparation", "ready"]),
             )
         )
-        .order_by(Order.opened_at)
+        .order_by(
+            OrderItem.sent_to_kitchen_at,
+            OrderItem.kitchen_ticket_no,
+            OrderItem.sort_order,
+            OrderItem.created_at,
+        )
     )
-    orders = orders_result.scalars().all()
+    item_order_pairs = items_result.all()
 
-    # Order items for these orders
-    order_ids = [o.id for o in orders]
-    if order_ids:
-        items_result = await session.execute(
-            select(OrderItem)
-            .where(
-                and_(
-                    OrderItem.order_id.in_(order_ids),
-                    OrderItem.status.in_(["pending", "sent", "in_preparation", "ready"]),
-                )
-            )
-            .order_by(OrderItem.sort_order)
-        )
-        order_items = items_result.scalars().all()
-    else:
-        order_items = []
+    orders_map: dict[int, Order] = {}
+    order_items: list[OrderItem] = []
+    for item, order in item_order_pairs:
+        if order.id not in orders_map:
+            orders_map[order.id] = order
+        order_items.append(item)
+
+    orders = sorted(
+        orders_map.values(),
+        key=lambda order: order.opened_at or datetime.min.replace(tzinfo=UTC),
+    )
 
     # Tables for context
     table_ids = list(set(o.table_id for o in orders if o.table_id))

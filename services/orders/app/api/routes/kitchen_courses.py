@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -12,6 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user_or_device, get_db
 from app.models.order import Order, OrderItem
+from app.services.order_item_status import (
+    ORDER_ITEM_STATUSES,
+    can_transition_order_item_status,
+    get_allowed_next_order_item_statuses,
+    normalize_order_item_status,
+)
+from app.services.order_progress import sync_order_status_with_items
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -102,10 +110,15 @@ async def release_course(
         )
 
     updated = []
+    previous_order_status = order.status
     for item in course_items:
-        if item.status == "pending":
+        if can_transition_order_item_status(item.status, "sent"):
             item.status = "sent"
+            if item.sent_to_kitchen_at is None:
+                item.sent_to_kitchen_at = datetime.now(UTC)
             updated.append(str(item.id))
+
+    sync_order_status_with_items(order, items)
 
     await session.commit()
 
@@ -122,9 +135,15 @@ async def release_course(
                 },
             },
         )
+        if order.status != previous_order_status:
+            await manager.broadcast_to_tenant(
+                str(tenant_id),
+                {"type": "order_updated", "data": {"id": str(order_id)}},
+            )
 
     return {
         "order_id": str(order_id),
+        "order_status": order.status,
         "course_number": course_number,
         "items_updated": len(updated),
     }
@@ -140,19 +159,19 @@ async def update_item_status(
     current_user=Depends(get_current_user_or_device),
 ):
     """Update individual item status."""
-    valid_statuses = [
-        "pending",
-        "sent",
-        "in_preparation",
-        "ready",
-        "served",
-        "canceled",
-    ]
-    if body.status not in valid_statuses:
+    normalized_next_status = normalize_order_item_status(body.status)
+    if normalized_next_status not in ORDER_ITEM_STATUSES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid status: {body.status}",
         )
+
+    order_result = await session.execute(
+        select(Order).where(Order.id == order_id).with_for_update()
+    )
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
 
     result = await session.execute(
         select(OrderItem).where(
@@ -166,7 +185,25 @@ async def update_item_status(
     if not item:
         raise HTTPException(status_code=404, detail="Order item not found")
 
-    item.status = body.status
+    if not can_transition_order_item_status(item.status, normalized_next_status):
+        allowed = get_allowed_next_order_item_statuses(item.status)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid item status transition: {item.status} -> {normalized_next_status}. "
+                f"Allowed next statuses: {allowed}"
+            ),
+        )
+
+    item.status = normalized_next_status
+    if normalized_next_status == "sent" and item.sent_to_kitchen_at is None:
+        item.sent_to_kitchen_at = datetime.now(UTC)
+
+    previous_order_status = order.status
+    items_result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
+    order_items = items_result.scalars().all()
+    sync_order_status_with_items(order, order_items)
+
     await session.commit()
 
     tenant_id = getattr(request.state, "tenant_id", None)
@@ -178,13 +215,19 @@ async def update_item_status(
                 "data": {
                     "order_id": str(order_id),
                     "item_id": str(item_id),
-                    "status": body.status,
+                    "status": normalized_next_status,
                 },
             },
         )
+        if order.status != previous_order_status:
+            await manager.broadcast_to_tenant(
+                str(tenant_id),
+                {"type": "order_updated", "data": {"id": str(order_id)}},
+            )
 
     return {
         "order_id": str(order_id),
+        "order_status": order.status,
         "item_id": str(item_id),
-        "status": body.status,
+        "status": normalized_next_status,
     }

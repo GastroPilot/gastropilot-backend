@@ -654,6 +654,8 @@ class OrderItemRead(Timestamped):
     total_price: float  # Gesamtpreis inkl. MwSt.
     tax_rate: float  # MwSt-Satz
     status: str
+    kitchen_ticket_no: int | None = None
+    sent_to_kitchen_at: datetime | None = None
     notes: str | None = None
     sort_order: int | None = None
 
@@ -711,6 +713,7 @@ class OrderRead(Timestamped):
     reservation_id: int | None = None
     order_number: str | None = None
     status: str
+    kitchen_ticket_seq: int = 0
     party_size: int | None = None
     subtotal: float  # Zwischensumme inkl. MwSt.
     tax_amount_7: float  # MwSt. bei 7%

@@ -164,6 +164,51 @@ class TestReservationCRUD:
         assert response.status_code == 200
         assert response.json()["message"] == "deleted"
 
+    async def test_delete_blocked_when_linked_order_unpaid(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """Deleting a reservation is blocked while linked order is active and unpaid."""
+        from app.database.models import Order, Reservation
+
+        start_time = datetime.now(UTC) + timedelta(days=1)
+        reservation = Reservation(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            start_at=start_time,
+            end_at=start_time + timedelta(hours=2),
+            party_size=4,
+            status="confirmed",
+            channel="manual",
+            guest_name="To Delete",
+        )
+        db_session.add(reservation)
+        await db_session.commit()
+        await db_session.refresh(reservation)
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            reservation_id=reservation.id,
+            table_id=test_table.id,
+            status="open",
+            payment_status="unpaid",
+            party_size=4,
+            subtotal=0.0,
+            tax_amount=0.0,
+            tax_amount_7=0.0,
+            tax_amount_19=0.0,
+            total=0.0,
+        )
+        db_session.add(order)
+        await db_session.commit()
+
+        response = await client.delete(
+            f"/v1/restaurants/{test_restaurant.id}/reservations/{reservation.id}",
+            headers=admin_auth_headers,
+        )
+
+        assert response.status_code == 409
+        assert "cannot be deleted" in response.json()["detail"]
+
     async def test_table_move_syncs_active_order_tables(
         self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
     ):
@@ -307,6 +352,141 @@ class TestReservationStatus:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "canceled"
+
+    async def test_release_table_blocked_when_linked_order_unpaid(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """Completed is blocked while linked order is active and unpaid."""
+        from app.database.models import Order, Reservation
+
+        start_time = datetime.now(UTC) + timedelta(days=1)
+        reservation = Reservation(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            start_at=start_time,
+            end_at=start_time + timedelta(hours=2),
+            party_size=4,
+            status="seated",
+            channel="manual",
+        )
+        db_session.add(reservation)
+        await db_session.commit()
+        await db_session.refresh(reservation)
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            reservation_id=reservation.id,
+            table_id=test_table.id,
+            status="served",
+            payment_status="unpaid",
+            party_size=4,
+            subtotal=0.0,
+            tax_amount=0.0,
+            tax_amount_7=0.0,
+            tax_amount_19=0.0,
+            total=0.0,
+        )
+        db_session.add(order)
+        await db_session.commit()
+
+        response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/reservations/{reservation.id}",
+            headers=admin_auth_headers,
+            json={"status": "completed"},
+        )
+
+        assert response.status_code == 409
+        assert "fully paid" in response.json()["detail"]
+
+    async def test_no_show_blocked_when_linked_order_unpaid(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """No-show is blocked while linked order is active and unpaid."""
+        from app.database.models import Order, Reservation
+
+        start_time = datetime.now(UTC) + timedelta(days=1)
+        reservation = Reservation(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            start_at=start_time,
+            end_at=start_time + timedelta(hours=2),
+            party_size=4,
+            status="seated",
+            channel="manual",
+        )
+        db_session.add(reservation)
+        await db_session.commit()
+        await db_session.refresh(reservation)
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            reservation_id=reservation.id,
+            table_id=test_table.id,
+            status="open",
+            payment_status="unpaid",
+            party_size=4,
+            subtotal=0.0,
+            tax_amount=0.0,
+            tax_amount_7=0.0,
+            tax_amount_19=0.0,
+            total=0.0,
+        )
+        db_session.add(order)
+        await db_session.commit()
+
+        response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/reservations/{reservation.id}",
+            headers=admin_auth_headers,
+            json={"status": "no_show", "table_id": None},
+        )
+
+        assert response.status_code == 409
+        assert "No-show is not allowed" in response.json()["detail"]
+
+    async def test_cancel_blocked_when_linked_order_unpaid(
+        self, client: AsyncClient, db_session, test_restaurant, test_table, admin_auth_headers
+    ):
+        """Cancel is blocked while a linked order is still unpaid."""
+        from app.database.models import Order, Reservation
+
+        start_time = datetime.now(UTC) + timedelta(days=1)
+        reservation = Reservation(
+            restaurant_id=test_restaurant.id,
+            table_id=test_table.id,
+            start_at=start_time,
+            end_at=start_time + timedelta(hours=2),
+            party_size=4,
+            status="confirmed",
+            channel="manual",
+        )
+        db_session.add(reservation)
+        await db_session.commit()
+        await db_session.refresh(reservation)
+
+        order = Order(
+            restaurant_id=test_restaurant.id,
+            reservation_id=reservation.id,
+            table_id=test_table.id,
+            status="open",
+            payment_status="unpaid",
+            party_size=4,
+            subtotal=0.0,
+            tax_amount=0.0,
+            tax_amount_7=0.0,
+            tax_amount_19=0.0,
+            total=0.0,
+        )
+        db_session.add(order)
+        await db_session.commit()
+
+        response = await client.patch(
+            f"/v1/restaurants/{test_restaurant.id}/reservations/{reservation.id}",
+            headers=admin_auth_headers,
+            json={"status": "canceled"},
+        )
+
+        assert response.status_code == 409
+        assert "cannot be canceled" in response.json()["detail"]
 
 
 class TestReservationFilters:

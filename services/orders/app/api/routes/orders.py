@@ -11,8 +11,19 @@ from sqlalchemy import or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user, get_db
+from app.core.deps import get_current_user, get_db, require_owner_or_above
 from app.models.order import Order, OrderItem
+from app.services.order_item_status import (
+    can_transition_order_item_status,
+    get_allowed_next_order_item_statuses,
+    is_valid_order_item_status,
+    normalize_order_item_status,
+)
+from app.services.order_progress import sync_order_status_with_items
+from app.services.order_scope import (
+    ORDER_TERMINAL_STATUSES,
+    is_order_active,
+)
 from app.services.order_timing import apply_order_status_timestamps
 from app.services.table_group_service import normalize_order_table_ids, resolve_group_table_ids
 from app.services.tax_service import calculate_totals
@@ -29,7 +40,6 @@ ORDER_STATUSES = [
     "paid",
     "canceled",
 ]
-TERMINAL_ORDER_STATUSES = {"paid", "canceled"}
 TABLE_ID_UNSET = object()
 RESERVATION_ID_UNSET = object()
 
@@ -127,9 +137,7 @@ def _reference_date_from_datetime(value: datetime | None) -> datetime.date:
 
 
 def _is_order_active(status: str | None, payment_status: str | None) -> bool:
-    normalized_status = (status or "").lower()
-    normalized_payment_status = (payment_status or "").lower()
-    return normalized_status not in TERMINAL_ORDER_STATUSES and normalized_payment_status != "paid"
+    return is_order_active(status, payment_status)
 
 
 def _coerce_uuid_list(values: list[str]) -> list[uuid.UUID]:
@@ -168,7 +176,7 @@ async def _find_active_order_conflict(
 
     query = select(Order).where(
         Order.tenant_id == tenant_id,
-        Order.status.notin_(tuple(TERMINAL_ORDER_STATUSES)),
+        Order.status.notin_(tuple(ORDER_TERMINAL_STATUSES)),
         Order.payment_status != "paid",
     )
 
@@ -275,6 +283,10 @@ def _serialize_item(item: OrderItem) -> dict:
         "total_price": item.total_price,
         "tax_rate": item.tax_rate,
         "status": item.status,
+        "kitchen_ticket_no": item.kitchen_ticket_no,
+        "sent_to_kitchen_at": (
+            item.sent_to_kitchen_at.isoformat() if item.sent_to_kitchen_at else None
+        ),
         "notes": item.notes,
         "sort_order": item.sort_order,
         "created_at_utc": item.created_at.isoformat() if item.created_at else None,
@@ -287,6 +299,7 @@ def _serialize_order(order: Order, include_items: list[dict] | None = None) -> d
         "id": str(order.id),
         "order_number": order.order_number,
         "status": order.status,
+        "kitchen_ticket_seq": order.kitchen_ticket_seq,
         "table_id": str(order.table_id) if order.table_id else None,
         "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
         "reservation_id": str(order.reservation_id) if order.reservation_id else None,
@@ -432,6 +445,9 @@ async def create_order(
                 unit_price=price,
                 total_price=qty * price,
                 tax_rate=item_data.get("tax_rate", 0.19),
+                status="pending",
+                kitchen_ticket_no=None,
+                sent_to_kitchen_at=None,
                 notes=item_data.get("notes"),
                 menu_item_id=mid,
                 allergens=item_allergens,
@@ -477,18 +493,7 @@ async def get_order(
 
     payload = _serialize_order(
         order,
-        include_items=[
-            {
-                "id": str(i.id),
-                "item_name": i.item_name,
-                "quantity": i.quantity,
-                "unit_price": i.unit_price,
-                "total_price": i.total_price,
-                "status": i.status,
-                "notes": i.notes,
-            }
-            for i in items
-        ],
+        include_items=[_serialize_item(i) for i in items],
     )
     payload["subtotal"] = order.subtotal
     payload["tax_amount"] = order.tax_amount
@@ -680,7 +685,7 @@ async def delete_order(
     order_id: uuid.UUID,
     request: Request,
     session: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_owner_or_above),
 ):
     result = await session.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
@@ -713,6 +718,12 @@ async def add_order_item(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
+    # Nachbestellung nach "served": Bestellung wieder aktiv machen,
+    # bis die neuen Positionen ebenfalls serviert sind.
+    if order.status == "served":
+        order.status = "open"
+        order.served_at = None
+
     item = OrderItem(
         order_id=order.id,
         menu_item_id=data.menu_item_id,
@@ -723,6 +734,9 @@ async def add_order_item(
         unit_price=data.unit_price,
         total_price=max(1, data.quantity) * data.unit_price,
         tax_rate=data.tax_rate,
+        status="pending",
+        kitchen_ticket_no=None,
+        sent_to_kitchen_at=None,
         notes=data.notes,
         sort_order=data.sort_order or 0,
     )
@@ -752,7 +766,9 @@ async def update_order_item(
     session: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    result = await session.execute(select(Order).where(Order.id == order_id))
+    result = await session.execute(
+        select(Order).where(Order.id == order_id).with_for_update()
+    )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -765,12 +781,34 @@ async def update_order_item(
         raise HTTPException(status_code=404, detail="Order item not found")
 
     update_data = data.model_dump(exclude_unset=True)
+    next_status_raw = update_data.pop("status", None)
+    if next_status_raw is not None:
+        next_status = normalize_order_item_status(next_status_raw)
+        if not is_valid_order_item_status(next_status):
+            raise HTTPException(status_code=400, detail=f"Invalid item status: {next_status_raw}")
+        if not can_transition_order_item_status(item.status, next_status):
+            allowed = get_allowed_next_order_item_statuses(item.status)
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid item status transition: {item.status} -> {next_status}. "
+                    f"Allowed next statuses: {allowed}"
+                ),
+            )
+        item.status = next_status
+        if next_status == "sent" and item.sent_to_kitchen_at is None:
+            item.sent_to_kitchen_at = datetime.now(UTC)
+
     for key, value in update_data.items():
         setattr(item, key, value)
 
     if "quantity" in update_data or "unit_price" in update_data:
         item.quantity = max(1, item.quantity)
         item.total_price = item.quantity * item.unit_price
+
+    order_items_result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
+    order_items = order_items_result.scalars().all()
+    sync_order_status_with_items(order, order_items)
 
     await _recalculate_order_totals(order, session)
     await session.commit()
@@ -784,6 +822,97 @@ async def update_order_item(
         )
 
     return _serialize_item(item)
+
+
+@router.post("/{order_id}/send-pending-items")
+async def send_pending_order_items(
+    order_id: uuid.UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    order_result = await session.execute(
+        select(Order).where(Order.id == order_id).with_for_update()
+    )
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.status in {"paid", "canceled"} or order.payment_status == "paid":
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot send items for a closed order",
+        )
+
+    pending_result = await session.execute(
+        select(OrderItem)
+        .where(OrderItem.order_id == order_id, OrderItem.status == "pending")
+        .order_by(OrderItem.sort_order.asc(), OrderItem.created_at.asc(), OrderItem.id.asc())
+        .with_for_update()
+    )
+    pending_items = pending_result.scalars().all()
+
+    if not pending_items:
+        return {
+            "order_id": str(order_id),
+            "order_status": order.status,
+            "kitchen_ticket_no": None,
+            "items_sent": 0,
+            "item_ids": [],
+        }
+
+    next_ticket_no = (order.kitchen_ticket_seq or 0) + 1
+    order.kitchen_ticket_seq = next_ticket_no
+    now = datetime.now(UTC)
+
+    sent_item_ids: list[str] = []
+    for item in pending_items:
+        if not can_transition_order_item_status(item.status, "sent"):
+            allowed = get_allowed_next_order_item_statuses(item.status)
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid item status transition: {item.status} -> sent. "
+                    f"Allowed next statuses: {allowed}"
+                ),
+            )
+        item.status = "sent"
+        item.kitchen_ticket_no = next_ticket_no
+        item.sent_to_kitchen_at = now
+        sent_item_ids.append(str(item.id))
+
+    order.status = "sent_to_kitchen"
+    apply_order_status_timestamps(order, "sent_to_kitchen")
+
+    await session.commit()
+    await session.refresh(order)
+
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if tenant_id:
+        await manager.broadcast_to_tenant(
+            str(tenant_id),
+            {"type": "order_updated", "data": {"id": str(order_id)}},
+        )
+        await manager.broadcast_to_tenant(
+            str(tenant_id),
+            {
+                "type": "order_items_sent_to_kitchen",
+                "data": {
+                    "order_id": str(order_id),
+                    "kitchen_ticket_no": next_ticket_no,
+                    "item_ids": sent_item_ids,
+                    "items_sent": len(sent_item_ids),
+                },
+            },
+        )
+
+    return {
+        "order_id": str(order_id),
+        "order_status": order.status,
+        "kitchen_ticket_no": next_ticket_no,
+        "items_sent": len(sent_item_ids),
+        "item_ids": sent_item_ids,
+    }
 
 
 @router.delete("/{order_id}/items/{item_id}", status_code=204)
@@ -807,6 +936,12 @@ async def delete_order_item(
         raise HTTPException(status_code=404, detail="Order item not found")
 
     await session.delete(item)
+    await session.flush()
+
+    order_items_result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
+    remaining_items = order_items_result.scalars().all()
+    sync_order_status_with_items(order, remaining_items)
+
     await _recalculate_order_totals(order, session)
     await session.commit()
 

@@ -21,7 +21,7 @@ from app.dependencies import (
     normalize_datetime_to_utc,
     require_mitarbeiter_role,
     require_orders_module,
-    require_schichtleiter_role,
+    require_restaurantinhaber_role,
 )
 from app.schemas import (
     OrderCreate,
@@ -35,6 +35,8 @@ from app.schemas import (
 
 router = APIRouter(prefix="/restaurants/{restaurant_id}/orders", tags=["orders"])
 TERMINAL_ORDER_STATUSES = {"paid", "canceled"}
+TERMINAL_ORDER_ALLOWED_ROLES = {"servecta", "restaurantinhaber"}
+ORDER_ITEM_STATUSES = {"pending", "sent", "in_preparation", "ready", "served", "canceled"}
 
 
 async def _get_restaurant_or_404(restaurant_id: int, session: AsyncSession) -> Restaurant:
@@ -190,6 +192,40 @@ def _calculate_totals(
         "tip_amount": round(tip_amount, 2),
         "total": round(total, 2),
     }
+
+
+def _normalize_order_item_status(value: str | None) -> str:
+    normalized = (value or "").strip().lower()
+    return normalized if normalized in ORDER_ITEM_STATUSES else "pending"
+
+
+def _derive_order_status_from_items(items: list[OrderItem]) -> str:
+    normalized_statuses = [_normalize_order_item_status(item.status) for item in items]
+    active_statuses = [status for status in normalized_statuses if status != "canceled"]
+
+    if not active_statuses:
+        return "open"
+    if "pending" in active_statuses:
+        return "open"
+    if "sent" in active_statuses:
+        return "sent_to_kitchen"
+    if "in_preparation" in active_statuses:
+        return "in_preparation"
+    if "ready" in active_statuses:
+        return "ready"
+    if all(status == "served" for status in active_statuses):
+        return "served"
+    return "open"
+
+
+def _sync_order_status_from_items(order: Order, items: list[OrderItem]) -> str:
+    if order.status in TERMINAL_ORDER_STATUSES:
+        return order.status
+
+    next_status = _derive_order_status_from_items(items)
+    if next_status != order.status:
+        order.status = next_status
+    return order.status
 
 
 def _serialize_split_payments(data):
@@ -426,6 +462,29 @@ async def update_order(
     order = await _get_order_or_404(order_id, restaurant_id, session)
 
     update_data = order_data.model_dump(exclude_unset=True)
+    requested_status = update_data.get("status")
+    requested_payment_status = update_data.get("payment_status")
+
+    status_transition_to_terminal = (
+        requested_status in TERMINAL_ORDER_STATUSES and requested_status != order.status
+    )
+    status_transition_from_terminal = (
+        order.status in TERMINAL_ORDER_STATUSES
+        and requested_status is not None
+        and requested_status != order.status
+    )
+    payment_transition_to_paid = (
+        requested_payment_status == "paid" and order.payment_status != "paid"
+    )
+    if (
+        status_transition_to_terminal
+        or status_transition_from_terminal
+        or payment_transition_to_paid
+    ) and current_user.role not in TERMINAL_ORDER_ALLOWED_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only restaurant owner or Servecta can set order to paid/canceled.",
+        )
 
     if "reservation_id" in update_data:
         reservation_id = update_data["reservation_id"]
@@ -542,9 +601,9 @@ async def delete_order(
     order_id: int,
     session: AsyncSession = Depends(get_session),
     _license: User = Depends(require_orders_module),
-    current_user: User = Depends(require_schichtleiter_role),
+    current_user: User = Depends(require_restaurantinhaber_role),
 ):
-    """Löscht eine Bestellung (Schichtleiter oder höher)."""
+    """Löscht eine Bestellung (Restaurantinhaber oder Servecta)."""
     await _get_restaurant_or_404(restaurant_id, session)
     order = await _get_order_or_404(order_id, restaurant_id, session)
 
@@ -580,6 +639,10 @@ async def create_order_item(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot add items to paid or canceled orders",
         )
+
+    # Nachbestellung nach "served": Bestellung wieder aktiv markieren.
+    if order.status == "served":
+        order.status = "open"
 
     total_price = item_data.quantity * item_data.unit_price
 
@@ -625,6 +688,7 @@ async def create_order_item(
         # Aktualisiere Totals der Bestellung
         result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
         items = result.scalars().all()
+        _sync_order_status_from_items(order, items)
         totals = _calculate_totals(
             items,
             discount_amount=order.discount_amount,
@@ -675,6 +739,8 @@ async def update_order_item(
         )
 
     update_data = item_data.model_dump(exclude_unset=True)
+    if "status" in update_data:
+        update_data["status"] = _normalize_order_item_status(update_data["status"])
 
     # Berechne neue total_price wenn quantity oder unit_price geändert wird
     quantity = update_data.get("quantity", order_item.quantity)
@@ -694,6 +760,7 @@ async def update_order_item(
         # Aktualisiere Totals der Bestellung
         result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
         items = result.scalars().all()
+        _sync_order_status_from_items(order, items)
         totals = _calculate_totals(
             items,
             discount_amount=order.discount_amount,
@@ -749,6 +816,7 @@ async def delete_order_item(
         # Aktualisiere Totals der Bestellung
         result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
         items = result.scalars().all()
+        _sync_order_status_from_items(order, items)
         totals = _calculate_totals(
             items,
             discount_amount=order.discount_amount,
