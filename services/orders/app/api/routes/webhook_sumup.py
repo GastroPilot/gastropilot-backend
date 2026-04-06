@@ -123,6 +123,14 @@ async def sumup_webhook(request: Request):
                 order.payment_method = "sumup_card"
                 order.paid_at = datetime.now(UTC)
 
+                # TSE signing (non-blocking)
+                try:
+                    from app.services.fiskaly_service import sign_order_receipt
+
+                    await sign_order_receipt(db, order, payment_type="NON_CASH")
+                except Exception as exc:
+                    logger.error("fiskaly TSE signing failed for order %s: %s", order.id, exc)
+
         elif event_type in ("payment.failed", "payment.canceled"):
             payment.status = "failed" if "failed" in event_type else "canceled"
 

@@ -17,6 +17,11 @@ on:
         type: choice
         options:
           - test
+          - staging
+          - demo
+
+permissions:
+  contents: write
 
 env:
   PYTHON_VERSION: '3.11'
@@ -117,11 +122,36 @@ jobs:
           INPUT_TAG: ${{ github.event.inputs.tag }}
         run: |
           if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
-            echo "tag=$INPUT_TAG" >> $GITHUB_OUTPUT
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=test" >> $GITHUB_OUTPUT
+            echo "tag=test" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Determine RC version
+        id: rc
+        run: |
+          VERSION=$(python3 -c "
+          try:
+              import tomllib
+              with open('services/${{ matrix.service }}/pyproject.toml', 'rb') as f:
+                  print(tomllib.load(f)['project']['version'])
+          except Exception:
+              print('2.0.0')
+          ")
+          RC_VERSION="${VERSION}-rc.${{ github.run_number }}"
+          echo "rc_version=${RC_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Create RC tag
+        env:
+          RC_VERSION: ${{ steps.rc.outputs.rc_version }}
+          SERVICE: ${{ matrix.service }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${RC_VERSION}-${SERVICE}" -m "RC ${RC_VERSION} (${SERVICE})" || true
+          git push origin "v${RC_VERSION}-${SERVICE}" || true
+      
       - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v5
         with:
