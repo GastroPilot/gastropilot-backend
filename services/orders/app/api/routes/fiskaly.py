@@ -6,6 +6,7 @@ import logging
 import secrets
 import uuid
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -18,6 +19,35 @@ from app.services import fiskaly_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/fiskaly", tags=["fiskaly"])
+
+
+def _resolve_tenant_id(request: Request, current_user) -> uuid.UUID:
+    """Resolve tenant context for tenant-scoped Fiskaly operations."""
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if tenant_id:
+        return tenant_id
+
+    role = str(getattr(current_user, "role", "") or "")
+    if role in {"platform_admin", "platform_support"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No impersonated tenant in access token. Please select a customer "
+                "for impersonation and try again."
+            ),
+        )
+
+    user_tenant_id = getattr(current_user, "tenant_id", None)
+    if user_tenant_id:
+        return user_tenant_id
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "No tenant context in access token. Please log in again or "
+            "select a tenant before using Fiskaly endpoints."
+        ),
+    )
 
 
 class TssSetupRequest(BaseModel):
@@ -50,7 +80,7 @@ async def setup_tss(
     current_user=Depends(require_owner_or_above),
 ):
     """Create and initialize a TSS for this restaurant (one-click setup)."""
-    tenant_id = request.state.tenant_id
+    tenant_id = _resolve_tenant_id(request, current_user)
 
     if not fiskaly_service._is_configured():
         raise HTTPException(status_code=503, detail="fiskaly not configured")
@@ -147,7 +177,7 @@ async def get_tss_status(
     current_user=Depends(require_owner_or_above),
 ):
     """Get the TSS configuration status for this restaurant."""
-    tenant_id = request.state.tenant_id
+    tenant_id = _resolve_tenant_id(request, current_user)
     result = await db.execute(
         select(FiskalyTssConfig).where(FiskalyTssConfig.tenant_id == tenant_id)
     )
@@ -174,7 +204,7 @@ async def disable_tss(
     current_user=Depends(require_owner_or_above),
 ):
     """Disable the TSS (irreversible!)."""
-    tenant_id = request.state.tenant_id
+    tenant_id = _resolve_tenant_id(request, current_user)
     result = await db.execute(
         select(FiskalyTssConfig).where(FiskalyTssConfig.tenant_id == tenant_id)
     )
@@ -188,7 +218,25 @@ async def disable_tss(
     try:
         await fiskaly_service.admin_authenticate(config, config.tss_id, config.admin_pin)
         await fiskaly_service.update_tss_state(config, config.tss_id, "DISABLED")
-        await fiskaly_service.admin_logout(config, config.tss_id)
+        try:
+            await fiskaly_service.admin_logout(config, config.tss_id)
+        except Exception:
+            logger.warning("TSS admin logout failed after disable (non-critical)")
+    except httpx.HTTPStatusError as exc:
+        response_text = exc.response.text if exc.response is not None else ""
+        is_remote_already_disabled = (
+            exc.response is not None
+            and exc.response.status_code == 400
+            and "E_TSS_DISABLED" in response_text
+        )
+        if not is_remote_already_disabled:
+            logger.error("TSS disable failed: %s", exc)
+            raise HTTPException(status_code=502, detail=f"TSS disable failed: {exc}")
+        logger.info(
+            "TSS already disabled remotely for tenant %s / tss %s",
+            tenant_id,
+            config.tss_id,
+        )
     except Exception as exc:
         logger.error("TSS disable failed: %s", exc)
         raise HTTPException(status_code=502, detail=f"TSS disable failed: {exc}")
@@ -213,7 +261,7 @@ async def list_transactions(
     current_user=Depends(require_owner_or_above),
 ):
     """List signed TSE transactions for this restaurant."""
-    tenant_id = request.state.tenant_id
+    tenant_id = _resolve_tenant_id(request, current_user)
     result = await db.execute(
         select(FiskalyTransaction)
         .where(FiskalyTransaction.tenant_id == tenant_id)
@@ -251,7 +299,7 @@ async def get_transaction_for_order(
     current_user=Depends(require_owner_or_above),
 ):
     """Get the TSE transaction data for a specific order."""
-    tenant_id = request.state.tenant_id
+    tenant_id = _resolve_tenant_id(request, current_user)
     result = await db.execute(
         select(FiskalyTransaction)
         .where(
@@ -298,7 +346,7 @@ async def retry_transaction(
     """Retry signing for a failed TSE transaction."""
     from app.models.order import Order
 
-    tenant_id = request.state.tenant_id
+    tenant_id = _resolve_tenant_id(request, current_user)
 
     # Load order
     order_result = await db.execute(
@@ -355,7 +403,7 @@ async def trigger_export(
     """Trigger a TSS export for the tax authorities."""
     from datetime import UTC, datetime as dt
 
-    tenant_id = request.state.tenant_id
+    tenant_id = _resolve_tenant_id(request, current_user)
 
     result = await db.execute(
         select(FiskalyTssConfig).where(
@@ -404,7 +452,7 @@ async def get_export_status(
     current_user=Depends(require_owner_or_above),
 ):
     """Poll the status of an export."""
-    tenant_id = request.state.tenant_id
+    tenant_id = _resolve_tenant_id(request, current_user)
 
     result = await db.execute(
         select(FiskalyTssConfig).where(FiskalyTssConfig.tenant_id == tenant_id)
@@ -439,7 +487,7 @@ async def download_export(
     """Download the TAR file of a completed export."""
     from fastapi.responses import Response
 
-    tenant_id = request.state.tenant_id
+    tenant_id = _resolve_tenant_id(request, current_user)
 
     result = await db.execute(
         select(FiskalyTssConfig).where(FiskalyTssConfig.tenant_id == tenant_id)
@@ -450,7 +498,7 @@ async def download_export(
 
     # Verify export is completed
     try:
-        status = await fiskaly_service.get_export(config.tss_id, export_id)
+        status = await fiskaly_service.get_export(config, config.tss_id, export_id)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -480,7 +528,7 @@ async def list_exports(
     current_user=Depends(require_owner_or_above),
 ):
     """List all exports for this restaurant's TSS."""
-    tenant_id = request.state.tenant_id
+    tenant_id = _resolve_tenant_id(request, current_user)
 
     result = await db.execute(
         select(FiskalyTssConfig).where(FiskalyTssConfig.tenant_id == tenant_id)
@@ -530,7 +578,7 @@ async def create_receipt_for_order(
     """Create a fiskaly eReceipt for a signed order."""
     from app.models.order import Order, OrderItem
 
-    tenant_id = request.state.tenant_id
+    tenant_id = _resolve_tenant_id(request, current_user)
 
     # Load order
     order_result = await db.execute(
