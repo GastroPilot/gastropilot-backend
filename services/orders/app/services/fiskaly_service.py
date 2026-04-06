@@ -234,9 +234,12 @@ async def provision_tenant_organization(
     )
     org_id = org_resp["_id"]
 
-    # 2. Enable environment
+    # 2. Enable environment (optional — may already be active)
     env = "TEST" if settings.FISKALY_TEST_MODE else "LIVE"
-    await enable_organization_env(org_id, env)
+    try:
+        await enable_organization_env(org_id, env)
+    except httpx.HTTPError as exc:
+        logger.warning("enable-env for org %s failed (non-critical): %s", org_id, exc)
 
     # 3. Create API key for the org
     key_resp = await create_api_key_for_org(org_id, f"GastroPilot-{restaurant_name[:20]}")
