@@ -144,20 +144,21 @@ async def _mgmt_request(method: str, path: str, json_body: dict | None = None) -
 
 
 async def get_master_org_id() -> str:
-    """Get the organization_id from the master API key's token claims."""
-    token = await _ensure_token_for(
-        settings.FISKALY_MANAGEMENT_URL, settings.FISKALY_API_KEY, settings.FISKALY_API_SECRET
-    )
-    # Decode JWT claims (middle part)
-    import base64
-    import json as _json
-
-    parts = token.split(".")
-    if len(parts) >= 2:
-        padded = parts[1] + "=" * (4 - len(parts[1]) % 4)
-        claims = _json.loads(base64.urlsafe_b64decode(padded))
-        return claims.get("organization_id", "")
-    return ""
+    """Get the organization_id by authenticating and reading the response claims."""
+    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        resp = await client.post(
+            f"{settings.FISKALY_MANAGEMENT_URL}/auth",
+            json={
+                "api_key": settings.FISKALY_API_KEY,
+                "api_secret": settings.FISKALY_API_SECRET,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    claims = data.get("access_token_claims", {})
+    org_id = claims.get("organization_id", "")
+    logger.info("Master organization ID: %s", org_id)
+    return org_id
 
 
 async def create_managed_organization(
@@ -173,8 +174,16 @@ async def create_managed_organization(
     if not managed_by_org_id:
         managed_by_org_id = await get_master_org_id()
 
+    # Ensure managed_by_org_id is valid UUID format
+    try:
+        managed_by_org_id = str(uuid.UUID(managed_by_org_id))
+    except (ValueError, TypeError):
+        raise ValueError(f"Invalid organization ID: {managed_by_org_id}")
+
+    # ManagedOrganization schema (additionalProperties: false)
+    # Required: name, address_line1, zip, town, country_code, managed_by_organization_id
     body: dict = {
-        "name": name,
+        "name": name[:50] if len(name) > 50 else name,
         "address_line1": address_line1 or "N/A",
         "zip": zip_code or "00000",
         "town": town or "N/A",
@@ -184,6 +193,7 @@ async def create_managed_organization(
     if tax_number:
         body["tax_number"] = tax_number
 
+    logger.info("Creating managed org: %s (parent: %s)", name, managed_by_org_id)
     return await _mgmt_request("POST", "/organizations", json_body=body)
 
 
