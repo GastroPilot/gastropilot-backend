@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     SENTRY_DSN: str = ""
     SENTRY_ENVIRONMENT: str = "development"
 
+    # Upload storage: local filesystem (default) or S3/Minio
+    UPLOAD_DIR: str = "/data/uploads"
+    UPLOAD_PUBLIC_URL: str = "/uploads"
+
+    # S3/Minio (optional – wenn leer wird lokaler Speicher genutzt)
     MINIO_ENDPOINT: str = "http://minio:9000"
     MINIO_ACCESS_KEY: str = ""
     MINIO_SECRET_KEY: str = ""
