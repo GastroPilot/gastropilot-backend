@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     SENTRY_DSN: str = ""
     SENTRY_ENVIRONMENT: str = "development"
 
+    MINIO_ENDPOINT: str = "http://minio:9000"
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_BUCKET: str = "gastropilot-uploads"
+    MINIO_PUBLIC_URL: str = ""
+
     RATE_LIMIT_PER_MINUTE: int = 60
     REQUEST_TIMEOUT: int = 30
 

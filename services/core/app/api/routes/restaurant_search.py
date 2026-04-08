@@ -136,7 +136,7 @@ async def search_restaurants(
         avg_rating, rating_count = await _get_rating_stats(db, r.id)
         s = r.settings or {}
         cuisine_type = s.get("cuisine_type")
-        image_url = s.get("image_url")
+        image_url = s.get("image_url") or s.get("logo_url")
         items.append(
             {
                 "id": str(r.id),
