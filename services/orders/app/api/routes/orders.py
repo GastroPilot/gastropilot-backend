@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -655,6 +658,16 @@ async def update_order(
     tip = order.tip_amount or 0.0
     order.total = subtotal - discount + tip
 
+    # TSE signing when payment_status transitions to "paid" (non-blocking)
+    if update_data.get("payment_status") == "paid":
+        try:
+            from app.services.fiskaly_service import resolve_payment_type, sign_order_receipt
+
+            pay_type = resolve_payment_type(order.payment_method)
+            await sign_order_receipt(session, order, payment_type=pay_type)
+        except Exception as exc:
+            logger.error("fiskaly TSE signing failed for order %s: %s", order.id, exc)
+
     try:
         await session.commit()
         await session.refresh(order)
@@ -766,9 +779,7 @@ async def update_order_item(
     session: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    result = await session.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
-    )
+    result = await session.execute(select(Order).where(Order.id == order_id).with_for_update())
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -806,7 +817,9 @@ async def update_order_item(
         item.quantity = max(1, item.quantity)
         item.total_price = item.quantity * item.unit_price
 
-    order_items_result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
+    order_items_result = await session.execute(
+        select(OrderItem).where(OrderItem.order_id == order_id)
+    )
     order_items = order_items_result.scalars().all()
     sync_order_status_with_items(order, order_items)
 
@@ -938,7 +951,9 @@ async def delete_order_item(
     await session.delete(item)
     await session.flush()
 
-    order_items_result = await session.execute(select(OrderItem).where(OrderItem.order_id == order_id))
+    order_items_result = await session.execute(
+        select(OrderItem).where(OrderItem.order_id == order_id)
+    )
     remaining_items = order_items_result.scalars().all()
     sync_order_status_with_items(order, remaining_items)
 

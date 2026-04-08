@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     CORS_ALLOW_CREDENTIALS: bool = True
     STRIPE_SECRET_KEY: str = ""
 
+    # fiskaly KassenSichV TSE (Master-Credentials für Management API)
+    FISKALY_API_KEY: str = ""
+    FISKALY_API_SECRET: str = ""
+    FISKALY_BASE_URL: str = "https://kassensichv-middleware.fiskaly.com/api/v2"
+    FISKALY_MANAGEMENT_URL: str = "https://dashboard.fiskaly.com/api/v0"
+    FISKALY_TEST_MODE: bool = True
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

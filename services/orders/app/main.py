@@ -79,6 +79,7 @@ app.add_middleware(
 app.add_middleware(TenantMiddleware)
 
 from app.api.routes import (
+    fiskaly,
     health,
     invoices,
     kitchen,
@@ -107,6 +108,7 @@ for prefix in ("/api/v1", "/v1"):
     app.include_router(sumup.router, prefix=prefix)
     app.include_router(public_orders.router, prefix=prefix)
     app.include_router(kitchen_device.router, prefix=prefix)
+    app.include_router(fiskaly.router, prefix=prefix)
 
 
 @app.websocket("/ws/{tenant_id}")

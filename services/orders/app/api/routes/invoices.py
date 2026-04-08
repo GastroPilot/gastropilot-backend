@@ -154,6 +154,72 @@ async def generate_invoice_pdf(
             Paragraph(f"SumUp Transaktionscode: {payment.transaction_code}", styles["Normal"])
         )
 
+    # TSE / fiskaly data
+    from app.models.fiskaly import FiskalyTransaction
+
+    tse_result = await db.execute(
+        select(FiskalyTransaction)
+        .where(
+            FiskalyTransaction.order_id == order_id,
+            FiskalyTransaction.tx_state == "FINISHED",
+        )
+        .order_by(FiskalyTransaction.created_at.desc())
+    )
+    tse_tx = tse_result.scalars().first()
+
+    if tse_tx:
+        story.append(Spacer(1, 5 * mm))
+        story.append(Paragraph("TSE-Daten", styles["Heading4"]))
+
+        tse_data = []
+        if tse_tx.tss_serial_number:
+            tse_data.append(["TSE-Seriennummer:", tse_tx.tss_serial_number[:40]])
+        if tse_tx.tx_number is not None:
+            tse_data.append(["TSE-Transaktion:", str(tse_tx.tx_number)])
+        if tse_tx.signature_value:
+            sig_short = tse_tx.signature_value[:40] + "..."
+            tse_data.append(["TSE-Signatur:", sig_short])
+        if tse_tx.time_start:
+            from datetime import UTC as _UTC
+            from datetime import datetime as dt
+
+            ts_start = dt.fromtimestamp(tse_tx.time_start, tz=_UTC)
+            tse_data.append(["TSE-Start:", ts_start.strftime("%d.%m.%Y %H:%M:%S")])
+        if tse_tx.time_end:
+            ts_end = dt.fromtimestamp(tse_tx.time_end, tz=_UTC)
+            tse_data.append(["TSE-Stop:", ts_end.strftime("%d.%m.%Y %H:%M:%S")])
+        if tse_tx.client_serial_number:
+            tse_data.append(["KassenID:", tse_tx.client_serial_number])
+
+        if tse_data:
+            tse_table = RLTable(tse_data, colWidths=[120, 340])
+            tse_table.setStyle(
+                TableStyle(
+                    [
+                        ("FONTSIZE", (0, 0), (-1, -1), 7),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ]
+                )
+            )
+            story.append(tse_table)
+
+        # QR code
+        if tse_tx.qr_code_data:
+            try:
+                from reportlab.graphics.barcode.qr import QrCodeWidget
+                from reportlab.graphics.shapes import Drawing
+
+                qr_size = 40 * mm
+                qr = QrCodeWidget(tse_tx.qr_code_data, barWidth=qr_size, barHeight=qr_size)
+                drawing = Drawing(qr_size, qr_size)
+                drawing.add(qr)
+                story.append(Spacer(1, 3 * mm))
+                story.append(drawing)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).error("QR code render failed: %s", exc)
+                story.append(Paragraph("(QR-Code nicht verfügbar)", styles["Normal"]))
+
     doc.build(story)
     buffer.seek(0)
 

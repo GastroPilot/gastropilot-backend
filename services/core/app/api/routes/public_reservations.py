@@ -14,7 +14,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
-from app.core.guest_deps import get_current_guest
+from app.core.guest_deps import get_optional_guest
 from app.models.block import Block, BlockAssignment
 from app.models.reservation import Guest, Reservation
 from app.models.restaurant import Restaurant, Table
@@ -275,7 +275,7 @@ async def check_availability(
 async def create_reservation(
     slug: str,
     body: PublicReservationCreate,
-    current_guest: GuestProfile = Depends(get_current_guest),
+    current_guest: GuestProfile | None = Depends(get_optional_guest),
     db: AsyncSession = Depends(get_db),
 ):
     restaurant = await _get_restaurant_by_slug(slug, db)
@@ -309,23 +309,38 @@ async def create_reservation(
         raise HTTPException(status_code=409, detail="No tables available for the requested time")
 
     # Create or find guest
-    guest_result = await db.execute(
-        select(Guest).where(
-            and_(
-                Guest.tenant_id == restaurant.id,
-                Guest.guest_profile_id == current_guest.id,
+    guest: Guest | None = None
+
+    if current_guest:
+        guest_result = await db.execute(
+            select(Guest).where(
+                and_(
+                    Guest.tenant_id == restaurant.id,
+                    Guest.guest_profile_id == current_guest.id,
+                )
             )
         )
-    )
-    guest = guest_result.scalar_one_or_none()
+        guest = guest_result.scalar_one_or_none()
 
-    if not guest and current_guest.email:
-        # Backward-compatibility: link old guest records by account email.
+        if not guest and current_guest.email:
+            # Backward-compatibility: link old guest records by account email.
+            guest_by_email_result = await db.execute(
+                select(Guest).where(
+                    and_(
+                        Guest.tenant_id == restaurant.id,
+                        Guest.email == current_guest.email,
+                    )
+                )
+            )
+            guest = guest_by_email_result.scalar_one_or_none()
+
+    if not guest and body.guest_email:
+        # Try to find existing guest by email (unauthenticated flow).
         guest_by_email_result = await db.execute(
             select(Guest).where(
                 and_(
                     Guest.tenant_id == restaurant.id,
-                    Guest.email == current_guest.email,
+                    Guest.email == body.guest_email,
                 )
             )
         )
@@ -339,11 +354,11 @@ async def create_reservation(
             last_name=name_parts[1] if len(name_parts) > 1 else "",
             email=body.guest_email,
             phone=body.guest_phone,
-            guest_profile_id=current_guest.id,
+            guest_profile_id=current_guest.id if current_guest else None,
         )
         db.add(guest)
         await db.flush()
-    elif not guest.guest_profile_id:
+    elif current_guest and not guest.guest_profile_id:
         # Link existing guest to authenticated profile if not yet linked.
         guest.guest_profile_id = current_guest.id
 
