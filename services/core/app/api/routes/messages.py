@@ -124,7 +124,7 @@ async def _resolve_tenant_context_for_message(
     )
 
 
-@router.post("/", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 async def create_message(
     request: Request,
     body: MessageCreate,
@@ -155,7 +155,7 @@ async def create_message(
     return msg
 
 
-@router.get("/", response_model=list[MessageResponse])
+@router.get("", response_model=list[MessageResponse])
 async def list_messages(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),

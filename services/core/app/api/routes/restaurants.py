@@ -139,7 +139,7 @@ async def get_public_name(slug: str | None = None, session: AsyncSession = Depen
     }
 
 
-@router.get("/", response_model=list[RestaurantResponse])
+@router.get("", response_model=list[RestaurantResponse])
 async def list_restaurants(
     request: Request,
     current_user=Depends(get_current_user),

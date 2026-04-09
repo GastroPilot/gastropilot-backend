@@ -149,7 +149,7 @@ async def update_me(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/", response_model=list[UserResponse])
+@router.get("", response_model=list[UserResponse])
 async def list_users(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -163,7 +163,7 @@ async def list_users(
     return result.scalars().all()
 
 
-@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: UserCreate,
     request: Request,

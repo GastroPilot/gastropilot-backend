@@ -191,7 +191,7 @@ async def get_config(
     return config
 
 
-@router.post("/", response_model=TableDayConfigResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=TableDayConfigResponse, status_code=status.HTTP_201_CREATED)
 async def create_or_update_config(
     request: Request,
     body: TableDayConfigCreate,

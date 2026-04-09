@@ -28,7 +28,7 @@ class UserSettingsResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@router.get("/", response_model=UserSettingsResponse)
+@router.get("", response_model=UserSettingsResponse)
 async def get_settings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -43,7 +43,7 @@ async def get_settings(
     return settings
 
 
-@router.patch("/", response_model=UserSettingsResponse)
+@router.patch("", response_model=UserSettingsResponse)
 async def update_settings(
     body: UserSettingsUpdate,
     db: AsyncSession = Depends(get_db),

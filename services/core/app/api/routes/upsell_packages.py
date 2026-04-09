@@ -108,7 +108,7 @@ async def _resolve_tenant_context_for_upsell(
     )
 
 
-@router.post("/", response_model=UpsellPackageResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UpsellPackageResponse, status_code=status.HTTP_201_CREATED)
 async def create_package(
     request: Request,
     body: UpsellPackageCreate,
@@ -131,7 +131,7 @@ async def create_package(
     return package
 
 
-@router.get("/", response_model=list[UpsellPackageResponse])
+@router.get("", response_model=list[UpsellPackageResponse])
 async def list_packages(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),

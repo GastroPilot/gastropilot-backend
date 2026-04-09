@@ -325,7 +325,7 @@ def _serialize_order(order: Order, include_items: list[dict] | None = None) -> d
     return payload
 
 
-@router.get("/")
+@router.get("")
 async def list_orders(
     request: Request,
     session: AsyncSession = Depends(get_db),
@@ -340,7 +340,7 @@ async def list_orders(
     return [_serialize_order(o) for o in orders]
 
 
-@router.post("/", status_code=201)
+@router.post("", status_code=201)
 async def create_order(
     data: OrderCreate,
     request: Request,

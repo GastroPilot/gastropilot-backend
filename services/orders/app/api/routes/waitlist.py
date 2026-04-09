@@ -81,7 +81,7 @@ async def _save_waitlist(tenant_id: UUID, entries: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/", response_model=list[WaitlistEntryResponse])
+@router.get("", response_model=list[WaitlistEntryResponse])
 async def list_waitlist(
     current_user: User = Depends(require_staff_or_above),
 ):
@@ -91,7 +91,7 @@ async def list_waitlist(
     return active
 
 
-@router.post("/", response_model=WaitlistEntryResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=WaitlistEntryResponse, status_code=status.HTTP_201_CREATED)
 async def add_to_waitlist(
     body: WaitlistEntryCreate,
     current_user: User = Depends(require_staff_or_above),

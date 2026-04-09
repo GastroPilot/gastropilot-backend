@@ -11,7 +11,7 @@ from app.services.allergen_service import KNOWN_ALLERGENS, check_menu_items
 router = APIRouter(prefix="/allergens", tags=["allergens"])
 
 
-@router.get("/", response_model=list[str])
+@router.get("", response_model=list[str])
 async def list_allergens():
     """Gibt die Liste aller bekannten Allergen-Bezeichnungen zurück."""
     return sorted(KNOWN_ALLERGENS)

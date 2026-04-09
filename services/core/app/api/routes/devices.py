@@ -61,7 +61,7 @@ async def _resolve_tenant_context_for_device(
     )
 
 
-@router.get("/", response_model=list[DeviceResponse])
+@router.get("", response_model=list[DeviceResponse])
 async def list_devices(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_owner_or_above),

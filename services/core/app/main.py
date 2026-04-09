@@ -61,6 +61,7 @@ app = FastAPI(
     docs_url="/docs" if settings.is_development else None,
     redoc_url="/redoc" if settings.is_development else None,
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 app.state.limiter = limiter
@@ -85,15 +86,6 @@ app.add_middleware(
 
 app.add_middleware(TenantMiddleware)
 app.add_middleware(AuditLoggingMiddleware)
-
-
-@app.middleware("http")
-async def strip_trailing_slash(request, call_next):
-    """Entfernt Trailing Slashes aus der URL, um 307-Redirects und 404s zu vermeiden."""
-    path = request.scope["path"]
-    if len(path) > 1 and path.endswith("/"):
-        request.scope["path"] = path.rstrip("/")
-    return await call_next(request)
 
 from app.api.routes import (  # noqa: E402
     admin,
