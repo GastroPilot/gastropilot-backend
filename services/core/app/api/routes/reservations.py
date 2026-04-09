@@ -161,7 +161,7 @@ def _reservation_to_dict(r: Reservation, table_ids: list[str] | None = None) -> 
     }
 
 
-@router.get("/")
+@router.get("")
 async def list_reservations(
     request: Request,
     date: str | None = Query(None, description="YYYY-MM-DD"),
@@ -214,7 +214,7 @@ async def list_reservations(
     return [_reservation_to_dict(r, table_ids_map.get(str(r.id))) for r in reservations]
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_reservation(
     request: Request,
     body: ReservationCreate,

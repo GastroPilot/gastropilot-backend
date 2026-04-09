@@ -5,8 +5,26 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+
+class TrailingSlashMiddleware:
+    """ASGI-Middleware: entfernt Trailing Slashes bevor der Router sie sieht."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            path = scope["path"]
+            if len(path) > 1 and path.endswith("/"):
+                scope["path"] = path.rstrip("/")
+        await self.app(scope, receive, send)
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -61,10 +79,19 @@ app = FastAPI(
     docs_url="/docs" if settings.is_development else None,
     redoc_url="/redoc" if settings.is_development else None,
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error("Validation error on %s %s: %s", request.method, request.url.path, exc.errors())
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 app.add_middleware(
     CORSMiddleware,
@@ -85,6 +112,7 @@ app.add_middleware(
 
 app.add_middleware(TenantMiddleware)
 app.add_middleware(AuditLoggingMiddleware)
+app.add_middleware(TrailingSlashMiddleware)
 
 from app.api.routes import (  # noqa: E402
     admin,

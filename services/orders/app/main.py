@@ -6,8 +6,24 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from starlette.types import ASGIApp, Receive, Scope, Send
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+
+
+class TrailingSlashMiddleware:
+    """ASGI-Middleware: entfernt Trailing Slashes bevor der Router sie sieht."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            path = scope["path"]
+            if len(path) > 1 and path.endswith("/"):
+                scope["path"] = path.rstrip("/")
+        await self.app(scope, receive, send)
 
 _shared_path = Path(__file__).parent.parent.parent.parent / "packages"
 if str(_shared_path) not in sys.path:
@@ -66,6 +82,7 @@ app = FastAPI(
     version="2.0.0",
     docs_url="/docs" if settings.is_development else None,
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 app.add_middleware(
@@ -77,6 +94,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "Accept"],
 )
 app.add_middleware(TenantMiddleware)
+app.add_middleware(TrailingSlashMiddleware)
 
 from app.api.routes import (
     fiskaly,

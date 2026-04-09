@@ -74,7 +74,7 @@ async def list_cuisines(
     return {"cuisines": cuisines}
 
 
-@router.get("/")
+@router.get("")
 async def search_restaurants(
     q: str | None = Query(None, alias="query", description="Search query"),
     allergens: str | None = Query(None, description="Comma-separated allergen IDs"),

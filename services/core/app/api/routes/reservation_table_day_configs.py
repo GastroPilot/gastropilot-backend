@@ -37,7 +37,7 @@ def _normalize_utc(dt: datetime) -> datetime:
     return dt.astimezone(UTC)
 
 
-@router.post("/", response_model=RTDCResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=RTDCResponse, status_code=status.HTTP_201_CREATED)
 async def create_or_update(
     request: Request,
     body: RTDCCreate,
@@ -98,7 +98,7 @@ async def create_or_update(
     return rtdc
 
 
-@router.get("/", response_model=list[RTDCResponse])
+@router.get("", response_model=list[RTDCResponse])
 async def list_all(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
@@ -107,7 +107,7 @@ async def list_all(
     return result.scalars().all()
 
 
-@router.delete("/")
+@router.delete("")
 async def delete_mapping(
     reservation_id: UUID = Query(...),
     table_day_config_id: UUID = Query(...),

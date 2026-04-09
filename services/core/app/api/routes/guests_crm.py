@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/guests", tags=["guests-crm"])
 
 
-@router.get("/", response_model=list[GuestListResponse])
+@router.get("", response_model=list[GuestListResponse])
 async def list_guests(
     q: str | None = Query(None, description="Search query"),
     sort_by: str = Query("last_visit", description="Sort field"),

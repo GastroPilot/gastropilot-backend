@@ -122,7 +122,7 @@ async def _resolve_tenant_context_for_voucher(
     )
 
 
-@router.post("/", response_model=VoucherResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=VoucherResponse, status_code=status.HTTP_201_CREATED)
 async def create_voucher(
     request: Request,
     body: VoucherCreate,
@@ -155,7 +155,7 @@ async def create_voucher(
     return voucher
 
 
-@router.get("/", response_model=list[VoucherResponse])
+@router.get("", response_model=list[VoucherResponse])
 async def list_vouchers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),

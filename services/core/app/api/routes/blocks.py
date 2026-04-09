@@ -102,7 +102,7 @@ async def _resolve_tenant_context_for_block(
 # --- Block CRUD ---
 
 
-@router.post("/", response_model=BlockResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=BlockResponse, status_code=status.HTTP_201_CREATED)
 async def create_block(
     request: Request,
     body: BlockCreate,
@@ -137,7 +137,7 @@ async def create_block(
     return block
 
 
-@router.get("/", response_model=list[BlockResponse])
+@router.get("", response_model=list[BlockResponse])
 async def list_blocks(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),

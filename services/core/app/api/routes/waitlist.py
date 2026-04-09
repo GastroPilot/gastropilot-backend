@@ -121,7 +121,7 @@ async def _resolve_tenant_context_for_waitlist(
     )
 
 
-@router.post("/", response_model=WaitlistResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=WaitlistResponse, status_code=status.HTTP_201_CREATED)
 async def create_entry(
     request: Request,
     body: WaitlistCreate,
@@ -151,7 +151,7 @@ async def create_entry(
     return entry
 
 
-@router.get("/", response_model=list[WaitlistResponse])
+@router.get("", response_model=list[WaitlistResponse])
 async def list_entries(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
