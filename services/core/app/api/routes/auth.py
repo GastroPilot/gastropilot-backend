@@ -116,10 +116,20 @@ async def login(
 
     auth_method = "pin" if data.operator_number else "password"
 
+    # Tenant-Kontext: aus User oder aus tenant_slug (für Admins ohne festen Tenant)
+    effective_tenant_id = user.tenant_id
+    if not effective_tenant_id and data.tenant_slug:
+        tenant_res = await session.execute(
+            select(Restaurant).where(Restaurant.slug == data.tenant_slug)
+        )
+        tenant = tenant_res.scalar_one_or_none()
+        if tenant:
+            effective_tenant_id = tenant.id
+
     token_data = {
         "sub": str(user.id),
         "role": user.role,
-        "tenant_id": str(user.tenant_id) if user.tenant_id else None,
+        "tenant_id": str(effective_tenant_id) if effective_tenant_id else None,
         "auth_method": auth_method,
     }
     access_token = create_access_token(token_data)
