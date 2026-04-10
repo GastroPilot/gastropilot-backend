@@ -457,6 +457,8 @@ async def create_order(
             )
             session.add(item)
 
+        # Ensure subtotal/tax/total are consistent immediately after creation.
+        await _recalculate_order_totals(order, session)
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
