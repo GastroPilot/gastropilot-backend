@@ -174,7 +174,7 @@ async def get_dashboard_batch(
         )
         block_assignments = [_serialize(a) for a in assignments_result.scalars().all()]
 
-    # Orders – aktive Orders für heute (status != closed/cancelled)
+    # Orders – aktive Orders für heute (status != closed/canceled)
     try:
         has_table_ids_column_result = await session.execute(text("""
                 SELECT EXISTS (
@@ -495,7 +495,7 @@ async def get_insights_data(
             Reservation.tenant_id == rid,
             Reservation.start_at >= period_start,
             Reservation.start_at < period_end,
-            Reservation.status.notin_(["cancelled", "no_show"]),
+            Reservation.status.notin_(["canceled", "no_show"]),
         )
     )
     res_count, guests_served = reservations_result.one()
@@ -512,7 +512,7 @@ async def get_insights_data(
                 WHERE tenant_id = :tid
                   AND opened_at >= :from_dt
                   AND opened_at < :to_dt
-                  AND status NOT IN ('cancelled')
+                  AND status NOT IN ('canceled')
                 """),
             {"tid": str(rid), "from_dt": period_start, "to_dt": period_end},
         )
@@ -531,7 +531,7 @@ async def get_insights_data(
                 WHERE tenant_id = :tid
                   AND opened_at >= :from_dt
                   AND opened_at < :to_dt
-                  AND status NOT IN ('cancelled')
+                  AND status NOT IN ('canceled')
                 GROUP BY day
                 ORDER BY day ASC
                 """),
@@ -567,7 +567,7 @@ async def get_insights_data(
                 WHERE o.tenant_id = :tid
                   AND o.opened_at >= :from_dt
                   AND o.opened_at < :to_dt
-                  AND o.status NOT IN ('cancelled')
+                  AND o.status NOT IN ('canceled')
                 GROUP BY oi.item_name
                 ORDER BY quantity DESC
                 LIMIT 10
