@@ -104,6 +104,7 @@ class PlatformAdminUpdate(BaseModel):
     last_name: str | None = None
     email: str | None = None
     password: str | None = None
+    role: str | None = None
     is_active: bool | None = None
 
     @field_validator("password")
@@ -111,6 +112,13 @@ class PlatformAdminUpdate(BaseModel):
     def validate_password(cls, v: str | None) -> str | None:
         if v is not None and len(v) < 8:
             raise ValueError("Passwort muss mindestens 8 Zeichen lang sein")
+        return v
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str | None) -> str | None:
+        if v is not None and v not in {"platform_admin", "platform_support", "platform_analyst"}:
+            raise ValueError("Ungültige Rolle")
         return v
 
 
@@ -1016,6 +1024,14 @@ async def update_platform_admin(
     if not admin:
         raise HTTPException(status_code=404, detail="Platform-Admin nicht gefunden")
 
+    if admin_id == current_user.id:
+        if data.is_active is False:
+            raise HTTPException(status_code=400, detail="Sie können sich nicht selbst deaktivieren")
+        if data.role is not None and data.role != "platform_admin":
+            raise HTTPException(
+                status_code=400, detail="Sie können Ihre eigene Rolle nicht herabstufen"
+            )
+
     if data.first_name is not None:
         admin.first_name = data.first_name
     if data.last_name is not None:
@@ -1029,6 +1045,8 @@ async def update_platform_admin(
         admin.email = data.email
     if data.password is not None:
         admin.password_hash = hash_password(data.password)
+    if data.role is not None:
+        admin.role = data.role
     if data.is_active is not None:
         admin.is_active = data.is_active
 
