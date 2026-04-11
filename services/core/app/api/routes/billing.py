@@ -105,6 +105,14 @@ async def create_checkout(
         url = await svc.create_checkout(tenant_id, body.plan_id, body.success_url, body.cancel_url)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except stripe.error.AuthenticationError:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe ist nicht konfiguriert (STRIPE_SECRET_KEY fehlt oder ist ungültig)",
+        )
+    except stripe.error.StripeError:
+        logger.exception("Stripe checkout failed")
+        raise HTTPException(status_code=502, detail="Stripe checkout fehlgeschlagen")
 
     await db.commit()
     return CheckoutResponse(checkout_url=url)
@@ -124,6 +132,9 @@ async def get_subscription(
     svc = SubscriptionService(db)
     try:
         data = await svc.sync_subscription(tenant_id)
+    except stripe.error.AuthenticationError:
+        logger.exception("Stripe authentication failed while syncing subscription")
+        data = {"id": None, "plan": "free", "status": "inactive", "current_period_end": None}
     except Exception:
         logger.exception("Failed to sync subscription")
         data = {"id": None, "plan": "free", "status": "inactive", "current_period_end": None}
@@ -153,6 +164,14 @@ async def create_billing_portal(
         url = await svc.create_portal(tenant_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except stripe.error.AuthenticationError:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe ist nicht konfiguriert (STRIPE_SECRET_KEY fehlt oder ist ungültig)",
+        )
+    except stripe.error.StripeError:
+        logger.exception("Stripe billing portal failed")
+        raise HTTPException(status_code=502, detail="Stripe Billing-Portal fehlgeschlagen")
 
     return BillingPortalResponse(url=url)
 

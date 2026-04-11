@@ -61,6 +61,9 @@ class Settings(BaseSettings):
 
     STRIPE_SECRET_KEY: str | None = None
     STRIPE_WEBHOOK_SECRET: str | None = None
+    STRIPE_PRICE_STARTER: str | None = None
+    STRIPE_PRICE_PROFESSIONAL: str | None = None
+    STRIPE_PRICE_ENTERPRISE: str | None = None
     SUMUP_API_KEY: str | None = None
     SUMUP_MERCHANT_CODE: str | None = None
     SUMUP_WEBHOOK_SECRET: str | None = None
