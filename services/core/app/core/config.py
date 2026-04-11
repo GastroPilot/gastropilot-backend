@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3001,http://127.0.0.1:3001"
     CORS_ORIGIN_REGEX: str = r"https://([a-zA-Z0-9-]+\.)?gpilot\.app"
     CORS_ALLOW_CREDENTIALS: bool = True
+    WEB_PASSWORD_ONLY_ORIGINS: str = (
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "https://gpilot.app,https://www.gpilot.app,"
+        "https://demo.gpilot.app,https://www.demo.gpilot.app,"
+        "https://staging.gpilot.app,https://www.staging.gpilot.app,"
+        "https://test.gpilot.app,https://www.test.gpilot.app"
+    )
 
     STRIPE_SECRET_KEY: str | None = None
     STRIPE_WEBHOOK_SECRET: str | None = None
@@ -104,6 +111,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def web_password_only_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.WEB_PASSWORD_ONLY_ORIGINS.split(",") if o.strip()]
 
     @property
     def ENVIRONMENT(self) -> str:
