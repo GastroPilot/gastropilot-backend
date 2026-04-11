@@ -33,6 +33,8 @@ class TenantCreate(BaseModel):
     # Erster Owner-User
     owner_first_name: str
     owner_last_name: str
+    owner_email: str
+    owner_password: str
     owner_operator_number: str  # 4-stellige Bediener-Nr., z.B. "0001"
     owner_pin: str  # 6–8 Ziffern
 
@@ -48,6 +50,20 @@ class TenantCreate(BaseModel):
     def validate_pin(cls, v: str) -> str:
         if not re.fullmatch(r"\d{6,8}", v):
             raise ValueError("PIN muss 6–8 Ziffern enthalten")
+        return v
+
+    @field_validator("owner_email")
+    @classmethod
+    def validate_owner_email(cls, v: str) -> str:
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v):
+            raise ValueError("owner_email ist keine gültige E-Mail-Adresse")
+        return v.strip().lower()
+
+    @field_validator("owner_password")
+    @classmethod
+    def validate_owner_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Owner-Passwort muss mindestens 8 Zeichen lang sein")
         return v
 
     @field_validator("slug")
@@ -90,12 +106,20 @@ class PlatformAdminCreate(BaseModel):
     last_name: str
     email: str
     password: str
+    role: str = "platform_admin"
 
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: str) -> str:
         if len(v) < 8:
             raise ValueError("Passwort muss mindestens 8 Zeichen lang sein")
+        return v
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        if v not in {"platform_admin", "platform_support", "platform_analyst"}:
+            raise ValueError("Ungültige Rolle")
         return v
 
 
@@ -169,6 +193,10 @@ async def create_tenant(
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Slug ist bereits vergeben")
 
+    existing_owner_email = await session.execute(select(User).where(User.email == data.owner_email))
+    if existing_owner_email.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Owner-E-Mail ist bereits vergeben")
+
     # 1. Restaurant anlegen
     restaurant = Restaurant(
         name=data.name,
@@ -183,12 +211,14 @@ async def create_tenant(
     # 2. Owner-User anlegen
     owner = User(
         tenant_id=restaurant.id,
+        email=data.owner_email,
+        password_hash=hash_password(data.owner_password),
         operator_number=data.owner_operator_number,
         pin_hash=hash_pin(data.owner_pin),
         first_name=data.owner_first_name,
         last_name=data.owner_last_name,
         role="owner",
-        auth_method="pin",
+        auth_method="password",
         is_active=True,
     )
     session.add(owner)
@@ -954,7 +984,7 @@ async def create_platform_admin(
         last_name=data.last_name,
         email=data.email,
         password_hash=hash_password(data.password),
-        role="platform_admin",
+        role=data.role,
         auth_method="password",
         is_active=True,
         tenant_id=None,

@@ -25,6 +25,7 @@ from app.models.user import RefreshToken, User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
+WEB_EMAIL_LOGIN_ROLES = {"platform_admin", "platform_support", "platform_analyst", "owner"}
 
 
 class LoginRequest(BaseModel):
@@ -81,8 +82,10 @@ async def login(
     user: User | None = None
     is_pin_login = bool(data.operator_number and data.pin)
     is_nfc_login = bool(data.nfc_tag_id)
+    is_email_login = bool(data.email and data.password)
+    is_web_login = _is_web_login_request(request)
 
-    if _is_web_login_request(request) and (is_pin_login or is_nfc_login):
+    if is_web_login and (is_pin_login or is_nfc_login):
         raise HTTPException(
             status_code=400,
             detail="Im Web ist nur E-Mail/Passwort-Login erlaubt",
@@ -122,7 +125,7 @@ async def login(
         user = (await session.execute(query)).scalar_one_or_none()
 
     # Email/password login
-    elif data.email and data.password:
+    elif is_email_login:
         result = await session.execute(select(User).where(User.email == data.email))
         candidate = result.scalar_one_or_none()
         if (
@@ -134,6 +137,18 @@ async def login(
 
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if is_email_login and user.role not in WEB_EMAIL_LOGIN_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="E-Mail/Passwort-Login ist nur für Inhaber- und Platform-Accounts erlaubt",
+        )
+
+    if is_web_login and user.role not in WEB_EMAIL_LOGIN_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Kein Web-Zugang für diese Rolle",
+        )
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is inactive")
