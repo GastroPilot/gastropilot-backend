@@ -58,8 +58,12 @@ async def list_cuisines(
     db: AsyncSession = Depends(get_db),
 ):
     """Return distinct cuisine types from public restaurants."""
+    cuisine_type_expr = Restaurant.settings["cuisine_type"].astext.label(
+        "cuisine_type"
+    )
+
     result = await db.execute(
-        select(Restaurant.settings["cuisine_type"].astext)
+        select(cuisine_type_expr)
         .where(
             and_(
                 Restaurant.public_booking_enabled.is_(True),
@@ -68,7 +72,7 @@ async def list_cuisines(
             )
         )
         .distinct()
-        .order_by(Restaurant.settings["cuisine_type"].astext)
+        .order_by(cuisine_type_expr)
     )
     cuisines = [row[0] for row in result.all() if row[0]]
     return {"cuisines": cuisines}
