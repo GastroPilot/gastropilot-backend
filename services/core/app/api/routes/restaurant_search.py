@@ -25,6 +25,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/public/restaurants", tags=["restaurant-search"])
 
 
+def _resolve_booking_max_party_size(restaurant: Restaurant) -> int:
+    """Resolve max party size with DB column as source of truth.
+
+    Falls back to legacy settings keys for older records.
+    """
+    s = restaurant.settings or {}
+    candidates = (
+        getattr(restaurant, "booking_max_party_size", None),
+        s.get("booking_max_party_size"),
+        s.get("max_party_size"),
+    )
+    for value in candidates:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed >= 1:
+            return parsed
+    return 10
+
+
 async def _get_public_restaurant(slug: str, db: AsyncSession) -> Restaurant:
     """Get a restaurant by slug, only if public booking is enabled."""
     result = await db.execute(select(Restaurant).where(Restaurant.slug == slug))
@@ -158,8 +179,8 @@ async def search_restaurants(
                 "latitude": s.get("latitude"),
                 "longitude": s.get("longitude"),
                 "allergen_safe": [],
-                "public_booking_enabled": True,
-                "booking_max_party_size": s.get("max_party_size", 10),
+                "public_booking_enabled": bool(r.public_booking_enabled),
+                "booking_max_party_size": _resolve_booking_max_party_size(r),
                 "is_featured": bool(r.is_featured),
             }
         )
@@ -232,8 +253,8 @@ async def get_restaurant_detail(
         "latitude": s.get("latitude"),
         "longitude": s.get("longitude"),
         "allergen_safe": [],
-        "public_booking_enabled": True,
-        "booking_max_party_size": s.get("max_party_size", 10),
+        "public_booking_enabled": bool(restaurant.public_booking_enabled),
+        "booking_max_party_size": _resolve_booking_max_party_size(restaurant),
         "menu_summary": menu_summary,
         "reviews_summary": {
             "average_rating": avg_rating,
