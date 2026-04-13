@@ -16,8 +16,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE IF NOT EXISTS fiskaly_tss_configs (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -31,11 +30,9 @@ def upgrade() -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CONSTRAINT uq_fiskaly_tss_configs_tenant UNIQUE (tenant_id)
         )
-        """
-    )
+        """)
 
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE IF NOT EXISTS fiskaly_transactions (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -57,8 +54,7 @@ def upgrade() -> None:
             error TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        """
-    )
+        """)
 
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_fiskaly_transactions_tenant_id "
@@ -73,22 +69,20 @@ def upgrade() -> None:
     op.execute("ALTER TABLE fiskaly_tss_configs ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE fiskaly_transactions ENABLE ROW LEVEL SECURITY")
 
-    op.execute(
-        """
+    op.execute("""
         CREATE POLICY fiskaly_tss_configs_tenant_isolation ON fiskaly_tss_configs
             USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE POLICY fiskaly_transactions_tenant_isolation ON fiskaly_transactions
             USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-        """
-    )
+        """)
 
 
 def downgrade() -> None:
-    op.execute("DROP POLICY IF EXISTS fiskaly_transactions_tenant_isolation ON fiskaly_transactions")
+    op.execute(
+        "DROP POLICY IF EXISTS fiskaly_transactions_tenant_isolation ON fiskaly_transactions"
+    )
     op.execute("DROP POLICY IF EXISTS fiskaly_tss_configs_tenant_isolation ON fiskaly_tss_configs")
     op.execute("DROP TABLE IF EXISTS fiskaly_transactions")
     op.execute("DROP TABLE IF EXISTS fiskaly_tss_configs")

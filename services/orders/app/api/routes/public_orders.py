@@ -65,9 +65,7 @@ async def _validate_table_token(slug: str, token: str, db: AsyncSession) -> tupl
     # Query restaurant by slug
     result = await db.execute(
         text(
-            "SELECT id, name FROM restaurants "
-            "WHERE slug = :slug "
-            "AND public_booking_enabled = true"
+            "SELECT id, name FROM restaurants WHERE slug = :slug AND public_booking_enabled = true"
         ),
         {"slug": slug},
     )
@@ -219,14 +217,14 @@ async def create_public_order(
     for item_req in body.items:
         # Look up menu item for price
         mi_result = await db.execute(
-            text("SELECT name, price, tax_rate " "FROM menu_items WHERE id = :id"),
+            text("SELECT name, price, tax_rate FROM menu_items WHERE id = :id"),
             {"id": str(item_req.menu_item_id)},
         )
         mi = mi_result.first()
         if not mi:
             raise HTTPException(
                 status_code=400,
-                detail=(f"Menu item {item_req.menu_item_id}" f" not found"),
+                detail=(f"Menu item {item_req.menu_item_id} not found"),
             )
 
         item_total = mi[1] * item_req.quantity
@@ -441,7 +439,7 @@ async def order_status_stream(
                     order = result.scalar_one_or_none()
 
                     if not order:
-                        yield ("data: " '{"status": "not_found"}\n\n')
+                        yield ('data: {"status": "not_found"}\n\n')
                         break
 
                     items_res = await sess.execute(
@@ -456,8 +454,7 @@ async def order_status_stream(
                         f' "{order.payment_status}",'
                         f' "items": ['
                         + ",".join(
-                            f'{{"name":' f' "{i.item_name}",' f' "status":' f' "{i.status}"}}'
-                            for i in items
+                            f'{{"name": "{i.item_name}", "status": "{i.status}"}}' for i in items
                         )
                         + "]}}\n\n"
                     )

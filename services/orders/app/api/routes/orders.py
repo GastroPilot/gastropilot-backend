@@ -593,12 +593,13 @@ async def update_order(
         if reservation_id_update is None:
             raise HTTPException(status_code=400, detail="Reservation is required for every order")
 
-        resolved_table_id, resolved_table_ids = (
-            await _resolve_order_table_assignment_from_reservation(
-                session,
-                order.tenant_id,
-                reservation_id_update,
-            )
+        (
+            resolved_table_id,
+            resolved_table_ids,
+        ) = await _resolve_order_table_assignment_from_reservation(
+            session,
+            order.tenant_id,
+            reservation_id_update,
         )
         order.reservation_id = reservation_id_update
         order.table_id = resolved_table_id

@@ -27,19 +27,23 @@ async def migrate():
 
             # Prüfe ob menu_items Tabelle existiert
             if DB_TYPE in ["neon", "postgresql"]:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
                         WHERE table_schema = 'public' 
                         AND table_name = 'menu_items'
                     );
-                """))
+                """)
+                )
                 table_exists = result.scalar()
             else:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT name FROM sqlite_master 
                     WHERE type='table' AND name='menu_items';
-                """))
+                """)
+                )
                 table_exists = result.fetchone() is not None
 
             if not table_exists:
@@ -50,13 +54,15 @@ async def migrate():
 
             # Prüfe und füge allergens hinzu
             if DB_TYPE in ["neon", "postgresql"]:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.columns 
                         WHERE table_name = 'menu_items' 
                         AND column_name = 'allergens'
                     );
-                """))
+                """)
+                )
                 column_exists = result.scalar()
             else:
                 result = await conn.execute(text("PRAGMA table_info(menu_items);"))
@@ -66,28 +72,34 @@ async def migrate():
             if not column_exists:
                 logger.info("Adding allergens column to menu_items...")
                 if DB_TYPE in ["neon", "postgresql"]:
-                    await conn.execute(text("""
+                    await conn.execute(
+                        text("""
                         ALTER TABLE menu_items 
                         ADD COLUMN allergens JSON;
-                    """))
+                    """)
+                    )
                 else:
-                    await conn.execute(text("""
+                    await conn.execute(
+                        text("""
                         ALTER TABLE menu_items 
                         ADD COLUMN allergens TEXT;
-                    """))
+                    """)
+                    )
                 logger.info("allergens column added")
             else:
                 logger.info("allergens column already exists")
 
             # Prüfe und füge modifiers hinzu
             if DB_TYPE in ["neon", "postgresql"]:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.columns 
                         WHERE table_name = 'menu_items' 
                         AND column_name = 'modifiers'
                     );
-                """))
+                """)
+                )
                 column_exists = result.scalar()
             else:
                 result = await conn.execute(text("PRAGMA table_info(menu_items);"))
@@ -97,15 +109,19 @@ async def migrate():
             if not column_exists:
                 logger.info("Adding modifiers column to menu_items...")
                 if DB_TYPE in ["neon", "postgresql"]:
-                    await conn.execute(text("""
+                    await conn.execute(
+                        text("""
                         ALTER TABLE menu_items 
                         ADD COLUMN modifiers JSON;
-                    """))
+                    """)
+                    )
                 else:
-                    await conn.execute(text("""
+                    await conn.execute(
+                        text("""
                         ALTER TABLE menu_items 
                         ADD COLUMN modifiers TEXT;
-                    """))
+                    """)
+                    )
                 logger.info("modifiers column added")
             else:
                 logger.info("modifiers column already exists")

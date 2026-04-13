@@ -16,16 +16,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.execute("ALTER TABLE fiskaly_tss_configs ADD COLUMN IF NOT EXISTS fiskaly_org_id UUID")
     op.execute(
-        "ALTER TABLE fiskaly_tss_configs ADD COLUMN IF NOT EXISTS fiskaly_org_id UUID"
+        "ALTER TABLE fiskaly_tss_configs ADD COLUMN IF NOT EXISTS fiskaly_api_key VARCHAR(256)"
     )
     op.execute(
-        "ALTER TABLE fiskaly_tss_configs "
-        "ADD COLUMN IF NOT EXISTS fiskaly_api_key VARCHAR(256)"
-    )
-    op.execute(
-        "ALTER TABLE fiskaly_tss_configs "
-        "ADD COLUMN IF NOT EXISTS fiskaly_api_secret VARCHAR(256)"
+        "ALTER TABLE fiskaly_tss_configs ADD COLUMN IF NOT EXISTS fiskaly_api_secret VARCHAR(256)"
     )
 
 

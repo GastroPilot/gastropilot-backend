@@ -120,7 +120,7 @@ def send_reservation_confirmation(
         tenant_id=tenant_id,
         notification_type="reservation_confirmed",
         title=f"Reservierung bestätigt – {restaurant_name}",
-        body=(f"{reservation_date} um {reservation_time} Uhr · " f"{party_size} Personen"),
+        body=(f"{reservation_date} um {reservation_time} Uhr · {party_size} Personen"),
         data={"type": "reservation_confirmed"},
     )
 
@@ -383,8 +383,7 @@ def send_reservation_canceled(
         notification_type="reservation_canceled",
         title=f"Reservierung storniert – {restaurant_name}",
         body=(
-            f"Ihre Reservierung am {reservation_date} um "
-            f"{reservation_time} Uhr wurde storniert."
+            f"Ihre Reservierung am {reservation_date} um {reservation_time} Uhr wurde storniert."
         ),
         data={"type": "reservation_canceled"},
     )

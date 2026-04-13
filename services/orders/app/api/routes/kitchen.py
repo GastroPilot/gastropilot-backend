@@ -102,9 +102,7 @@ async def get_kitchen_queue(
             "tickets": [
                 {
                     "kitchen_ticket_no": ticket_no,
-                    "sent_to_kitchen_at": (
-                        min(valid_sent_times) if valid_sent_times else None
-                    ),
+                    "sent_to_kitchen_at": (min(valid_sent_times) if valid_sent_times else None),
                     "items_count": sum(max(item.get("quantity", 1), 1) for item in ticket_items),
                     "items": ticket_items,
                 }

@@ -29,24 +29,29 @@ async def migrate():
 
             # Prüfe ob orders Tabelle existiert
             if DB_TYPE in ["neon", "postgresql"]:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
                         WHERE table_schema = 'public' 
                         AND table_name = 'orders'
                     );
-                """))
+                """)
+                )
                 orders_exists = result.scalar()
             else:  # SQLite
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT name FROM sqlite_master 
                     WHERE type='table' AND name='orders';
-                """))
+                """)
+                )
                 orders_exists = result.fetchone() is not None
 
             if not orders_exists:
                 logger.info("Creating orders table...")
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     CREATE TABLE orders (
                         id SERIAL PRIMARY KEY,
                         restaurant_id INTEGER NOT NULL,
@@ -74,7 +79,8 @@ async def migrate():
                         FOREIGN KEY (guest_id) REFERENCES guests(id) ON DELETE SET NULL,
                         FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
                     );
-                """))
+                """)
+                )
                 await conn.execute(
                     text("CREATE INDEX idx_orders_restaurant_id ON orders(restaurant_id);")
                 )
@@ -95,24 +101,29 @@ async def migrate():
 
             # Prüfe ob menu_categories Tabelle existiert
             if DB_TYPE in ["neon", "postgresql"]:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
                         WHERE table_schema = 'public' 
                         AND table_name = 'menu_categories'
                     );
-                """))
+                """)
+                )
                 menu_categories_exists = result.scalar()
             else:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT name FROM sqlite_master 
                     WHERE type='table' AND name='menu_categories';
-                """))
+                """)
+                )
                 menu_categories_exists = result.fetchone() is not None
 
             if not menu_categories_exists:
                 logger.info("Creating menu_categories table...")
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     CREATE TABLE menu_categories (
                         id SERIAL PRIMARY KEY,
                         restaurant_id INTEGER NOT NULL,
@@ -124,7 +135,8 @@ async def migrate():
                         updated_at_utc TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                         FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
                     );
-                """))
+                """)
+                )
                 await conn.execute(
                     text(
                         "CREATE INDEX idx_menu_categories_restaurant_id ON menu_categories(restaurant_id);"
@@ -136,24 +148,29 @@ async def migrate():
 
             # Prüfe ob menu_items Tabelle existiert
             if DB_TYPE in ["neon", "postgresql"]:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
                         WHERE table_schema = 'public' 
                         AND table_name = 'menu_items'
                     );
-                """))
+                """)
+                )
                 menu_items_exists = result.scalar()
             else:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT name FROM sqlite_master 
                     WHERE type='table' AND name='menu_items';
-                """))
+                """)
+                )
                 menu_items_exists = result.fetchone() is not None
 
             if not menu_items_exists:
                 logger.info("Creating menu_items table...")
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     CREATE TABLE menu_items (
                         id SERIAL PRIMARY KEY,
                         restaurant_id INTEGER NOT NULL,
@@ -168,7 +185,8 @@ async def migrate():
                         FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE,
                         FOREIGN KEY (category_id) REFERENCES menu_categories(id) ON DELETE SET NULL
                     );
-                """))
+                """)
+                )
                 await conn.execute(
                     text("CREATE INDEX idx_menu_items_restaurant_id ON menu_items(restaurant_id);")
                 )
@@ -181,24 +199,29 @@ async def migrate():
 
             # Prüfe ob order_items Tabelle existiert
             if DB_TYPE in ["neon", "postgresql"]:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
                         WHERE table_schema = 'public' 
                         AND table_name = 'order_items'
                     );
-                """))
+                """)
+                )
                 order_items_exists = result.scalar()
             else:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT name FROM sqlite_master 
                     WHERE type='table' AND name='order_items';
-                """))
+                """)
+                )
                 order_items_exists = result.fetchone() is not None
 
             if not order_items_exists:
                 logger.info("Creating order_items table...")
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     CREATE TABLE order_items (
                         id SERIAL PRIMARY KEY,
                         order_id INTEGER NOT NULL,
@@ -217,7 +240,8 @@ async def migrate():
                         FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
                         FOREIGN KEY (menu_item_id) REFERENCES menu_items(id) ON DELETE SET NULL
                     );
-                """))
+                """)
+                )
                 await conn.execute(
                     text("CREATE INDEX idx_order_items_order_id ON order_items(order_id);")
                 )
@@ -229,13 +253,15 @@ async def migrate():
                 # Prüfe ob menu_item_id Spalte existiert
                 logger.info("order_items table exists, checking for menu_item_id column...")
                 if DB_TYPE in ["neon", "postgresql"]:
-                    result = await conn.execute(text("""
+                    result = await conn.execute(
+                        text("""
                         SELECT EXISTS (
                             SELECT FROM information_schema.columns 
                             WHERE table_name = 'order_items' 
                             AND column_name = 'menu_item_id'
                         );
-                    """))
+                    """)
+                    )
                     column_exists = result.scalar()
                 else:
                     result = await conn.execute(text("PRAGMA table_info(order_items);"))
@@ -244,18 +270,24 @@ async def migrate():
 
                 if not column_exists:
                     logger.info("Adding menu_item_id column to order_items...")
-                    await conn.execute(text("""
+                    await conn.execute(
+                        text("""
                         ALTER TABLE order_items 
                         ADD COLUMN menu_item_id INTEGER;
-                    """))
-                    await conn.execute(text("""
+                    """)
+                    )
+                    await conn.execute(
+                        text("""
                         ALTER TABLE order_items 
                         ADD CONSTRAINT fk_order_items_menu_item_id 
                         FOREIGN KEY (menu_item_id) REFERENCES menu_items(id) ON DELETE SET NULL;
-                    """))
-                    await conn.execute(text("""
+                    """)
+                    )
+                    await conn.execute(
+                        text("""
                         CREATE INDEX idx_order_items_menu_item_id ON order_items(menu_item_id);
-                    """))
+                    """)
+                    )
                     logger.info("menu_item_id column added")
                 else:
                     logger.info("menu_item_id column already exists")

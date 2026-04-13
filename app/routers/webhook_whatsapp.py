@@ -556,7 +556,7 @@ async def _handle_cancellation(
         )
 
     if reservation.status == "canceled":
-        return f"Diese Reservierung wurde bereits storniert.\n\n" f"Code: {confirmation_code}"
+        return f"Diese Reservierung wurde bereits storniert.\n\nCode: {confirmation_code}"
 
     if reservation.status in ("seated", "completed"):
         return (

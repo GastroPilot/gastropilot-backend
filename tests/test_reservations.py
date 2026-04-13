@@ -56,7 +56,7 @@ class TestReservationCRUD:
                 party_size=2 + i,
                 status="pending",
                 channel="manual",
-                guest_name=f"Gast {i+1}",
+                guest_name=f"Gast {i + 1}",
             )
             db_session.add(reservation)
         await db_session.commit()

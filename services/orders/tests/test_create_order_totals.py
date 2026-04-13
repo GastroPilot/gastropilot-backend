@@ -83,4 +83,3 @@ async def test_create_order_recalculates_totals(monkeypatch):
 
     assert recalc_calls["count"] == 1
     assert result["total"] == 11.0
-

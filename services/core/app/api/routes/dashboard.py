@@ -176,7 +176,8 @@ async def get_dashboard_batch(
 
     # Orders – aktive Orders für heute (status != closed/canceled)
     try:
-        has_table_ids_column_result = await session.execute(text("""
+        has_table_ids_column_result = await session.execute(
+            text("""
                 SELECT EXISTS (
                     SELECT 1
                     FROM information_schema.columns
@@ -184,7 +185,8 @@ async def get_dashboard_batch(
                       AND table_name = 'orders'
                       AND column_name = 'table_ids'
                 )
-                """))
+                """)
+        )
         has_table_ids_column = bool(has_table_ids_column_result.scalar())
 
         if has_table_ids_column:

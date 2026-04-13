@@ -79,9 +79,7 @@ async def list_cuisines(
     db: AsyncSession = Depends(get_db),
 ):
     """Return distinct cuisine types from public restaurants."""
-    cuisine_type_expr = Restaurant.settings["cuisine_type"].astext.label(
-        "cuisine_type"
-    )
+    cuisine_type_expr = Restaurant.settings["cuisine_type"].astext.label("cuisine_type")
 
     result = await db.execute(
         select(cuisine_type_expr)

@@ -16,8 +16,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE IF NOT EXISTS notifications (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
             guest_profile_id UUID NOT NULL REFERENCES guest_profiles(id) ON DELETE CASCADE,
@@ -29,15 +28,13 @@ def upgrade() -> None:
             is_read BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-        """
-    )
+        """)
     op.execute(
         "CREATE INDEX IF NOT EXISTS idx_notifications_guest_profile_id "
         "ON notifications(guest_profile_id)"
     )
     op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_notifications_created_at "
-        "ON notifications(created_at DESC)"
+        "CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC)"
     )
 
 

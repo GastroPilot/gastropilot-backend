@@ -282,7 +282,7 @@ class NotificationService:
                                         </td>
                                         <td style="padding-left: 12px; vertical-align: middle;">
                                             <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Ihr Tisch</div>
-                                            <div style="font-size: 16px; font-weight: 600; color: #1f2937; margin-top: 2px;">{n.table_number if str(n.table_number or '').lower().startswith('tisch') else f'Tisch {n.table_number}'}</div>
+                                            <div style="font-size: 16px; font-weight: 600; color: #1f2937; margin-top: 2px;">{n.table_number if str(n.table_number or "").lower().startswith("tisch") else f"Tisch {n.table_number}"}</div>
                                         </td>
                                     </tr>
                                 </table>
@@ -344,7 +344,9 @@ class NotificationService:
                             <!-- Success Icon -->
                             <div style="width: 72px; height: 72px; background: rgba(255,255,255,0.2); border-radius: 50%; margin: 0 auto 20px; line-height: 72px; font-size: 36px;">✓</div>
                             <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">Reservierung bestätigt!</h1>
-                            <p style="margin: 12px 0 0; color: rgba(255,255,255,0.9); font-size: 16px;">{n.restaurant_name}</p>
+                            <p style="margin: 12px 0 0; color: rgba(255,255,255,0.9); font-size: 16px;">{
+            n.restaurant_name
+        }</p>
                         </td>
                     </tr>
                     
@@ -352,7 +354,9 @@ class NotificationService:
                     <tr>
                         <td style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 24px 30px; text-align: center; border-bottom: 1px solid #e5e7eb;">
                             <div style="font-size: 12px; color: #0369a1; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Ihr Bestätigungscode</div>
-                            <div style="font-size: 32px; font-weight: 800; color: #0c4a6e; letter-spacing: 4px; margin-top: 8px; font-family: 'Courier New', monospace;">{n.confirmation_code}</div>
+                            <div style="font-size: 32px; font-weight: 800; color: #0c4a6e; letter-spacing: 4px; margin-top: 8px; font-family: 'Courier New', monospace;">{
+            n.confirmation_code
+        }</div>
                         </td>
                     </tr>
                     
@@ -382,7 +386,9 @@ class NotificationService:
                                                 </td>
                                                 <td style="padding-left: 12px; vertical-align: middle;">
                                                     <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Datum</div>
-                                                    <div style="font-size: 16px; font-weight: 600; color: #1f2937; margin-top: 2px;">{n.date}</div>
+                                                    <div style="font-size: 16px; font-weight: 600; color: #1f2937; margin-top: 2px;">{
+            n.date
+        }</div>
                                                 </td>
                                             </tr>
                                         </table>
@@ -398,7 +404,9 @@ class NotificationService:
                                                 </td>
                                                 <td style="padding-left: 12px; vertical-align: middle;">
                                                     <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Uhrzeit</div>
-                                                    <div style="font-size: 16px; font-weight: 600; color: #1f2937; margin-top: 2px;">{n.time} Uhr</div>
+                                                    <div style="font-size: 16px; font-weight: 600; color: #1f2937; margin-top: 2px;">{
+            n.time
+        } Uhr</div>
                                                 </td>
                                             </tr>
                                         </table>
@@ -414,7 +422,9 @@ class NotificationService:
                                                 </td>
                                                 <td style="padding-left: 12px; vertical-align: middle;">
                                                     <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Personen</div>
-                                                    <div style="font-size: 16px; font-weight: 600; color: #1f2937; margin-top: 2px;">{n.party_size} {('Person' if n.party_size == 1 else 'Personen')}</div>
+                                                    <div style="font-size: 16px; font-weight: 600; color: #1f2937; margin-top: 2px;">{
+            n.party_size
+        } {("Person" if n.party_size == 1 else "Personen")}</div>
                                                 </td>
                                             </tr>
                                         </table>
@@ -432,7 +442,9 @@ class NotificationService:
                                                 </td>
                                                 <td style="padding-left: 12px; vertical-align: middle;">
                                                     <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Reserviert auf</div>
-                                                    <div style="font-size: 16px; font-weight: 600; color: #1f2937; margin-top: 2px;">{n.guest_name}</div>
+                                                    <div style="font-size: 16px; font-weight: 600; color: #1f2937; margin-top: 2px;">{
+            n.guest_name
+        }</div>
                                                 </td>
                                             </tr>
                                         </table>
@@ -452,9 +464,11 @@ class NotificationService:
                                 <tr>
                                     <td style="padding: 24px;">
                                         <div style="font-size: 14px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 12px;">📍 So finden Sie uns</div>
-                                        <div style="font-size: 18px; font-weight: 600; color: #ffffff; margin-bottom: 8px;">{n.restaurant_name}</div>
+                                        <div style="font-size: 18px; font-weight: 600; color: #ffffff; margin-bottom: 8px;">{
+            n.restaurant_name
+        }</div>
                                         <div style="font-size: 14px; color: #d1d5db; line-height: 1.6;">
-                                            {n.restaurant_address or 'Adresse auf Anfrage'}
+                                            {n.restaurant_address or "Adresse auf Anfrage"}
                                             {phone_line}
                                         </div>
                                     </td>
@@ -495,31 +509,43 @@ class NotificationService:
                                             <tr>
                                                 <td style="padding: 0 8px;" align="center">
                                                     <!--[if mso]>
-                                                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{n.manage_url or '#'}" style="height:44px;v-text-anchor:middle;width:140px;" arcsize="18%" strokecolor="#667eea" strokeweight="1px" fillcolor="#ffffff">
+                                                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{
+            n.manage_url or "#"
+        }" style="height:44px;v-text-anchor:middle;width:140px;" arcsize="18%" strokecolor="#667eea" strokeweight="1px" fillcolor="#ffffff">
                                                     <w:anchorlock/>
                                                     <center style="color:#667eea;font-family:sans-serif;font-size:14px;font-weight:600;">Bearbeiten</center>
                                                     </v:roundrect>
                                                     <![endif]-->
                                                     <!--[if !mso]><!-->
-                                                    <a href="{n.manage_url or '#'}" style="display: inline-block; padding: 12px 24px; background: #ffffff; color: #667eea; text-decoration: none; font-weight: 600; font-size: 14px; border-radius: 8px; border: 2px solid #667eea; margin: 4px;">✏️ Bearbeiten</a>
+                                                    <a href="{
+            n.manage_url or "#"
+        }" style="display: inline-block; padding: 12px 24px; background: #ffffff; color: #667eea; text-decoration: none; font-weight: 600; font-size: 14px; border-radius: 8px; border: 2px solid #667eea; margin: 4px;">✏️ Bearbeiten</a>
                                                     <!--<![endif]-->
                                                 </td>
                                                 <td style="padding: 0 8px;" align="center">
                                                     <!--[if mso]>
-                                                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{n.manage_url + '/cancel' if n.manage_url else '#'}" style="height:44px;v-text-anchor:middle;width:140px;" arcsize="18%" strokecolor="#ef4444" strokeweight="1px" fillcolor="#ffffff">
+                                                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{
+            n.manage_url + "/cancel" if n.manage_url else "#"
+        }" style="height:44px;v-text-anchor:middle;width:140px;" arcsize="18%" strokecolor="#ef4444" strokeweight="1px" fillcolor="#ffffff">
                                                     <w:anchorlock/>
                                                     <center style="color:#ef4444;font-family:sans-serif;font-size:14px;font-weight:600;">Stornieren</center>
                                                     </v:roundrect>
                                                     <![endif]-->
                                                     <!--[if !mso]><!-->
-                                                    <a href="{n.manage_url + '/cancel' if n.manage_url else '#'}" style="display: inline-block; padding: 12px 24px; background: #ffffff; color: #ef4444; text-decoration: none; font-weight: 600; font-size: 14px; border-radius: 8px; border: 2px solid #ef4444; margin: 4px;">🗑️ Stornieren</a>
+                                                    <a href="{
+            n.manage_url + "/cancel" if n.manage_url else "#"
+        }" style="display: inline-block; padding: 12px 24px; background: #ffffff; color: #ef4444; text-decoration: none; font-weight: 600; font-size: 14px; border-radius: 8px; border: 2px solid #ef4444; margin: 4px;">🗑️ Stornieren</a>
                                                     <!--<![endif]-->
                                                 </td>
                                             </tr>
                                         </table>
                                         
                                         <p style="margin: 16px 0 0; font-size: 12px; color: #9ca3af;">
-                                            Oder rufen Sie uns an: <a href="tel:{n.restaurant_phone or ''}" style="color: #667eea; text-decoration: none; font-weight: 500;">{n.restaurant_phone or 'Telefonnummer auf Anfrage'}</a>
+                                            Oder rufen Sie uns an: <a href="tel:{
+            n.restaurant_phone or ""
+        }" style="color: #667eea; text-decoration: none; font-weight: 500;">{
+            n.restaurant_phone or "Telefonnummer auf Anfrage"
+        }</a>
                                         </p>
                                     </td>
                                 </tr>
@@ -528,7 +554,8 @@ class NotificationService:
                     </tr>
                     
                     <!-- ICS Kalender-Hinweis -->
-                    {'''
+                    {
+            '''
                     <tr>
                         <td style="padding: 0 30px 24px;">
                             <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background: #eff6ff; border-radius: 12px; border: 1px solid #bfdbfe;">
@@ -544,7 +571,10 @@ class NotificationService:
                             </table>
                         </td>
                     </tr>
-                    ''' if n.ics_content else ''}
+                    '''
+            if n.ics_content
+            else ""
+        }
                     
                     <!-- Footer -->
                     <tr>
@@ -625,7 +655,7 @@ class NotificationService:
                                         <div style="text-decoration: line-through; color: #991b1b;">
                                             <div style="font-size: 14px; margin-bottom: 8px;">📅 {n.date}</div>
                                             <div style="font-size: 14px; margin-bottom: 8px;">⏰ {n.time} Uhr</div>
-                                            <div style="font-size: 14px;">👥 {n.party_size} {('Person' if n.party_size == 1 else 'Personen')}</div>
+                                            <div style="font-size: 14px;">👥 {n.party_size} {("Person" if n.party_size == 1 else "Personen")}</div>
                                         </div>
                                         <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #fecaca;">
                                             <div style="font-size: 12px; color: #991b1b;">Bestätigungscode</div>
@@ -661,7 +691,7 @@ class NotificationService:
                                         <div style="font-size: 14px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 12px;">📍 Kontakt</div>
                                         <div style="font-size: 18px; font-weight: 600; color: #ffffff; margin-bottom: 8px;">{n.restaurant_name}</div>
                                         <div style="font-size: 14px; color: #d1d5db; line-height: 1.6;">
-                                            {n.restaurant_address or 'Adresse auf Anfrage'}
+                                            {n.restaurant_address or "Adresse auf Anfrage"}
                                             {phone_line}
                                         </div>
                                     </td>

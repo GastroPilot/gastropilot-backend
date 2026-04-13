@@ -196,8 +196,15 @@ async def update_me(
     next_email = _normalize_email(body.email) if body.email is not None else current_user.email
 
     if body.password is not None and not next_email:
-        raise HTTPException(status_code=400, detail="Für Passwort-Login ist eine E-Mail erforderlich")
-    if body.email is not None and next_email and body.password is None and not current_user.password_hash:
+        raise HTTPException(
+            status_code=400, detail="Für Passwort-Login ist eine E-Mail erforderlich"
+        )
+    if (
+        body.email is not None
+        and next_email
+        and body.password is None
+        and not current_user.password_hash
+    ):
         raise HTTPException(
             status_code=400,
             detail="E-Mail und Passwort müssen zusammen gesetzt werden",
@@ -437,7 +444,12 @@ async def update_user(
                 status_code=400,
                 detail="Für Passwort-Login ist eine E-Mail erforderlich",
             )
-        if body.email is not None and next_email and body.password is None and not user.password_hash:
+        if (
+            body.email is not None
+            and next_email
+            and body.password is None
+            and not user.password_hash
+        ):
             raise HTTPException(
                 status_code=400,
                 detail="E-Mail und Passwort müssen zusammen gesetzt werden",

@@ -33,16 +33,14 @@ router = APIRouter(prefix="/public/me", tags=["guest-profile"])
 
 async def _table_exists(db: AsyncSession, table_name: str) -> bool:
     result = await db.execute(
-        text(
-            """
+        text("""
             SELECT EXISTS (
                 SELECT 1
                 FROM information_schema.tables
                 WHERE table_schema = 'public'
                   AND table_name = :table_name
             )
-            """
-        ),
+            """),
         {"table_name": table_name},
     )
     return bool(result.scalar())
@@ -50,8 +48,7 @@ async def _table_exists(db: AsyncSession, table_name: str) -> bool:
 
 async def _column_exists(db: AsyncSession, table_name: str, column_name: str) -> bool:
     result = await db.execute(
-        text(
-            """
+        text("""
             SELECT EXISTS (
                 SELECT 1
                 FROM information_schema.columns
@@ -59,8 +56,7 @@ async def _column_exists(db: AsyncSession, table_name: str, column_name: str) ->
                   AND table_name = :table_name
                   AND column_name = :column_name
             )
-            """
-        ),
+            """),
         {"table_name": table_name, "column_name": column_name},
     )
     return bool(result.scalar())
@@ -334,7 +330,7 @@ async def get_guest_orders(
         FROM orders o
         LEFT JOIN restaurants r ON r.id = o.tenant_id
         {item_count_join}
-        WHERE ({' OR '.join(scope_filter_parts)})
+        WHERE ({" OR ".join(scope_filter_parts)})
         ORDER BY COALESCE(o.opened_at, o.created_at) DESC
         LIMIT 200
     """
@@ -350,9 +346,7 @@ async def get_guest_orders(
             "total": float(row.total or 0),
             "status": row.status,
             "items_count": int(row.items_count or 0),
-            "created_at": (
-                row.created_at.isoformat() if row.created_at is not None else None
-            ),
+            "created_at": (row.created_at.isoformat() if row.created_at is not None else None),
         }
         for row in rows
     ]
@@ -410,7 +404,7 @@ async def get_guest_receipts(
             COALESCE(o.paid_at, o.closed_at, o.updated_at, o.created_at) AS paid_at
         FROM orders o
         LEFT JOIN restaurants r ON r.id = o.tenant_id
-        WHERE ({' OR '.join(scope_filter_parts)})
+        WHERE ({" OR ".join(scope_filter_parts)})
           AND (
               COALESCE(o.payment_status, '') = 'paid'
               OR o.status = 'paid'
@@ -426,14 +420,12 @@ async def get_guest_receipts(
         items: list[dict[str, object]] = []
         if has_order_items:
             item_rows = await db.execute(
-                text(
-                    """
+                text("""
                     SELECT item_name, quantity, unit_price
                     FROM order_items
                     WHERE order_id = :order_id
                     ORDER BY sort_order ASC, created_at ASC
-                    """
-                ),
+                    """),
                 {"order_id": str(row.id)},
             )
             items = [
