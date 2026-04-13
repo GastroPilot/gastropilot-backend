@@ -579,7 +579,7 @@ async def delete_obstacle(
     await session.commit()
 
 
-@router.get("/{restaurant_id}/audit-logs/")
+@router.get("/{restaurant_id}/audit-logs")
 async def list_audit_logs(
     restaurant_id: uuid.UUID,
     entity_type: str | None = None,
