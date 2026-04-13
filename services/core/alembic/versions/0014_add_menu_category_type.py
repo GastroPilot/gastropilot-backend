@@ -21,15 +21,10 @@ def upgrade() -> None:
         "ADD COLUMN IF NOT EXISTS category_type VARCHAR(16) DEFAULT 'food'"
     )
 
-    op.execute(
-        "UPDATE menu_categories "
-        "SET category_type = 'food' "
-        "WHERE category_type IS NULL"
-    )
+    op.execute("UPDATE menu_categories SET category_type = 'food' WHERE category_type IS NULL")
 
     # Best-effort backfill for likely drink categories based on existing names.
-    op.execute(
-        """
+    op.execute("""
         WITH normalized AS (
             SELECT
                 id,
@@ -76,20 +71,12 @@ def upgrade() -> None:
             OR n.name_normalized LIKE '%wasser%'
             OR n.name_normalized LIKE '%limonade%'
           )
-        """
-    )
+        """)
 
-    op.execute(
-        "ALTER TABLE menu_categories "
-        "ALTER COLUMN category_type SET DEFAULT 'food'"
-    )
-    op.execute(
-        "ALTER TABLE menu_categories "
-        "ALTER COLUMN category_type SET NOT NULL"
-    )
+    op.execute("ALTER TABLE menu_categories ALTER COLUMN category_type SET DEFAULT 'food'")
+    op.execute("ALTER TABLE menu_categories ALTER COLUMN category_type SET NOT NULL")
 
-    op.execute(
-        """
+    op.execute("""
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -103,13 +90,11 @@ def upgrade() -> None:
             END IF;
         END
         $$;
-        """
-    )
+        """)
 
 
 def downgrade() -> None:
     op.execute(
-        "ALTER TABLE menu_categories "
-        "DROP CONSTRAINT IF EXISTS ck_menu_categories_category_type"
+        "ALTER TABLE menu_categories DROP CONSTRAINT IF EXISTS ck_menu_categories_category_type"
     )
     op.execute("ALTER TABLE menu_categories DROP COLUMN IF EXISTS category_type")

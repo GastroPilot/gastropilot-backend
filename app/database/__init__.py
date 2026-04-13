@@ -107,8 +107,7 @@ class AsyncDatabaseHandler:
                 )
         else:
             raise ValueError(
-                f"Invalid database type: {type}. "
-                f"Supported types: 'sqlite', 'neon', 'postgresql'"
+                f"Invalid database type: {type}. Supported types: 'sqlite', 'neon', 'postgresql'"
             )
 
         if type_lower == "sqlite":

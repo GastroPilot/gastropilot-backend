@@ -378,7 +378,7 @@ class WhatsAppBotService:
 
             prompt = f"""Analysiere die folgende WhatsApp-Nachricht eines Restaurant-Gastes.
 
-WICHTIG - Aktuelles Datum: {today.strftime('%d.%m.%Y')} ({WEEKDAY_NAMES_DE.get(today.weekday())})
+WICHTIG - Aktuelles Datum: {today.strftime("%d.%m.%Y")} ({WEEKDAY_NAMES_DE.get(today.weekday())})
 
 Extrahiere folgende Informationen als JSON:
 - intent: "reservation" (neue Reservierung), "cancellation" (Stornierung), "modification" (Änderung bestehender Reservierung), "question" (Frage), "greeting" (Begrüßung), "confirmation" (Ja/OK/Bestätigung), "rejection" (Nein/Ablehnung), "special_request" (Sonderwunsch wie Kinderstuhl, Allergien), "resume_yes" (Fortsetzen), "resume_no" (Neu beginnen), "other"
@@ -390,7 +390,7 @@ Extrahiere folgende Informationen als JSON:
 - special_request: Sonderwunsch-Text oder null (z.B. "Kinderstuhl", "Fensterplatz", "Allergien")
 - modification_field: Was soll geändert werden? "date", "time", "party_size" oder null
 
-Datumsreferenzen (heute ist {today.strftime('%A')}):
+Datumsreferenzen (heute ist {today.strftime("%A")}):
 - "heute" = {today.isoformat()}
 - "morgen" = {tomorrow.isoformat()}
 - "übermorgen" = {day_after_tomorrow.isoformat()}
@@ -929,7 +929,7 @@ Antworte NUR mit dem JSON-Objekt:"""
                 )
                 if not is_open:
                     # Zeige Öffnungszeiten und frage nach anderer Zeit
-                    return f"{message}\n\n" f"Welche andere Uhrzeit passt Ihnen?"
+                    return f"{message}\n\nWelche andere Uhrzeit passt Ihnen?"
 
             conv.desired_time = nlp.time
 
@@ -973,7 +973,9 @@ Antworte NUR mit dem JSON-Objekt:"""
                 conv.state = (
                     "COLLECT_SIZE"
                     if not conv.party_size
-                    else "COLLECT_NAME" if not conv.guest_name else "COLLECT_SPECIAL"
+                    else "COLLECT_NAME"
+                    if not conv.guest_name
+                    else "COLLECT_SPECIAL"
                 )
                 return self._determine_next_question(conv, restaurant_name)
 
@@ -1184,7 +1186,7 @@ Antworte NUR mit dem JSON-Objekt:"""
         if "abbrechen" in raw_lower or "stopp" in raw_lower:
             conv.state = "INIT"
             conv.modification_code = None
-            return "Änderung abgebrochen.\n\n" "Kann ich Ihnen sonst noch helfen?"
+            return "Änderung abgebrochen.\n\nKann ich Ihnen sonst noch helfen?"
 
         if "datum" in raw_lower or nlp.modification_field == "date":
             conv.modification_field = "date"

@@ -19,8 +19,7 @@ def _validate(file_data: bytes, content_type: str) -> str:
     """Validate file type and size, return file extension."""
     if content_type not in ALLOWED_CONTENT_TYPES:
         raise ValueError(
-            f"Unzulaessiger Dateityp: {content_type}. "
-            f"Erlaubt: {', '.join(ALLOWED_CONTENT_TYPES)}"
+            f"Unzulaessiger Dateityp: {content_type}. Erlaubt: {', '.join(ALLOWED_CONTENT_TYPES)}"
         )
     if len(file_data) > MAX_FILE_SIZE:
         raise ValueError(
@@ -41,9 +40,7 @@ def _use_s3() -> bool:
 UPLOAD_DIR = Path(settings.UPLOAD_DIR) if hasattr(settings, "UPLOAD_DIR") else Path("/data/uploads")
 
 
-async def _upload_local(
-    file_data: bytes, content_type: str, prefix: str, tenant_id: str
-) -> str:
+async def _upload_local(file_data: bytes, content_type: str, prefix: str, tenant_id: str) -> str:
     ext = _validate(file_data, content_type)
     relative = f"{prefix}/{tenant_id}/{uuid.uuid4().hex}.{ext}"
     dest = UPLOAD_DIR / relative
@@ -58,9 +55,8 @@ async def _upload_local(
 
 # ── S3 / Minio backend ───────────────────────────────────────────────────────
 
-async def _upload_s3(
-    file_data: bytes, content_type: str, prefix: str, tenant_id: str
-) -> str:
+
+async def _upload_s3(file_data: bytes, content_type: str, prefix: str, tenant_id: str) -> str:
     import aioboto3
 
     ext = _validate(file_data, content_type)
@@ -98,15 +94,14 @@ async def _upload_s3(
             ExtraArgs={"ContentType": content_type},
         )
 
-    public_url_base = settings.MINIO_PUBLIC_URL or (
-        f"{settings.MINIO_ENDPOINT}/{bucket}"
-    )
+    public_url_base = settings.MINIO_PUBLIC_URL or (f"{settings.MINIO_ENDPOINT}/{bucket}")
     public_url = f"{public_url_base.rstrip('/')}/{filename}"
     logger.info("Uploaded image (s3): %s", public_url)
     return public_url
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 async def upload_image(
     file_data: bytes,

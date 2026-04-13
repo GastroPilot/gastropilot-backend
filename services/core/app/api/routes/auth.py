@@ -25,6 +25,7 @@ from app.models.user import RefreshToken, User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
+WEB_EMAIL_LOGIN_ROLES = {"platform_admin", "platform_support", "platform_analyst", "owner"}
 
 
 class LoginRequest(BaseModel):
@@ -55,6 +56,22 @@ def _refresh_expiry_or_500(refresh_token: str) -> datetime:
     return datetime.fromtimestamp(exp, tz=UTC)
 
 
+def _is_web_login_request(request: Request) -> bool:
+    """
+    Nur definierte Web-Origins (z. B. Marketing/Web-App) sollen PIN/NFC blockieren.
+    Dashboard-Origins bleiben davon unberührt.
+    """
+    origin = request.headers.get("origin")
+    if not origin:
+        return False
+
+    normalized_origin = origin.rstrip("/").lower()
+    restricted_origins = {
+        allowed.rstrip("/").lower() for allowed in settings.web_password_only_origins_list
+    }
+    return normalized_origin in restricted_origins
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(
     data: LoginRequest,
@@ -63,9 +80,19 @@ async def login(
     session: AsyncSession = Depends(get_db),
 ):
     user: User | None = None
+    is_pin_login = bool(data.operator_number and data.pin)
+    is_nfc_login = bool(data.nfc_tag_id)
+    is_email_login = bool(data.email and data.password)
+    is_web_login = _is_web_login_request(request)
+
+    if is_web_login and (is_pin_login or is_nfc_login):
+        raise HTTPException(
+            status_code=400,
+            detail="Im Web ist nur E-Mail/Passwort-Login erlaubt",
+        )
 
     # PIN login
-    if data.operator_number and data.pin:
+    if is_pin_login:
         if not data.tenant_slug:
             raise HTTPException(status_code=400, detail="tenant_slug is required for PIN login")
         tenant_res = await session.execute(
@@ -98,7 +125,7 @@ async def login(
         user = (await session.execute(query)).scalar_one_or_none()
 
     # Email/password login
-    elif data.email and data.password:
+    elif is_email_login:
         result = await session.execute(select(User).where(User.email == data.email))
         candidate = result.scalar_one_or_none()
         if (
@@ -110,6 +137,18 @@ async def login(
 
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if is_email_login and user.role not in WEB_EMAIL_LOGIN_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="E-Mail/Passwort-Login ist nur für Inhaber- und Platform-Accounts erlaubt",
+        )
+
+    if is_web_login and user.role not in WEB_EMAIL_LOGIN_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Kein Web-Zugang für diese Rolle",
+        )
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is inactive")

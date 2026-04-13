@@ -6,10 +6,9 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from starlette.types import ASGIApp, Receive, Scope, Send
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 class TrailingSlashMiddleware:
@@ -24,6 +23,7 @@ class TrailingSlashMiddleware:
             if len(path) > 1 and path.endswith("/"):
                 scope["path"] = path.rstrip("/")
         await self.app(scope, receive, send)
+
 
 _shared_path = Path(__file__).parent.parent.parent.parent / "packages"
 if str(_shared_path) not in sys.path:

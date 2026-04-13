@@ -171,7 +171,7 @@ async def forgot_password(
         try:
             from shared.events import event_publisher
 
-            reset_url = f"{settings.GUEST_PORTAL_URL}" f"/auth/reset-password?token={reset_token}"
+            reset_url = f"{settings.GUEST_PORTAL_URL}/auth/reset-password?token={reset_token}"
             await event_publisher.publish(
                 "password_reset.requested",
                 {

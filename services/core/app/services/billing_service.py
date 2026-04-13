@@ -260,13 +260,17 @@ class SubscriptionService:
     async def create_checkout(
         self, tenant_id, plan_id: str, success_url: str, cancel_url: str
     ) -> str:
+        # Plan-Konfiguration zuerst prüfen, bevor Stripe-Calls ausgelöst werden.
+        price_id = SUBSCRIPTION_PRICE_MAP.get(plan_id)
+        if not price_id:
+            raise ValueError(
+                f"Unknown plan: {plan_id} (Stripe price ID fehlt, z. B. STRIPE_PRICE_{plan_id.upper()})"
+            )
+
         restaurant = await self._get_restaurant(tenant_id)
         customer_id = await self.ensure_customer(
             tenant_id, restaurant.billing_email or restaurant.email or ""
         )
-        price_id = SUBSCRIPTION_PRICE_MAP.get(plan_id)
-        if not price_id:
-            raise ValueError(f"Unknown plan: {plan_id}")
 
         checkout = stripe.checkout.Session.create(
             customer=customer_id,

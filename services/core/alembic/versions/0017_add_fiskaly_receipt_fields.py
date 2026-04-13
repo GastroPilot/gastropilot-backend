@@ -16,18 +16,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "ALTER TABLE fiskaly_transactions "
-        "ADD COLUMN IF NOT EXISTS receipt_id VARCHAR(128)"
-    )
-    op.execute(
-        "ALTER TABLE fiskaly_transactions "
-        "ADD COLUMN IF NOT EXISTS receipt_public_url TEXT"
-    )
-    op.execute(
-        "ALTER TABLE fiskaly_transactions "
-        "ADD COLUMN IF NOT EXISTS receipt_pdf_url TEXT"
-    )
+    op.execute("ALTER TABLE fiskaly_transactions ADD COLUMN IF NOT EXISTS receipt_id VARCHAR(128)")
+    op.execute("ALTER TABLE fiskaly_transactions ADD COLUMN IF NOT EXISTS receipt_public_url TEXT")
+    op.execute("ALTER TABLE fiskaly_transactions ADD COLUMN IF NOT EXISTS receipt_pdf_url TEXT")
 
 
 def downgrade() -> None:

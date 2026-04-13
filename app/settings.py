@@ -28,7 +28,7 @@ if ENV == "development":
     DATABASE_URL = _getenv_str("DATABASE_URL", default="sqlite+aiosqlite:///./reservation_dev.db")
     if "sqlite" in DATABASE_URL:
         warnings.warn(
-            "⚠️  Using SQLite database in development. " "Set DATABASE_URL in .env for PostgreSQL!",
+            "⚠️  Using SQLite database in development. Set DATABASE_URL in .env for PostgreSQL!",
             UserWarning,
         )
 else:

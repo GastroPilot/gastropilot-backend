@@ -72,7 +72,7 @@ async def list_devices(
 
 
 @router.post(
-    "/",
+    "",
     response_model=DeviceWithTokenResponse,
     status_code=status.HTTP_201_CREATED,
 )

@@ -95,11 +95,11 @@ async def waitlist_position_stream(
                     current = res.scalar_one_or_none()
 
                     if not current:
-                        yield ("data: " '{"status": "removed"}\n\n')
+                        yield ('data: {"status": "removed"}\n\n')
                         break
 
                     if current.status != "waiting":
-                        yield (f"data: " f'{{"status": "{current.status}",' f' "position": 0}}\n\n')
+                        yield (f'data: {{"status": "{current.status}", "position": 0}}\n\n')
                         break
 
                     ahead = await session.execute(

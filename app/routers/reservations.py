@@ -288,8 +288,7 @@ async def update_reservation(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Reservation with active unpaid order cannot be canceled. "
-                "Complete payment first."
+                "Reservation with active unpaid order cannot be canceled. Complete payment first."
             ),
         )
 
@@ -480,8 +479,7 @@ async def cancel_reservation(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Reservation with active unpaid order cannot be canceled. "
-                "Complete payment first."
+                "Reservation with active unpaid order cannot be canceled. Complete payment first."
             ),
         )
 
@@ -572,8 +570,7 @@ async def delete_reservation(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Reservation with active unpaid order cannot be deleted. "
-                "Complete payment first."
+                "Reservation with active unpaid order cannot be deleted. Complete payment first."
             ),
         )
 

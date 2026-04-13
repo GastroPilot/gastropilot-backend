@@ -11,8 +11,7 @@ TERMINAL_ORDER_STATUSES = {"paid", "canceled"}
 
 def derive_order_status_from_items(items: Iterable[OrderItem]) -> str:
     normalized_statuses = [
-        normalize_order_item_status(getattr(item, "status", None))
-        for item in items
+        normalize_order_item_status(getattr(item, "status", None)) for item in items
     ]
     active_statuses = [status for status in normalized_statuses if status != "canceled"]
 

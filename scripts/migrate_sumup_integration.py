@@ -30,26 +30,35 @@ async def migrate():
 
                 # Füge SumUp-Felder zur restaurants-Tabelle hinzu
                 print("Füge SumUp-Felder zur restaurants-Tabelle hinzu...")
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     ALTER TABLE restaurants 
                     ADD COLUMN IF NOT EXISTS sumup_enabled BOOLEAN DEFAULT 0 NOT NULL
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     ALTER TABLE restaurants 
                     ADD COLUMN IF NOT EXISTS sumup_merchant_code VARCHAR(32)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     ALTER TABLE restaurants 
                     ADD COLUMN IF NOT EXISTS sumup_api_key VARCHAR(255)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     ALTER TABLE restaurants 
                     ADD COLUMN IF NOT EXISTS sumup_default_reader_id VARCHAR(64)
-                """))
+                """)
+                )
 
                 # Erstelle sumup_payments-Tabelle
                 print("Erstelle sumup_payments-Tabelle...")
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     CREATE TABLE IF NOT EXISTS sumup_payments (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         order_id INTEGER NOT NULL,
@@ -70,28 +79,41 @@ async def migrate():
                         FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
                         FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
                     )
-                """))
+                """)
+                )
 
                 # Erstelle Indizes
                 print("Erstelle Indizes...")
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_order_id ON sumup_payments(order_id)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_restaurant_id ON sumup_payments(restaurant_id)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_checkout_id ON sumup_payments(checkout_id)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_client_transaction_id ON sumup_payments(client_transaction_id)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_transaction_code ON sumup_payments(transaction_code)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_transaction_id ON sumup_payments(transaction_id)
-                """))
+                """)
+                )
 
             elif DB_TYPE == "postgresql":
                 # PostgreSQL Migration
@@ -99,26 +121,35 @@ async def migrate():
 
                 # Füge SumUp-Felder zur restaurants-Tabelle hinzu
                 print("Füge SumUp-Felder zur restaurants-Tabelle hinzu...")
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     ALTER TABLE restaurants 
                     ADD COLUMN IF NOT EXISTS sumup_enabled BOOLEAN DEFAULT FALSE NOT NULL
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     ALTER TABLE restaurants 
                     ADD COLUMN IF NOT EXISTS sumup_merchant_code VARCHAR(32)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     ALTER TABLE restaurants 
                     ADD COLUMN IF NOT EXISTS sumup_api_key VARCHAR(255)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     ALTER TABLE restaurants 
                     ADD COLUMN IF NOT EXISTS sumup_default_reader_id VARCHAR(64)
-                """))
+                """)
+                )
 
                 # Erstelle sumup_payments-Tabelle
                 print("Erstelle sumup_payments-Tabelle...")
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     CREATE TABLE IF NOT EXISTS sumup_payments (
                         id SERIAL PRIMARY KEY,
                         order_id INTEGER NOT NULL,
@@ -139,28 +170,41 @@ async def migrate():
                         FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
                         FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
                     )
-                """))
+                """)
+                )
 
                 # Erstelle Indizes
                 print("Erstelle Indizes...")
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_order_id ON sumup_payments(order_id)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_restaurant_id ON sumup_payments(restaurant_id)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_checkout_id ON sumup_payments(checkout_id)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_client_transaction_id ON sumup_payments(client_transaction_id)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_transaction_code ON sumup_payments(transaction_code)
-                """))
-                await conn.execute(text("""
+                """)
+                )
+                await conn.execute(
+                    text("""
                     CREATE INDEX IF NOT EXISTS idx_sumup_payments_transaction_id ON sumup_payments(transaction_id)
-                """))
+                """)
+                )
             else:
                 print(f"Unbekannter DB_TYPE: {DB_TYPE}")
                 return

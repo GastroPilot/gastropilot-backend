@@ -5,12 +5,11 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from starlette.types import ASGIApp, Receive, Scope, Send
-
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 class TrailingSlashMiddleware:
@@ -25,6 +24,8 @@ class TrailingSlashMiddleware:
             if len(path) > 1 and path.endswith("/"):
                 scope["path"] = path.rstrip("/")
         await self.app(scope, receive, send)
+
+
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -92,6 +93,7 @@ logger = logging.getLogger(__name__)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.error("Validation error on %s %s: %s", request.method, request.url.path, exc.errors())
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
 
 app.add_middleware(
     CORSMiddleware,

@@ -189,9 +189,7 @@ class ColoredConsoleFormatter(logging.Formatter):
         elif ":" in message and message.split(":")[0] == level:
             clean_message = ":".join(message.split(":")[1:]).strip()
 
-        formatted = (
-            f"{dim}{timestamp}{reset} " f"{level_color}{level:7s}{reset} " f"{clean_message}"
-        )
+        formatted = f"{dim}{timestamp}{reset} {level_color}{level:7s}{reset} {clean_message}"
 
         # Extra-Felder hinzufügen
         if extras:
@@ -492,7 +490,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             log_record.method = request.method
             log_record.path = request.url.path
             log_record.status_code = 500
-            log_record.duration_ms = f"{process_time*1000:.2f}"
+            log_record.duration_ms = f"{process_time * 1000:.2f}"
             log_record.user_id = user_id
             # Vollständigen Namen aus DB holen, wenn user_id vorhanden ist
             if user_id:

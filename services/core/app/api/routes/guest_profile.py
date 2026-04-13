@@ -7,7 +7,7 @@ import uuid
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
@@ -29,6 +29,37 @@ RESTAURANT_TZ = ZoneInfo("Europe/Berlin")
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/public/me", tags=["guest-profile"])
+
+
+async def _table_exists(db: AsyncSession, table_name: str) -> bool:
+    result = await db.execute(
+        text("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = :table_name
+            )
+            """),
+        {"table_name": table_name},
+    )
+    return bool(result.scalar())
+
+
+async def _column_exists(db: AsyncSession, table_name: str, column_name: str) -> bool:
+    result = await db.execute(
+        text("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = :table_name
+                  AND column_name = :column_name
+            )
+            """),
+        {"table_name": table_name, "column_name": column_name},
+    )
+    return bool(result.scalar())
 
 
 @router.get("", response_model=GuestProfileResponse)
@@ -233,6 +264,194 @@ async def get_guest_reservations(
         }
         for r, rest in rows
     ]
+
+
+@router.get("/orders")
+async def get_guest_orders(
+    guest: GuestProfile = Depends(get_current_guest),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get order history across all restaurants for the authenticated guest."""
+    if not await _table_exists(db, "orders"):
+        return []
+
+    has_guest_profile_id = await _column_exists(db, "orders", "guest_profile_id")
+    has_guest_id = await _column_exists(db, "orders", "guest_id")
+    has_order_items = await _table_exists(db, "order_items")
+
+    guest_ids: list[str] = []
+    if has_guest_id and await _table_exists(db, "guests"):
+        guest_rows = await db.execute(
+            text("SELECT id FROM guests WHERE guest_profile_id = :guest_profile_id"),
+            {"guest_profile_id": str(guest.id)},
+        )
+        guest_ids = [str(row.id) for row in guest_rows if row.id]
+
+    if not has_guest_profile_id and (not has_guest_id or not guest_ids):
+        return []
+
+    scope_filter_parts: list[str] = []
+    params: dict[str, object] = {"guest_profile_id": str(guest.id)}
+    if has_guest_profile_id:
+        scope_filter_parts.append("o.guest_profile_id = CAST(:guest_profile_id AS uuid)")
+    if has_guest_id and guest_ids:
+        guest_id_placeholders: list[str] = []
+        for idx, guest_id in enumerate(guest_ids):
+            param_name = f"guest_id_{idx}"
+            params[param_name] = guest_id
+            guest_id_placeholders.append(f"CAST(:{param_name} AS uuid)")
+        scope_filter_parts.append(f"o.guest_id IN ({', '.join(guest_id_placeholders)})")
+
+    if not scope_filter_parts:
+        return []
+
+    item_count_join = ""
+    item_count_select = "0 AS items_count"
+    if has_order_items:
+        item_count_join = """
+            LEFT JOIN (
+                SELECT order_id, COALESCE(SUM(quantity), 0) AS items_count
+                FROM order_items
+                GROUP BY order_id
+            ) oi_count ON oi_count.order_id = o.id
+        """
+        item_count_select = "COALESCE(oi_count.items_count, 0) AS items_count"
+
+    sql = f"""
+        SELECT
+            o.id,
+            COALESCE(r.name, '') AS restaurant_name,
+            COALESCE(r.slug, '') AS restaurant_slug,
+            COALESCE(o.order_number, '') AS order_number,
+            COALESCE(o.total, 0) AS total,
+            COALESCE(o.status, 'open') AS status,
+            {item_count_select},
+            COALESCE(o.opened_at, o.created_at) AS created_at
+        FROM orders o
+        LEFT JOIN restaurants r ON r.id = o.tenant_id
+        {item_count_join}
+        WHERE ({" OR ".join(scope_filter_parts)})
+        ORDER BY COALESCE(o.opened_at, o.created_at) DESC
+        LIMIT 200
+    """
+
+    rows = await db.execute(text(sql), params)
+
+    return [
+        {
+            "id": str(row.id),
+            "restaurant_name": row.restaurant_name,
+            "restaurant_slug": row.restaurant_slug,
+            "order_number": row.order_number,
+            "total": float(row.total or 0),
+            "status": row.status,
+            "items_count": int(row.items_count or 0),
+            "created_at": (row.created_at.isoformat() if row.created_at is not None else None),
+        }
+        for row in rows
+    ]
+
+
+@router.get("/receipts")
+async def get_guest_receipts(
+    guest: GuestProfile = Depends(get_current_guest),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get paid order receipts for the authenticated guest."""
+    if not await _table_exists(db, "orders"):
+        return []
+
+    has_guest_profile_id = await _column_exists(db, "orders", "guest_profile_id")
+    has_guest_id = await _column_exists(db, "orders", "guest_id")
+    has_tip_amount = await _column_exists(db, "orders", "tip_amount")
+    has_order_items = await _table_exists(db, "order_items")
+
+    guest_ids: list[str] = []
+    if has_guest_id and await _table_exists(db, "guests"):
+        guest_rows = await db.execute(
+            text("SELECT id FROM guests WHERE guest_profile_id = :guest_profile_id"),
+            {"guest_profile_id": str(guest.id)},
+        )
+        guest_ids = [str(row.id) for row in guest_rows if row.id]
+
+    if not has_guest_profile_id and (not has_guest_id or not guest_ids):
+        return []
+
+    scope_filter_parts: list[str] = []
+    params: dict[str, object] = {"guest_profile_id": str(guest.id)}
+    if has_guest_profile_id:
+        scope_filter_parts.append("o.guest_profile_id = CAST(:guest_profile_id AS uuid)")
+    if has_guest_id and guest_ids:
+        guest_id_placeholders: list[str] = []
+        for idx, guest_id in enumerate(guest_ids):
+            param_name = f"guest_id_{idx}"
+            params[param_name] = guest_id
+            guest_id_placeholders.append(f"CAST(:{param_name} AS uuid)")
+        scope_filter_parts.append(f"o.guest_id IN ({', '.join(guest_id_placeholders)})")
+
+    if not scope_filter_parts:
+        return []
+
+    tip_expr = "COALESCE(o.tip_amount, 0)" if has_tip_amount else "0"
+    receipts_sql = f"""
+        SELECT
+            o.id,
+            COALESCE(r.name, '') AS restaurant_name,
+            COALESCE(o.subtotal, 0) AS subtotal,
+            {tip_expr} AS tip,
+            COALESCE(o.total, 0) AS total,
+            COALESCE(o.payment_method, '') AS payment_method,
+            COALESCE(o.paid_at, o.closed_at, o.updated_at, o.created_at) AS paid_at
+        FROM orders o
+        LEFT JOIN restaurants r ON r.id = o.tenant_id
+        WHERE ({" OR ".join(scope_filter_parts)})
+          AND (
+              COALESCE(o.payment_status, '') = 'paid'
+              OR o.status = 'paid'
+              OR o.paid_at IS NOT NULL
+          )
+        ORDER BY COALESCE(o.paid_at, o.closed_at, o.updated_at, o.created_at) DESC
+        LIMIT 200
+    """
+
+    rows = await db.execute(text(receipts_sql), params)
+    receipts = []
+    for row in rows:
+        items: list[dict[str, object]] = []
+        if has_order_items:
+            item_rows = await db.execute(
+                text("""
+                    SELECT item_name, quantity, unit_price
+                    FROM order_items
+                    WHERE order_id = :order_id
+                    ORDER BY sort_order ASC, created_at ASC
+                    """),
+                {"order_id": str(row.id)},
+            )
+            items = [
+                {
+                    "name": item_row.item_name,
+                    "quantity": int(item_row.quantity or 0),
+                    "price": float(item_row.unit_price or 0),
+                }
+                for item_row in item_rows
+            ]
+
+        receipts.append(
+            {
+                "id": str(row.id),
+                "order_id": str(row.id),
+                "restaurant_name": row.restaurant_name,
+                "items": items,
+                "subtotal": float(row.subtotal or 0),
+                "tip": float(row.tip or 0),
+                "total": float(row.total or 0),
+                "payment_method": row.payment_method or "card",
+                "paid_at": row.paid_at.isoformat() if row.paid_at is not None else None,
+            }
+        )
+
+    return receipts
 
 
 @router.post("/reservations/{reservation_id}/cancel")

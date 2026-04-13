@@ -217,6 +217,7 @@ async def generate_invoice_pdf(
                 story.append(drawing)
             except Exception as exc:
                 import logging
+
                 logging.getLogger(__name__).error("QR code render failed: %s", exc)
                 story.append(Paragraph("(QR-Code nicht verfügbar)", styles["Normal"]))
 
