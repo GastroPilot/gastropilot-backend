@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.fiskaly import FiskalyTransaction, FiskalyTssConfig
+from app.models.fiskaly import FiskalyCashPointClosing, FiskalyTransaction, FiskalyTssConfig
 from app.models.order import Order, OrderItem
 
 logger = logging.getLogger(__name__)
@@ -374,15 +374,31 @@ def _build_receipt_payload(order: Order, items: list[OrderItem], payment_type: s
         for rate, amount in amounts_by_rate.items()
     ]
 
+    # § 6 KassenSichV: Storno-Beleg bei Stornierung
+    is_cancellation = order.status == "canceled"
     total = order.total or 0.0
+
+    # Bei Split-Payments: alle Zahlungsarten abbilden (Fix 5)
+    amounts_per_payment_type = []
+    if order.split_payments and isinstance(order.split_payments, list):
+        for sp in order.split_payments:
+            sp_method = sp.get("method", "cash")
+            sp_amount = float(sp.get("amount", 0)) + float(sp.get("tip_amount", 0))
+            sp_type = "CASH" if sp_method == "cash" else "NON_CASH"
+            amounts_per_payment_type.append(
+                {"payment_type": sp_type, "amount": f"{sp_amount:.2f}", "currency_code": "EUR"}
+            )
+    if not amounts_per_payment_type:
+        amounts_per_payment_type.append(
+            {"payment_type": payment_type, "amount": f"{total:.2f}", "currency_code": "EUR"}
+        )
+
     return {
         "standard_v1": {
             "receipt": {
-                "receipt_type": "RECEIPT",
+                "receipt_type": "CANCELLATION" if is_cancellation else "RECEIPT",
                 "amounts_per_vat_rate": amounts_per_vat_rate,
-                "amounts_per_payment_type": [
-                    {"payment_type": payment_type, "amount": f"{total:.2f}", "currency_code": "EUR"}
-                ],
+                "amounts_per_payment_type": amounts_per_payment_type,
             }
         }
     }
@@ -700,3 +716,605 @@ async def sign_order_receipt(
     db.add(tx_record)
     await db.flush()
     return tx_record
+
+
+# ---------------------------------------------------------------------------
+# DSFinV-K API (https://dsfinvk.fiskaly.com/api/v1)
+# ---------------------------------------------------------------------------
+
+
+async def _dsfinvk_request(
+    api_key: str, api_secret: str, method: str, path: str, json_body: dict | None = None
+) -> dict:
+    """Request against the fiskaly DSFinV-K API."""
+    return await _api_request(
+        settings.FISKALY_DSFINVK_URL, api_key, api_secret, method, path, json_body
+    )
+
+
+async def _dsfinvk_tenant_request(
+    config: FiskalyTssConfig, method: str, path: str, json_body: dict | None = None
+) -> dict:
+    """DSFinV-K request with per-tenant credentials."""
+    api_key = config.fiskaly_api_key or settings.FISKALY_API_KEY
+    api_secret = config.fiskaly_api_secret or settings.FISKALY_API_SECRET
+    return await _dsfinvk_request(api_key, api_secret, method, path, json_body)
+
+
+async def dsfinvk_get_cash_register(config: FiskalyTssConfig, client_id: uuid.UUID) -> dict:
+    """Get cash register details from DSFinV-K."""
+    return await _dsfinvk_tenant_request(config, "GET", f"/cash_registers/{client_id}")
+
+
+async def dsfinvk_upsert_cash_register(
+    config: FiskalyTssConfig,
+    client_id: uuid.UUID,
+    body: dict,
+) -> dict:
+    """Create or update a cash register in DSFinV-K."""
+    return await _dsfinvk_tenant_request(
+        config, "PUT", f"/cash_registers/{client_id}", json_body=body
+    )
+
+
+async def dsfinvk_upsert_vat_definition(
+    config: FiskalyTssConfig,
+    vat_definition_export_id: int,
+    body: dict,
+) -> dict:
+    """Create or update a VAT definition in DSFinV-K."""
+    return await _dsfinvk_tenant_request(
+        config, "PUT", f"/vat_definitions/{vat_definition_export_id}", json_body=body
+    )
+
+
+async def dsfinvk_insert_cash_point_closing(
+    config: FiskalyTssConfig, closing_id: uuid.UUID, body: dict
+) -> dict:
+    """Insert a cash point closing (Kassenabschluss) in DSFinV-K."""
+    return await _dsfinvk_tenant_request(
+        config, "PUT", f"/cash_point_closings/{closing_id}", json_body=body
+    )
+
+
+async def dsfinvk_get_cash_point_closing(
+    config: FiskalyTssConfig, closing_id: uuid.UUID
+) -> dict:
+    """Get a single cash point closing."""
+    return await _dsfinvk_tenant_request(config, "GET", f"/cash_point_closings/{closing_id}")
+
+
+async def dsfinvk_list_cash_point_closings(
+    config: FiskalyTssConfig,
+    client_id: uuid.UUID | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    """List cash point closings."""
+    params = [f"limit={limit}", f"offset={offset}", "order=desc", "order_by=time_creation"]
+    if client_id:
+        params.append(f"client_id={client_id}")
+    qs = "&".join(params)
+    return await _dsfinvk_tenant_request(config, "GET", f"/cash_point_closings?{qs}")
+
+
+async def dsfinvk_delete_cash_point_closing(
+    config: FiskalyTssConfig, closing_id: uuid.UUID
+) -> None:
+    """Delete a cash point closing."""
+    api_key = config.fiskaly_api_key or settings.FISKALY_API_KEY
+    api_secret = config.fiskaly_api_secret or settings.FISKALY_API_SECRET
+    token = await _ensure_token_for(settings.FISKALY_DSFINVK_URL, api_key, api_secret)
+    url = f"{settings.FISKALY_DSFINVK_URL}/cash_point_closings/{closing_id}"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        resp = await client.delete(url, headers={"Authorization": f"Bearer {token}"})
+        if resp.status_code >= 400:
+            logger.error("DSFinV-K delete closing %s → %s: %s", closing_id, resp.status_code, resp.text)
+            resp.raise_for_status()
+
+
+async def dsfinvk_trigger_export(
+    config: FiskalyTssConfig, export_id: uuid.UUID, body: dict
+) -> dict:
+    """Trigger a DSFinV-K export."""
+    return await _dsfinvk_tenant_request(
+        config, "PUT", f"/exports/{export_id}", json_body=body
+    )
+
+
+async def dsfinvk_get_export(config: FiskalyTssConfig, export_id: uuid.UUID) -> dict:
+    """Get a DSFinV-K export status."""
+    return await _dsfinvk_tenant_request(config, "GET", f"/exports/{export_id}")
+
+
+async def dsfinvk_download_export(config: FiskalyTssConfig, export_id: uuid.UUID) -> bytes:
+    """Download a completed DSFinV-K export file."""
+    api_key = config.fiskaly_api_key or settings.FISKALY_API_KEY
+    api_secret = config.fiskaly_api_secret or settings.FISKALY_API_SECRET
+    token = await _ensure_token_for(settings.FISKALY_DSFINVK_URL, api_key, api_secret)
+    url = f"{settings.FISKALY_DSFINVK_URL}/exports/{export_id}/download"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+        resp = await client.get(url, headers={"Authorization": f"Bearer {token}"})
+        if resp.status_code >= 400:
+            logger.error(
+                "DSFinV-K export download %s → %s: %s", export_id, resp.status_code, resp.text
+            )
+            resp.raise_for_status()
+        return resp.content
+
+
+async def dsfinvk_list_exports(
+    config: FiskalyTssConfig,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    """List DSFinV-K exports."""
+    return await _dsfinvk_tenant_request(
+        config, "GET", f"/exports?limit={limit}&offset={offset}&order=desc&order_by=time_creation"
+    )
+
+
+# ---------------------------------------------------------------------------
+# DSFinV-K VAT definition IDs (convention)
+# ---------------------------------------------------------------------------
+
+DSFINVK_VAT_DEFINITIONS = {
+    0.19: {"export_id": 1000, "percentage": 19.0, "description": "Allgemeiner Steuersatz"},
+    0.07: {"export_id": 1001, "percentage": 7.0, "description": "Ermäßigter Steuersatz"},
+    0.107: {"export_id": 1002, "percentage": 10.7, "description": "Durchschnittsatz (§ 24 Abs. 1 Nr. 3 UStG)"},
+    0.055: {"export_id": 1003, "percentage": 5.5, "description": "Durchschnittsatz (§ 24 Abs. 1 Nr. 1 UStG)"},
+    0.0: {"export_id": 1004, "percentage": 0.0, "description": "Nicht steuerbar"},
+}
+
+
+async def ensure_dsfinvk_vat_definitions(config: FiskalyTssConfig) -> None:
+    """Ensure all standard VAT definitions exist in DSFinV-K."""
+    for _rate, vat_def in DSFINVK_VAT_DEFINITIONS.items():
+        try:
+            await dsfinvk_upsert_vat_definition(
+                config,
+                vat_def["export_id"],
+                {"percentage": vat_def["percentage"], "description": vat_def["description"]},
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("VAT definition %s upsert failed: %s", vat_def["export_id"], exc)
+
+
+# ---------------------------------------------------------------------------
+# DSFinV-K cash register setup
+# ---------------------------------------------------------------------------
+
+
+async def ensure_dsfinvk_cash_register(config: FiskalyTssConfig) -> dict:
+    """Ensure the cash register exists in DSFinV-K."""
+    body = {
+        "cash_register_type": {"type": "MASTER", "tss_id": str(config.tss_id)},
+        "brand": "GastroPilot",
+        "model": "Cloud POS",
+        "software": {"brand": "GastroPilot"},
+        "base_currency_code": "EUR",
+    }
+    return await dsfinvk_upsert_cash_register(config, config.client_id, body)
+
+
+# ---------------------------------------------------------------------------
+# Build cash point closing payload from daily orders
+# ---------------------------------------------------------------------------
+
+PAYMENT_TYPE_EXPORT_IDS = {
+    "CASH": "Bar",
+    "NON_CASH": "Unbar",
+}
+
+
+def _resolve_dsfinvk_payment_type(payment_method: str | None) -> str:
+    """Map payment method to DSFinV-K payment type enum."""
+    if not payment_method:
+        return "Unbar"
+    method_lower = payment_method.lower()
+    if "cash" in method_lower or "bar" in method_lower:
+        return "Bar"
+    if "ec" in method_lower or "giro" in method_lower or "debit" in method_lower:
+        return "ECKarte"
+    if "credit" in method_lower or "kredit" in method_lower:
+        return "Kreditkarte"
+    if "paypal" in method_lower or "apple" in method_lower or "google" in method_lower:
+        return "ElZahlungsdienstleister"
+    return "Unbar"
+
+
+def _build_cash_point_closing_payload(
+    closing_id: uuid.UUID,
+    business_date: str,
+    closing_number: int,
+    orders: list[Order],
+    order_items_map: dict[uuid.UUID, list[OrderItem]],
+    transactions: list[FiskalyTransaction],
+    config: FiskalyTssConfig,
+) -> dict:
+    """Build the full cash point closing payload for DSFinV-K API.
+
+    Schema: PUT /cash_point_closings/{closing_id}
+    Required top-level: client_id, cash_point_closing_export_id, head
+    """
+    tx_by_order: dict[uuid.UUID, FiskalyTransaction] = {}
+    for tx in transactions:
+        if tx.tx_state == "FINISHED":
+            tx_by_order[tx.order_id] = tx
+
+    # Aggregate totals
+    payment_cash = 0.0
+    payment_non_cash = 0.0
+    total_payment = 0.0
+    first_tx_export_id: str | None = None
+    last_tx_export_id: str | None = None
+
+    dsfinvk_transactions = []
+    tx_counter = 0
+
+    for order in orders:
+        items = order_items_map.get(order.id, [])
+        tx = tx_by_order.get(order.id)
+        if not tx:
+            continue
+
+        tx_counter += 1
+        order_total = float(order.total or 0)
+        pm = resolve_payment_type(order.payment_method)
+        if pm == "CASH":
+            payment_cash += order_total
+        else:
+            payment_non_cash += order_total
+        total_payment += order_total
+
+        tx_export_id = str(tx.tx_number or tx_counter)
+        if first_tx_export_id is None:
+            first_tx_export_id = tx_export_id
+        last_tx_export_id = tx_export_id
+
+        # Build line items
+        tx_lines = []
+        line_counter = 0
+        for item in items:
+            if item.status == "canceled":
+                continue
+            line_counter += 1
+            rate = item.tax_rate
+            vat_def = DSFINVK_VAT_DEFINITIONS.get(rate, DSFINVK_VAT_DEFINITIONS[0.19])
+            gross = float(item.total_price)
+            net = gross / (1 + rate) if rate > 0 else gross
+            vat_amt = gross - net
+            tx_lines.append({
+                "business_case": {
+                    "type": "Umsatz",
+                    "amounts_per_vat_id": [
+                        {
+                            "vat_definition_export_id": vat_def["export_id"],
+                            "incl_vat": round(gross, 2),
+                            "excl_vat": round(net, 2),
+                            "vat": round(vat_amt, 2),
+                        }
+                    ],
+                },
+                "lineitem_export_id": f"{tx_export_id}-{line_counter}",
+                "storno": False,
+                "text": item.item_name or f"Artikel {line_counter}",
+                "item": {
+                    "number": str(item.menu_item_id or item.id),
+                    "quantity": float(item.quantity),
+                    "price_per_unit": round(float(item.unit_price), 2),
+                },
+            })
+
+        if not tx_lines:
+            continue
+
+        # Security
+        security: dict
+        if tx.tx_state == "FINISHED" and tx.raw_response:
+            security = {"tss_tx_id": str(tx.tx_id)}
+        else:
+            security = {"error_message": tx.error or "TSE transaction not finished"}
+
+        ts_start = tx.time_start or (
+            int(order.opened_at.timestamp()) if order.opened_at else int(time.time())
+        )
+        ts_end = tx.time_end or int(time.time())
+
+        # Per-transaction payment
+        dsfinvk_payment_type = _resolve_dsfinvk_payment_type(order.payment_method)
+
+        dsfinvk_transactions.append({
+            "head": {
+                "type": "Beleg",
+                "storno": False,
+                "number": tx.tx_number or tx_counter,
+                "timestamp_start": ts_start,
+                "timestamp_end": ts_end,
+                "transaction_export_id": tx_export_id,
+                "closing_client_id": str(config.client_id),
+            },
+            "data": {
+                "full_amount_incl_vat": round(order_total, 2),
+                "payment_types": [
+                    {
+                        "type": dsfinvk_payment_type,
+                        "currency_code": "EUR",
+                        "amount": round(order_total, 2),
+                    }
+                ],
+                "amounts_per_vat_id": [
+                    {
+                        "vat_definition_export_id": vat_def["export_id"],
+                        "incl_vat": round(
+                            sum(
+                                float(i.total_price) for i in items
+                                if i.status != "canceled"
+                                and DSFINVK_VAT_DEFINITIONS.get(
+                                    i.tax_rate, DSFINVK_VAT_DEFINITIONS[0.19]
+                                )["export_id"] == vat_def["export_id"]
+                            ),
+                            2,
+                        ),
+                        "excl_vat": round(
+                            sum(
+                                float(i.total_price) / (1 + i.tax_rate)
+                                if i.tax_rate > 0 else float(i.total_price)
+                                for i in items
+                                if i.status != "canceled"
+                                and DSFINVK_VAT_DEFINITIONS.get(
+                                    i.tax_rate, DSFINVK_VAT_DEFINITIONS[0.19]
+                                )["export_id"] == vat_def["export_id"]
+                            ),
+                            2,
+                        ),
+                        "vat": round(
+                            sum(
+                                float(i.total_price)
+                                - float(i.total_price) / (1 + i.tax_rate)
+                                if i.tax_rate > 0 else 0.0
+                                for i in items
+                                if i.status != "canceled"
+                                and DSFINVK_VAT_DEFINITIONS.get(
+                                    i.tax_rate, DSFINVK_VAT_DEFINITIONS[0.19]
+                                )["export_id"] == vat_def["export_id"]
+                            ),
+                            2,
+                        ),
+                    }
+                    for vat_def in {
+                        DSFINVK_VAT_DEFINITIONS.get(
+                            i.tax_rate, DSFINVK_VAT_DEFINITIONS[0.19]
+                        )["export_id"]: DSFINVK_VAT_DEFINITIONS.get(
+                            i.tax_rate, DSFINVK_VAT_DEFINITIONS[0.19]
+                        )
+                        for i in items if i.status != "canceled"
+                    }.values()
+                ],
+                "lines": tx_lines,
+            },
+            "security": security,
+        })
+
+    # Cash statement: business_cases + payment
+    business_cases = []
+    vat_totals: dict[int, dict[str, float]] = {}
+    for order in orders:
+        for item in order_items_map.get(order.id, []):
+            if item.status == "canceled":
+                continue
+            rate = item.tax_rate
+            vd = DSFINVK_VAT_DEFINITIONS.get(rate, DSFINVK_VAT_DEFINITIONS[0.19])
+            eid = vd["export_id"]
+            gross = float(item.total_price)
+            net = gross / (1 + rate) if rate > 0 else gross
+            vat_amt = gross - net
+            if eid not in vat_totals:
+                vat_totals[eid] = {"incl_vat": 0.0, "excl_vat": 0.0, "vat": 0.0}
+            vat_totals[eid]["incl_vat"] += gross
+            vat_totals[eid]["excl_vat"] += net
+            vat_totals[eid]["vat"] += vat_amt
+
+    business_cases.append({
+        "type": "Umsatz",
+        "amounts_per_vat_id": [
+            {
+                "vat_definition_export_id": vid,
+                "incl_vat": round(t["incl_vat"], 2),
+                "excl_vat": round(t["excl_vat"], 2),
+                "vat": round(t["vat"], 2),
+            }
+            for vid, t in vat_totals.items()
+        ],
+    })
+
+    payment_types = []
+    if payment_cash != 0:
+        payment_types.append({
+            "type": "Bar",
+            "currency_code": "EUR",
+            "amount": round(payment_cash, 2),
+        })
+    if payment_non_cash != 0:
+        payment_types.append({
+            "type": "Unbar",
+            "currency_code": "EUR",
+            "amount": round(payment_non_cash, 2),
+        })
+    if not payment_types:
+        payment_types.append({
+            "type": "Bar",
+            "currency_code": "EUR",
+            "amount": 0.0,
+        })
+
+    cash_amounts_by_currency = [{"currency_code": "EUR", "amount": round(payment_cash, 2)}]
+
+    now_ts = int(time.time())
+
+    return {
+        "client_id": str(config.client_id),
+        "cash_point_closing_export_id": closing_number,
+        "head": {
+            "export_creation_date": now_ts,
+            "first_transaction_export_id": first_tx_export_id,
+            "last_transaction_export_id": last_tx_export_id,
+            "business_date": business_date,
+        },
+        "cash_statement": {
+            "business_cases": business_cases,
+            "payment": {
+                "full_amount": round(total_payment, 2),
+                "cash_amount": round(payment_cash, 2),
+                "cash_amounts_by_currency": cash_amounts_by_currency,
+                "payment_types": payment_types,
+            },
+        },
+        "transactions": dsfinvk_transactions,
+    }
+
+
+# ---------------------------------------------------------------------------
+# High-level: perform daily closing
+# ---------------------------------------------------------------------------
+
+
+async def perform_daily_closing(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    business_date: str,
+    is_automatic: bool = False,
+) -> FiskalyCashPointClosing:
+    """Perform a full daily cash point closing for DSFinV-K.
+
+    1. Load TSS config
+    2. Ensure cash register & VAT definitions exist in DSFinV-K
+    3. Load all paid orders + their TSE transactions for the given date
+    4. Build & submit the cash point closing payload
+    5. Persist the result
+    """
+    # 1. TSS config
+    result = await db.execute(
+        select(FiskalyTssConfig).where(
+            FiskalyTssConfig.tenant_id == tenant_id,
+            FiskalyTssConfig.state == "INITIALIZED",
+        )
+    )
+    tss_config = result.scalar_one_or_none()
+    if not tss_config:
+        raise ValueError("Keine initialisierte TSS-Konfiguration gefunden")
+
+    # 2. Ensure master data
+    try:
+        await ensure_dsfinvk_cash_register(tss_config)
+        await ensure_dsfinvk_vat_definitions(tss_config)
+    except Exception as exc:
+        logger.warning("DSFinV-K master data setup warning: %s", exc)
+
+    # 3. Load orders for the day
+    from datetime import UTC
+    from datetime import datetime as dt
+
+    day_start = dt.fromisoformat(f"{business_date}T00:00:00").replace(tzinfo=UTC)
+    day_end = dt.fromisoformat(f"{business_date}T23:59:59").replace(tzinfo=UTC)
+
+    orders_result = await db.execute(
+        select(Order).where(
+            Order.tenant_id == tenant_id,
+            Order.payment_status == "paid",
+            Order.opened_at >= day_start,
+            Order.opened_at <= day_end,
+        )
+    )
+    orders = list(orders_result.scalars().all())
+
+    if not orders:
+        raise ValueError(f"Keine bezahlten Bestellungen am {business_date}")
+
+    order_ids = [o.id for o in orders]
+
+    # Load items
+    items_result = await db.execute(
+        select(OrderItem).where(OrderItem.order_id.in_(order_ids))
+    )
+    all_items = list(items_result.scalars().all())
+    order_items_map: dict[uuid.UUID, list[OrderItem]] = defaultdict(list)
+    for item in all_items:
+        order_items_map[item.order_id].append(item)
+
+    # Load TSE transactions
+    tx_result = await db.execute(
+        select(FiskalyTransaction).where(
+            FiskalyTransaction.tenant_id == tenant_id,
+            FiskalyTransaction.order_id.in_(order_ids),
+        )
+    )
+    transactions = list(tx_result.scalars().all())
+
+    # 4. Check for existing closing
+    existing_result = await db.execute(
+        select(FiskalyCashPointClosing).where(
+            FiskalyCashPointClosing.tenant_id == tenant_id,
+            FiskalyCashPointClosing.business_date == business_date,
+            FiskalyCashPointClosing.state.notin_(["ERROR", "DELETED"]),
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+    if existing:
+        raise ValueError(f"Tagesabschluss für {business_date} existiert bereits (ID: {existing.closing_id})")
+
+    # Count existing closings for numbering
+    count_result = await db.execute(
+        select(FiskalyCashPointClosing).where(
+            FiskalyCashPointClosing.tenant_id == tenant_id,
+        )
+    )
+    closing_number = len(count_result.scalars().all()) + 1
+
+    # Build payload
+    closing_id = uuid.uuid4()
+    payload = _build_cash_point_closing_payload(
+        closing_id=closing_id,
+        business_date=business_date,
+        closing_number=closing_number,
+        orders=orders,
+        order_items_map=order_items_map,
+        transactions=transactions,
+        config=tss_config,
+    )
+
+    # Calculate totals for local record
+    total_amount = sum(float(o.total or 0) for o in orders)
+    total_cash = sum(
+        float(o.total or 0) for o in orders
+        if resolve_payment_type(o.payment_method) == "CASH"
+    )
+    total_non_cash = total_amount - total_cash
+
+    # 5. Submit to DSFinV-K
+    record = FiskalyCashPointClosing(
+        tenant_id=tenant_id,
+        closing_id=closing_id,
+        business_date=business_date,
+        state="PENDING",
+        cash_register_export_id=str(tss_config.client_id)[:50],
+        total_amount=round(total_amount, 2),
+        total_cash=round(total_cash, 2),
+        total_non_cash=round(total_non_cash, 2),
+        transaction_count=len(payload["transactions"]),
+        is_automatic=is_automatic,
+        raw_request=payload,
+    )
+
+    try:
+        resp = await dsfinvk_insert_cash_point_closing(tss_config, closing_id, payload)
+        record.state = resp.get("state", "WORKING")
+        record.raw_response = resp
+    except Exception as exc:
+        logger.error("DSFinV-K cash point closing failed for %s: %s", business_date, exc)
+        record.state = "ERROR"
+        record.error = str(exc)
+
+    db.add(record)
+    await db.flush()
+    return record

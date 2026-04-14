@@ -320,6 +320,9 @@ def _serialize_order(order: Order, include_items: list[dict] | None = None) -> d
         "closed_at": order.closed_at.isoformat() if order.closed_at else None,
         "paid_at": order.paid_at.isoformat() if order.paid_at else None,
     }
+    # § 146a Abs. 2 AO: Belegausgabepflicht — Beleg-URL bei bezahlten Bestellungen
+    if order.payment_status == "paid":
+        payload["receipt_url"] = f"/receipts/{order.id}/kassenbeleg"
     if include_items is not None:
         payload["items"] = include_items
     return payload
@@ -385,7 +388,17 @@ async def create_order(
             detail="An active order already exists for this reservation or table",
         )
 
-    order_number = f"ORD-{secrets.token_hex(4).upper()}"
+    # § 146a AO: Fortlaufende Belegnummer (Datum + Sequenz pro Tenant)
+    today_str = datetime.now(UTC).strftime("%Y%m%d")
+    seq_result = await session.execute(
+        text(
+            "SELECT COALESCE(MAX(CAST(SPLIT_PART(order_number, '-', 3) AS INTEGER)), 0) + 1 "
+            "FROM orders WHERE tenant_id = :tid AND order_number LIKE :prefix"
+        ),
+        {"tid": str(tenant_id), "prefix": f"B-{today_str}-%"},
+    )
+    next_seq = seq_result.scalar() or 1
+    order_number = f"B-{today_str}-{next_seq:04d}"
     order = Order(
         tenant_id=tenant_id,
         table_id=resolved_table_id,
@@ -553,12 +566,35 @@ async def update_order(
     session: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    tse_error = None
+
     result = await session.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
     from datetime import datetime as dt
+
+    # § 146a AO: Bezahlte Bestellungen sind unveränderbar (GoBD-Konformität)
+    # Ausnahme: Status-Übergang zu "canceled" (Stornierung) ist erlaubt
+    if order.payment_status == "paid":
+        incoming = data.model_dump(exclude_unset=True)
+        allowed_on_paid = {"status", "notes", "special_requests"}
+        forbidden_changes = set(incoming.keys()) - allowed_on_paid
+        if forbidden_changes:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Bezahlte Bestellungen können gem. § 146a AO nicht mehr geändert werden. "
+                    f"Unzulässige Felder: {', '.join(sorted(forbidden_changes))}"
+                ),
+            )
+        # Nur Stornierung ist als Status-Änderung erlaubt
+        if "status" in incoming and incoming["status"] != "canceled":
+            raise HTTPException(
+                status_code=409,
+                detail="Bezahlte Bestellungen können nur storniert werden.",
+            )
 
     valid_fields = {c.key for c in Order.__table__.columns} - {
         "id",
@@ -661,15 +697,39 @@ async def update_order(
     tip = order.tip_amount or 0.0
     order.total = subtotal - discount + tip
 
-    # TSE signing when payment_status transitions to "paid" (non-blocking)
+    # TSE signing when payment_status transitions to "paid"
+    tse_error = None
     if update_data.get("payment_status") == "paid":
         try:
             from app.services.fiskaly_service import resolve_payment_type, sign_order_receipt
 
             pay_type = resolve_payment_type(order.payment_method)
-            await sign_order_receipt(session, order, payment_type=pay_type)
+            tx = await sign_order_receipt(session, order, payment_type=pay_type)
+            if tx and tx.tx_state == "ERROR":
+                tse_error = tx.error or "TSE-Signierung fehlgeschlagen"
         except Exception as exc:
             logger.error("fiskaly TSE signing failed for order %s: %s", order.id, exc)
+            tse_error = str(exc)
+
+        if tse_error:
+            logger.warning(
+                "TSE signing error for order %s (proceeding): %s", order.id, tse_error
+            )
+
+    # § 6 KassenSichV: Storno-Beleg bei Stornierung einer bezahlten Bestellung
+    if (
+        update_data.get("status") == "canceled"
+        and order.payment_status == "paid"
+    ):
+        try:
+            from app.services.fiskaly_service import sign_order_receipt
+
+            await sign_order_receipt(
+                session, order, payment_type="NON_CASH",
+            )
+            logger.info("Storno TSE transaction created for order %s", order.id)
+        except Exception as exc:
+            logger.error("Storno TSE signing failed for order %s: %s", order.id, exc)
 
     try:
         await session.commit()
@@ -693,6 +753,8 @@ async def update_order(
     payload = _serialize_order(order)
     payload["total"] = order.total
     payload["payment_status"] = order.payment_status
+    if tse_error:
+        payload["tse_warning"] = tse_error
     return payload
 
 
