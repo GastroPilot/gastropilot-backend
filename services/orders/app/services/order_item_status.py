@@ -15,7 +15,8 @@ _ALLOWED_NEXT_STATUSES: dict[str, set[str]] = {
     "pending": {"sent", "canceled"},
     "sent": {"in_preparation", "canceled"},
     "in_preparation": {"ready", "canceled"},
-    "ready": {"served", "canceled"},
+    # KDS undo: allow moving a ready item back to active preparation.
+    "ready": {"in_preparation", "served", "canceled"},
     "served": {"canceled"},
     "canceled": set(),
 }
