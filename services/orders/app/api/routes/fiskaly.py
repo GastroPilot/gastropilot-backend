@@ -1433,3 +1433,234 @@ async def get_daily_closing_warnings(
         })
 
     return {"warnings": warnings}
+
+
+# ---------------------------------------------------------------------------
+# GoBD-konformer Datenexport (§ 147 AO, GoBD, Betriebsprüfung)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/gobd-export")
+async def gobd_export(
+    request: Request,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_owner_or_above),
+):
+    """GoBD-konformer CSV-Export aller Geschäftsvorfälle für die Betriebsprüfung.
+
+    Enthält gem. § 147 AO / GoBD:
+    - Alle Bestellungen mit Einzelpositionen (Einzelaufzeichnungspflicht)
+    - MwSt-Aufschlüsselung je Position
+    - Zahlungsart und -status
+    - TSE-Signaturdaten (§ 146a AO)
+    - Tagesabschlüsse (Z-Berichte)
+    """
+    import csv
+    import io
+    import zipfile
+    from datetime import UTC as _UTC
+    from datetime import datetime as dt
+
+    from fastapi.responses import Response
+
+    from app.models.order import Order, OrderItem
+
+    tenant_id = _resolve_tenant_id(request, current_user)
+
+    # Date filter
+    query_orders = select(Order).where(Order.tenant_id == tenant_id)
+    if start_date:
+        query_orders = query_orders.where(
+            Order.opened_at >= dt.fromisoformat(f"{start_date}T00:00:00").replace(tzinfo=_UTC)
+        )
+    if end_date:
+        query_orders = query_orders.where(
+            Order.opened_at <= dt.fromisoformat(f"{end_date}T23:59:59").replace(tzinfo=_UTC)
+        )
+    query_orders = query_orders.order_by(Order.opened_at)
+
+    result = await db.execute(query_orders)
+    orders = list(result.scalars().all())
+    order_ids = [o.id for o in orders]
+
+    # Items
+    items_result = await db.execute(
+        select(OrderItem).where(OrderItem.order_id.in_(order_ids)).order_by(OrderItem.order_id)
+    )
+    all_items = list(items_result.scalars().all())
+
+    # TSE transactions
+    from app.models.fiskaly import FiskalyCashPointClosing, FiskalyTransaction
+
+    tx_result = await db.execute(
+        select(FiskalyTransaction).where(FiskalyTransaction.order_id.in_(order_ids))
+    )
+    all_tx = list(tx_result.scalars().all())
+    tx_by_order: dict = {}
+    for tx in all_tx:
+        tx_by_order[tx.order_id] = tx
+
+    # Closings
+    closings_query = select(FiskalyCashPointClosing).where(
+        FiskalyCashPointClosing.tenant_id == tenant_id,
+    )
+    if start_date:
+        closings_query = closings_query.where(FiskalyCashPointClosing.business_date >= start_date)
+    if end_date:
+        closings_query = closings_query.where(FiskalyCashPointClosing.business_date <= end_date)
+    closings_result = await db.execute(closings_query.order_by(FiskalyCashPointClosing.business_date))
+    closings = list(closings_result.scalars().all())
+
+    # Build ZIP with CSV files
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # 1) orders.csv
+        orders_csv = io.StringIO()
+        w = csv.writer(orders_csv, delimiter=";")
+        w.writerow([
+            "Bestellnummer", "Datum", "Uhrzeit", "Status", "Zahlungsstatus",
+            "Zahlungsart", "Zwischensumme", "MwSt_7", "MwSt_19", "MwSt_Gesamt",
+            "Rabatt", "Trinkgeld", "Gesamtbetrag", "Personen",
+            "TSE_Transaktion", "TSE_Signatur", "TSE_Seriennummer",
+        ])
+        for o in orders:
+            tx = tx_by_order.get(o.id)
+            w.writerow([
+                o.order_number or str(o.id)[:8],
+                o.opened_at.strftime("%Y-%m-%d") if o.opened_at else "",
+                o.opened_at.strftime("%H:%M:%S") if o.opened_at else "",
+                o.status,
+                o.payment_status,
+                o.payment_method or "",
+                f"{o.subtotal:.2f}",
+                f"{o.tax_amount_7:.2f}",
+                f"{o.tax_amount_19:.2f}",
+                f"{o.tax_amount:.2f}",
+                f"{o.discount_amount:.2f}",
+                f"{o.tip_amount:.2f}",
+                f"{o.total:.2f}",
+                o.party_size or "",
+                tx.tx_number if tx else "",
+                (tx.signature_value or "")[:60] if tx else "",
+                tx.tss_serial_number or "" if tx else "",
+            ])
+        zf.writestr("bestellungen.csv", "\ufeff" + orders_csv.getvalue())
+
+        # 2) positionen.csv
+        items_csv = io.StringIO()
+        w = csv.writer(items_csv, delimiter=";")
+        w.writerow([
+            "Bestellnummer", "Position", "Artikel", "Kategorie", "Menge",
+            "Einzelpreis", "Gesamtpreis", "MwSt_Satz", "MwSt_Betrag",
+            "Nettobetrag", "Status",
+        ])
+        for item in all_items:
+            order = next((o for o in orders if o.id == item.order_id), None)
+            gross = float(item.total_price)
+            net = gross / (1 + item.tax_rate) if item.tax_rate > 0 else gross
+            vat = gross - net
+            w.writerow([
+                order.order_number or str(order.id)[:8] if order else "",
+                item.sort_order,
+                item.item_name,
+                item.category or "",
+                item.quantity,
+                f"{item.unit_price:.2f}",
+                f"{gross:.2f}",
+                f"{item.tax_rate * 100:.0f}%",
+                f"{vat:.2f}",
+                f"{net:.2f}",
+                item.status,
+            ])
+        zf.writestr("positionen.csv", "\ufeff" + items_csv.getvalue())
+
+        # 3) tse_transaktionen.csv
+        tse_csv = io.StringIO()
+        w = csv.writer(tse_csv, delimiter=";")
+        w.writerow([
+            "Bestellnummer", "TX_Nummer", "TX_Status", "Belegtyp",
+            "Signaturwert", "Signaturalgorithmus", "Signaturzaehler",
+            "TSE_Seriennummer", "Kassen_Seriennummer",
+            "TX_Start", "TX_Ende", "QR_Code",
+        ])
+        for tx in all_tx:
+            order = next((o for o in orders if o.id == tx.order_id), None)
+            w.writerow([
+                order.order_number or str(order.id)[:8] if order else "",
+                tx.tx_number or "",
+                tx.tx_state or "",
+                tx.receipt_type or "",
+                tx.signature_value or "",
+                tx.signature_algorithm or "",
+                tx.signature_counter or "",
+                tx.tss_serial_number or "",
+                tx.client_serial_number or "",
+                dt.fromtimestamp(tx.time_start, tz=_UTC).isoformat() if tx.time_start else "",
+                dt.fromtimestamp(tx.time_end, tz=_UTC).isoformat() if tx.time_end else "",
+                tx.qr_code_data or "",
+            ])
+        zf.writestr("tse_transaktionen.csv", "\ufeff" + tse_csv.getvalue())
+
+        # 4) tagesabschluesse.csv
+        closings_csv = io.StringIO()
+        w = csv.writer(closings_csv, delimiter=";")
+        w.writerow([
+            "Datum", "Abschluss_ID", "Status", "Gesamtumsatz", "Bar",
+            "Unbar", "Transaktionen", "Automatisch", "Erstellt_am",
+        ])
+        for c in closings:
+            w.writerow([
+                c.business_date,
+                str(c.closing_id),
+                c.state,
+                f"{c.total_amount:.2f}" if c.total_amount else "0.00",
+                f"{c.total_cash:.2f}" if c.total_cash else "0.00",
+                f"{c.total_non_cash:.2f}" if c.total_non_cash else "0.00",
+                c.transaction_count or 0,
+                "Ja" if c.is_automatic else "Nein",
+                c.created_at.isoformat() if c.created_at else "",
+            ])
+        zf.writestr("tagesabschluesse.csv", "\ufeff" + closings_csv.getvalue())
+
+        # 5) export_info.txt
+        now = dt.now(tz=_UTC)
+        info = (
+            f"GoBD-konformer Datenexport\n"
+            f"=========================\n\n"
+            f"Erstellt am: {now.strftime('%d.%m.%Y %H:%M:%S')} UTC\n"
+            f"Zeitraum: {start_date or 'Anfang'} bis {end_date or 'Ende'}\n"
+            f"Bestellungen: {len(orders)}\n"
+            f"Positionen: {len(all_items)}\n"
+            f"TSE-Transaktionen: {len(all_tx)}\n"
+            f"Tagesabschlüsse: {len(closings)}\n\n"
+            f"Enthaltene Dateien:\n"
+            f"  bestellungen.csv      — Alle Bestellungen (§ 146 AO)\n"
+            f"  positionen.csv        — Einzelpositionen (Einzelaufzeichnungspflicht)\n"
+            f"  tse_transaktionen.csv — TSE-Signaturdaten (§ 146a AO / KassenSichV)\n"
+            f"  tagesabschluesse.csv  — Tagesabschlüsse / Z-Berichte\n"
+            f"  export_info.txt       — Diese Datei\n\n"
+            f"Rechtsgrundlagen:\n"
+            f"  § 146 AO    — Ordnungsvorschriften für Buchführung und Aufzeichnungen\n"
+            f"  § 146a AO   — Ordnungsvorschrift für die Buchführung mittels\n"
+            f"                 elektronischer Aufzeichnungssysteme\n"
+            f"  § 147 AO    — Ordnungsvorschriften für die Aufbewahrung von Unterlagen\n"
+            f"  GoBD        — Grundsätze zur ordnungsmäßigen Führung und Aufbewahrung\n"
+            f"                 von Büchern, Aufzeichnungen und Unterlagen in\n"
+            f"                 elektronischer Form sowie zum Datenzugriff\n"
+            f"  KassenSichV — Kassensicherungsverordnung\n"
+            f"  DSFinV-K    — Digitale Schnittstelle der Finanzverwaltung\n"
+            f"                 für Kassensysteme\n"
+        )
+        zf.writestr("export_info.txt", info)
+
+    zip_buffer.seek(0)
+    date_suffix = f"{start_date or 'all'}_{end_date or 'all'}"
+    filename = f"gobd_export_{date_suffix}.zip"
+
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
