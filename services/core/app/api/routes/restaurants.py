@@ -75,6 +75,13 @@ class RestaurantResponse(BaseModel):
     phone: str | None = None
     email: str | None = None
     description: str | None = None
+    company_name: str | None = None
+    street: str | None = None
+    zip_code: str | None = None
+    city: str | None = None
+    country: str | None = None
+    tax_number: str | None = None
+    vat_id: str | None = None
     settings: dict
 
     class Config:
@@ -87,11 +94,38 @@ class RestaurantUpdate(BaseModel):
     phone: str | None = None
     email: str | None = None
     description: str | None = None
+    company_name: str | None = None
+    street: str | None = None
+    zip_code: str | None = None
+    city: str | None = None
+    country: str | None = None
+    tax_number: str | None = None
+    vat_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
 # Hilfsfunktion: Restaurant-Spalten + JSONB zu TenantSettings zusammenführen
 # ---------------------------------------------------------------------------
+
+
+def _restaurant_response(restaurant: Restaurant) -> RestaurantResponse:
+    return RestaurantResponse(
+        id=restaurant.id,
+        name=restaurant.name,
+        slug=restaurant.slug,
+        address=restaurant.address,
+        phone=restaurant.phone,
+        email=restaurant.email,
+        description=restaurant.description,
+        company_name=restaurant.company_name,
+        street=restaurant.street,
+        zip_code=restaurant.zip_code,
+        city=restaurant.city,
+        country=restaurant.country,
+        tax_number=restaurant.tax_number,
+        vat_id=restaurant.vat_id,
+        settings=_build_settings(restaurant),
+    )
 
 
 def _build_settings(restaurant: Restaurant) -> dict[str, Any]:
@@ -158,19 +192,7 @@ async def list_restaurants(
             return []
         result = await session.execute(select(Restaurant).where(Restaurant.id == tenant_id))
     restaurants = result.scalars().all()
-    return [
-        RestaurantResponse(
-            id=r.id,
-            name=r.name,
-            slug=r.slug,
-            address=r.address,
-            phone=r.phone,
-            email=r.email,
-            description=r.description,
-            settings=_build_settings(r),
-        )
-        for r in restaurants
-    ]
+    return [_restaurant_response(r) for r in restaurants]
 
 
 @router.get("/{restaurant_id}", response_model=RestaurantResponse)
@@ -185,16 +207,7 @@ async def get_restaurant(
         raise HTTPException(status_code=404, detail="Restaurant not found")
     if current_user.role != "platform_admin" and current_user.tenant_id != restaurant_id:
         raise HTTPException(status_code=403, detail="Access denied")
-    return RestaurantResponse(
-        id=restaurant.id,
-        name=restaurant.name,
-        slug=restaurant.slug,
-        address=restaurant.address,
-        phone=restaurant.phone,
-        email=restaurant.email,
-        description=restaurant.description,
-        settings=_build_settings(restaurant),
-    )
+    return _restaurant_response(restaurant)
 
 
 @router.patch("/{restaurant_id}", response_model=RestaurantResponse)
@@ -216,16 +229,7 @@ async def update_restaurant(
 
     await session.commit()
     await session.refresh(restaurant)
-    return RestaurantResponse(
-        id=restaurant.id,
-        name=restaurant.name,
-        slug=restaurant.slug,
-        address=restaurant.address,
-        phone=restaurant.phone,
-        email=restaurant.email,
-        description=restaurant.description,
-        settings=_build_settings(restaurant),
-    )
+    return _restaurant_response(restaurant)
 
 
 # ---------------------------------------------------------------------------
