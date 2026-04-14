@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_owner_or_above
-from app.models.fiskaly import FiskalyTransaction, FiskalyTssConfig
+from app.models.fiskaly import FiskalyCashPointClosing, FiskalyTransaction, FiskalyTssConfig
 from app.services import fiskaly_service
 
 logger = logging.getLogger(__name__)
@@ -649,3 +649,787 @@ async def create_receipt_for_order(
         "pdf_url": tse_tx.receipt_pdf_url,
         "status": "created",
     }
+
+
+# ---------------------------------------------------------------------------
+# Tagesabschluss (DSFinV-K Cash Point Closing)
+# ---------------------------------------------------------------------------
+
+
+class DailyClosingRequest(BaseModel):
+    business_date: str  # YYYY-MM-DD
+
+
+class DailyClosingResponse(BaseModel):
+    closing_id: str
+    business_date: str
+    state: str
+    total_amount: float | None = None
+    total_cash: float | None = None
+    total_non_cash: float | None = None
+    transaction_count: int | None = None
+    error: str | None = None
+    created_at: str | None = None
+
+
+@router.post("/daily-closing", response_model=DailyClosingResponse)
+async def create_daily_closing(
+    body: DailyClosingRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_owner_or_above),
+):
+    """Perform a daily cash point closing (Tagesabschluss) for DSFinV-K."""
+    import re
+
+    tenant_id = _resolve_tenant_id(request, current_user)
+
+    if not fiskaly_service._is_configured():
+        raise HTTPException(status_code=503, detail="fiskaly not configured")
+
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", body.business_date):
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    try:
+        record = await fiskaly_service.perform_daily_closing(db, tenant_id, body.business_date)
+        await db.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except Exception as exc:
+        logger.error("Daily closing failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Tagesabschluss fehlgeschlagen: {exc}")
+
+    return DailyClosingResponse(
+        closing_id=str(record.closing_id),
+        business_date=record.business_date,
+        state=record.state,
+        total_amount=record.total_amount,
+        total_cash=record.total_cash,
+        total_non_cash=record.total_non_cash,
+        transaction_count=record.transaction_count,
+        error=record.error,
+        created_at=record.created_at.isoformat() if record.created_at else None,
+    )
+
+
+@router.get("/daily-closings")
+async def list_daily_closings(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_owner_or_above),
+):
+    """List all daily closings for this restaurant."""
+    tenant_id = _resolve_tenant_id(request, current_user)
+
+    result = await db.execute(
+        select(FiskalyCashPointClosing)
+        .where(FiskalyCashPointClosing.tenant_id == tenant_id)
+        .order_by(FiskalyCashPointClosing.business_date.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    closings = list(result.scalars().all())
+
+    # Refresh state for non-final closings from DSFinV-K
+    pending = [c for c in closings if c.state in ("PENDING", "WORKING")]
+    if pending:
+        tss_result = await db.execute(
+            select(FiskalyTssConfig).where(FiskalyTssConfig.tenant_id == tenant_id)
+        )
+        tss_config = tss_result.scalar_one_or_none()
+        if tss_config:
+            for c in pending:
+                try:
+                    remote = await fiskaly_service.dsfinvk_get_cash_point_closing(
+                        tss_config, c.closing_id
+                    )
+                    remote_state = remote.get("state")
+                    if remote_state and remote_state != c.state:
+                        c.state = remote_state
+                except Exception:
+                    pass
+            await db.commit()
+
+    return [
+        {
+            "closing_id": str(c.closing_id),
+            "business_date": c.business_date,
+            "state": c.state,
+            "total_amount": c.total_amount,
+            "total_cash": c.total_cash,
+            "total_non_cash": c.total_non_cash,
+            "transaction_count": c.transaction_count,
+            "error": c.error,
+            "is_automatic": c.is_automatic,
+            "dsfinvk_export_id": str(c.dsfinvk_export_id) if c.dsfinvk_export_id else None,
+            "dsfinvk_export_state": c.dsfinvk_export_state,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+        }
+        for c in closings
+    ]
+
+
+@router.get("/daily-closings/{closing_id}")
+async def get_daily_closing(
+    closing_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_owner_or_above),
+):
+    """Get a specific daily closing with details."""
+    tenant_id = _resolve_tenant_id(request, current_user)
+
+    result = await db.execute(
+        select(FiskalyCashPointClosing).where(
+            FiskalyCashPointClosing.tenant_id == tenant_id,
+            FiskalyCashPointClosing.closing_id == closing_id,
+        )
+    )
+    closing = result.scalar_one_or_none()
+    if not closing:
+        raise HTTPException(status_code=404, detail="Tagesabschluss nicht gefunden")
+
+    # Also fetch status from DSFinV-K if not in final state
+    remote_state = None
+    if closing.state not in ("ERROR", "DELETED"):
+        try:
+            tss_result = await db.execute(
+                select(FiskalyTssConfig).where(FiskalyTssConfig.tenant_id == tenant_id)
+            )
+            tss_config = tss_result.scalar_one_or_none()
+            if tss_config:
+                remote = await fiskaly_service.dsfinvk_get_cash_point_closing(
+                    tss_config, closing_id
+                )
+                remote_state = remote.get("state")
+                if remote_state and remote_state != closing.state:
+                    closing.state = remote_state
+                    await db.commit()
+        except Exception as exc:
+            logger.warning("DSFinV-K closing status fetch failed: %s", exc)
+
+    return {
+        "closing_id": str(closing.closing_id),
+        "business_date": closing.business_date,
+        "state": closing.state,
+        "total_amount": closing.total_amount,
+        "total_cash": closing.total_cash,
+        "total_non_cash": closing.total_non_cash,
+        "transaction_count": closing.transaction_count,
+        "error": closing.error,
+        "is_automatic": closing.is_automatic,
+        "dsfinvk_export_id": str(closing.dsfinvk_export_id) if closing.dsfinvk_export_id else None,
+        "dsfinvk_export_state": closing.dsfinvk_export_state,
+        "created_at": closing.created_at.isoformat() if closing.created_at else None,
+        "updated_at": closing.updated_at.isoformat() if closing.updated_at else None,
+    }
+
+
+@router.delete("/daily-closings/{closing_id}")
+async def delete_daily_closing(
+    closing_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_owner_or_above),
+):
+    """Delete a daily closing (also removes from DSFinV-K)."""
+    tenant_id = _resolve_tenant_id(request, current_user)
+
+    result = await db.execute(
+        select(FiskalyCashPointClosing).where(
+            FiskalyCashPointClosing.tenant_id == tenant_id,
+            FiskalyCashPointClosing.closing_id == closing_id,
+        )
+    )
+    closing = result.scalar_one_or_none()
+    if not closing:
+        raise HTTPException(status_code=404, detail="Tagesabschluss nicht gefunden")
+
+    # Delete from DSFinV-K
+    try:
+        tss_result = await db.execute(
+            select(FiskalyTssConfig).where(FiskalyTssConfig.tenant_id == tenant_id)
+        )
+        tss_config = tss_result.scalar_one_or_none()
+        if tss_config:
+            await fiskaly_service.dsfinvk_delete_cash_point_closing(tss_config, closing_id)
+    except Exception as exc:
+        logger.warning("DSFinV-K remote delete failed (continuing locally): %s", exc)
+
+    closing.state = "DELETED"
+    await db.commit()
+
+    return {"status": "deleted", "closing_id": str(closing_id)}
+
+
+# ---------------------------------------------------------------------------
+# DSFinV-K Export (separate from TSE export)
+# ---------------------------------------------------------------------------
+
+
+class DsfinvkExportRequest(BaseModel):
+    business_date_start: str | None = None  # YYYY-MM-DD
+    business_date_end: str | None = None  # YYYY-MM-DD
+    closing_id: str | None = None  # UUID for single closing export
+    format: str = "ZIP"  # ZIP or TAR
+
+
+@router.post("/dsfinvk-exports/trigger")
+async def trigger_dsfinvk_export(
+    body: DsfinvkExportRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_owner_or_above),
+):
+    """Trigger a DSFinV-K export."""
+    tenant_id = _resolve_tenant_id(request, current_user)
+
+    tss_result = await db.execute(
+        select(FiskalyTssConfig).where(
+            FiskalyTssConfig.tenant_id == tenant_id,
+            FiskalyTssConfig.state == "INITIALIZED",
+        )
+    )
+    tss_config = tss_result.scalar_one_or_none()
+    if not tss_config:
+        raise HTTPException(status_code=404, detail="Keine initialisierte TSS")
+
+    export_id = uuid.uuid4()
+    export_body: dict = {}
+
+    if body.closing_id:
+        export_body["cash_point_closing_id"] = body.closing_id
+        # Look up the closing's business_date to satisfy the oneOf requirement
+        closing_result = await db.execute(
+            select(FiskalyCashPointClosing).where(
+                FiskalyCashPointClosing.tenant_id == tenant_id,
+                FiskalyCashPointClosing.closing_id == uuid.UUID(body.closing_id),
+            )
+        )
+        closing_record = closing_result.scalar_one_or_none()
+        if closing_record:
+            export_body["business_date_start"] = closing_record.business_date
+            export_body["business_date_end"] = closing_record.business_date
+        else:
+            # Fallback: use today
+            from datetime import date
+            today = date.today().isoformat()
+            export_body["business_date_start"] = today
+            export_body["business_date_end"] = today
+    elif body.business_date_start and body.business_date_end:
+        export_body["business_date_start"] = body.business_date_start
+        export_body["business_date_end"] = body.business_date_end
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Entweder closing_id oder business_date_start + business_date_end angeben",
+        )
+
+    try:
+        resp = await fiskaly_service.dsfinvk_trigger_export(tss_config, export_id, export_body)
+    except Exception as exc:
+        logger.error("DSFinV-K export trigger failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Export-Auslösung fehlgeschlagen: {exc}")
+
+    # Update closing record if single-closing export
+    if body.closing_id:
+        closing_result = await db.execute(
+            select(FiskalyCashPointClosing).where(
+                FiskalyCashPointClosing.tenant_id == tenant_id,
+                FiskalyCashPointClosing.closing_id == uuid.UUID(body.closing_id),
+            )
+        )
+        closing = closing_result.scalar_one_or_none()
+        if closing:
+            closing.dsfinvk_export_id = export_id
+            closing.dsfinvk_export_state = resp.get("state", "PENDING")
+            await db.commit()
+
+    return {
+        "export_id": str(export_id),
+        "state": resp.get("state", "PENDING"),
+    }
+
+
+@router.get("/dsfinvk-exports/{export_id}/status")
+async def get_dsfinvk_export_status(
+    export_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_owner_or_above),
+):
+    """Get status of a DSFinV-K export."""
+    tenant_id = _resolve_tenant_id(request, current_user)
+
+    tss_result = await db.execute(
+        select(FiskalyTssConfig).where(FiskalyTssConfig.tenant_id == tenant_id)
+    )
+    tss_config = tss_result.scalar_one_or_none()
+    if not tss_config:
+        raise HTTPException(status_code=404, detail="Keine TSS konfiguriert")
+
+    try:
+        resp = await fiskaly_service.dsfinvk_get_export(tss_config, export_id)
+    except Exception as exc:
+        logger.error("DSFinV-K export status failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    # Update closing record if export state changed
+    state = resp.get("state")
+    if state in ("COMPLETED", "ERROR", "CANCELLED"):
+        closing_result = await db.execute(
+            select(FiskalyCashPointClosing).where(
+                FiskalyCashPointClosing.tenant_id == tenant_id,
+                FiskalyCashPointClosing.dsfinvk_export_id == export_id,
+            )
+        )
+        closing = closing_result.scalar_one_or_none()
+        if closing and closing.dsfinvk_export_state != state:
+            closing.dsfinvk_export_state = state
+            await db.commit()
+
+    return {
+        "export_id": str(export_id),
+        "state": state,
+        "time_creation": resp.get("time_creation"),
+        "time_update": resp.get("time_update"),
+    }
+
+
+@router.get("/dsfinvk-exports/{export_id}/download")
+async def download_dsfinvk_export(
+    export_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_owner_or_above),
+):
+    """Download a completed DSFinV-K export file."""
+    from fastapi.responses import Response
+
+    tenant_id = _resolve_tenant_id(request, current_user)
+
+    tss_result = await db.execute(
+        select(FiskalyTssConfig).where(FiskalyTssConfig.tenant_id == tenant_id)
+    )
+    tss_config = tss_result.scalar_one_or_none()
+    if not tss_config:
+        raise HTTPException(status_code=404, detail="Keine TSS konfiguriert")
+
+    # Verify export is completed
+    try:
+        status = await fiskaly_service.dsfinvk_get_export(tss_config, export_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    if status.get("state") != "COMPLETED":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Export nicht bereit (Status: {status.get('state')})",
+        )
+
+    try:
+        file_data = await fiskaly_service.dsfinvk_download_export(tss_config, export_id)
+    except Exception as exc:
+        logger.error("DSFinV-K export download failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    return Response(
+        content=file_data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="dsfinvk-export-{export_id}.zip"'
+        },
+    )
+
+
+@router.get("/dsfinvk-exports")
+async def list_dsfinvk_exports(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_owner_or_above),
+):
+    """List all DSFinV-K exports."""
+    tenant_id = _resolve_tenant_id(request, current_user)
+
+    tss_result = await db.execute(
+        select(FiskalyTssConfig).where(FiskalyTssConfig.tenant_id == tenant_id)
+    )
+    tss_config = tss_result.scalar_one_or_none()
+    if not tss_config:
+        raise HTTPException(status_code=404, detail="Keine TSS konfiguriert")
+
+    try:
+        resp = await fiskaly_service.dsfinvk_list_exports(tss_config)
+    except Exception as exc:
+        logger.error("DSFinV-K list exports failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    exports = resp.get("data", []) if isinstance(resp, dict) else resp
+    return [
+        {
+            "export_id": str(e.get("_id", e.get("export_id", ""))),
+            "state": e.get("state"),
+            "time_creation": e.get("time_creation"),
+            "time_update": e.get("time_update"),
+        }
+        for e in exports
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Tagesabschluss PDF
+# ---------------------------------------------------------------------------
+
+
+@router.get("/daily-closings/{closing_id}/pdf")
+async def download_daily_closing_pdf(
+    closing_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_owner_or_above),
+):
+    """Generate a PDF summary of a daily closing (Tagesabschluss)."""
+    import io
+    from datetime import UTC as _UTC
+    from datetime import datetime as dt
+
+    from fastapi.responses import StreamingResponse
+
+    tenant_id = _resolve_tenant_id(request, current_user)
+
+    # Load closing
+    result = await db.execute(
+        select(FiskalyCashPointClosing).where(
+            FiskalyCashPointClosing.tenant_id == tenant_id,
+            FiskalyCashPointClosing.closing_id == closing_id,
+        )
+    )
+    closing = result.scalar_one_or_none()
+    if not closing:
+        raise HTTPException(status_code=404, detail="Tagesabschluss nicht gefunden")
+
+    # Load orders for this day
+    from app.models.order import Order, OrderItem
+
+    day_start = dt.fromisoformat(f"{closing.business_date}T00:00:00").replace(tzinfo=_UTC)
+    day_end = dt.fromisoformat(f"{closing.business_date}T23:59:59").replace(tzinfo=_UTC)
+
+    orders_result = await db.execute(
+        select(Order).where(
+            Order.tenant_id == tenant_id,
+            Order.payment_status == "paid",
+            Order.opened_at >= day_start,
+            Order.opened_at <= day_end,
+        ).order_by(Order.opened_at)
+    )
+    orders = list(orders_result.scalars().all())
+
+    order_ids = [o.id for o in orders]
+
+    # Load items
+    items_result = await db.execute(
+        select(OrderItem).where(OrderItem.order_id.in_(order_ids))
+    )
+    all_items = list(items_result.scalars().all())
+    items_by_order: dict[uuid.UUID, list] = {}
+    for item in all_items:
+        items_by_order.setdefault(item.order_id, []).append(item)
+
+    # Load restaurant name
+    restaurant_name = "Restaurant"
+    try:
+        from app.models.order import Order as _O  # noqa: F811
+
+        if orders:
+            restaurant_name = getattr(orders[0], "restaurant_name", None) or "Restaurant"
+    except Exception:
+        pass
+
+    # Build PDF
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import (
+            HRFlowable,
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+        )
+        from reportlab.platypus import Table as RLTable
+        from reportlab.platypus import (
+            TableStyle,
+        )
+    except ImportError:
+        raise HTTPException(status_code=500, detail="ReportLab nicht installiert")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=20 * mm,
+        bottomMargin=15 * mm,
+    )
+    styles = getSampleStyleSheet()
+    accent = colors.HexColor("#1a1a2e")
+    light_bg = colors.HexColor("#f8f9fa")
+
+    style_small = ParagraphStyle("Small", parent=styles["Normal"], fontSize=7, leading=9)
+    style_label = ParagraphStyle(
+        "Label", parent=styles["Normal"], fontSize=8, textColor=colors.grey
+    )
+
+    story: list = []
+
+    # ── Header ──
+    story.append(Paragraph("TAGESABSCHLUSS", styles["Title"]))
+    story.append(Spacer(1, 2 * mm))
+    story.append(
+        Paragraph(
+            f"Datum: <b>{closing.business_date}</b> &nbsp;|&nbsp; "
+            f"Abschluss-Nr: <b>{closing.closing_id}</b>",
+            styles["Normal"],
+        )
+    )
+    story.append(Spacer(1, 1 * mm))
+    story.append(
+        Paragraph(
+            f"Status: <b>{closing.state}</b> &nbsp;|&nbsp; "
+            f"Erstellt: {closing.created_at.strftime('%d.%m.%Y %H:%M') if closing.created_at else '-'}",
+            styles["Normal"],
+        )
+    )
+    story.append(Spacer(1, 4 * mm))
+    story.append(HRFlowable(width="100%", thickness=1, color=accent))
+    story.append(Spacer(1, 6 * mm))
+
+    # ── Summary cards ──
+    total_amount = closing.total_amount or 0
+    total_cash = closing.total_cash or 0
+    total_non_cash = closing.total_non_cash or 0
+    tx_count = closing.transaction_count or len(orders)
+
+    summary_data = [
+        ["Gesamtumsatz", "Bar", "Unbar", "Transaktionen"],
+        [
+            f"{total_amount:.2f} EUR",
+            f"{total_cash:.2f} EUR",
+            f"{total_non_cash:.2f} EUR",
+            str(tx_count),
+        ],
+    ]
+    summary_table = RLTable(summary_data, colWidths=[120, 120, 120, 100])
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), accent),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 9),
+                ("FONTSIZE", (0, 1), (-1, 1), 11),
+                ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                ("TOPPADDING", (0, 1), (-1, 1), 10),
+                ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
+                ("BACKGROUND", (0, 1), (-1, 1), light_bg),
+                ("BOX", (0, 0), (-1, -1), 0.5, accent),
+            ]
+        )
+    )
+    story.append(summary_table)
+    story.append(Spacer(1, 6 * mm))
+
+    # ── Tax breakdown ──
+    tax_buckets: dict[float, dict[str, float]] = {}
+    for order in orders:
+        for item in items_by_order.get(order.id, []):
+            if item.status == "canceled":
+                continue
+            rate = item.tax_rate
+            gross = float(item.total_price)
+            net = gross / (1 + rate) if rate > 0 else gross
+            vat = gross - net
+            if rate not in tax_buckets:
+                tax_buckets[rate] = {"gross": 0, "net": 0, "vat": 0}
+            tax_buckets[rate]["gross"] += gross
+            tax_buckets[rate]["net"] += net
+            tax_buckets[rate]["vat"] += vat
+
+    if tax_buckets:
+        story.append(Paragraph("Steueraufschlüsselung", styles["Heading3"]))
+        story.append(Spacer(1, 2 * mm))
+
+        tax_data = [["MwSt-Satz", "Brutto", "Netto", "MwSt"]]
+        total_vat = 0.0
+        for rate in sorted(tax_buckets.keys(), reverse=True):
+            b = tax_buckets[rate]
+            total_vat += b["vat"]
+            pct = f"{rate * 100:.0f}%" if rate > 0 else "0%"
+            tax_data.append([
+                pct,
+                f"{b['gross']:.2f} EUR",
+                f"{b['net']:.2f} EUR",
+                f"{b['vat']:.2f} EUR",
+            ])
+        tax_data.append([
+            "Gesamt",
+            f"{sum(b['gross'] for b in tax_buckets.values()):.2f} EUR",
+            f"{sum(b['net'] for b in tax_buckets.values()):.2f} EUR",
+            f"{total_vat:.2f} EUR",
+        ])
+
+        tax_table = RLTable(tax_data, colWidths=[100, 120, 120, 120])
+        tax_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e9ecef")),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                    ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                    ("LINEABOVE", (0, -1), (-1, -1), 1, colors.black),
+                    ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#dee2e6")),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        story.append(tax_table)
+        story.append(Spacer(1, 6 * mm))
+
+    # ── Payment methods breakdown ──
+    payment_methods: dict[str, float] = {}
+    for order in orders:
+        method = order.payment_method or "Sonstige"
+        payment_methods[method] = payment_methods.get(method, 0) + float(order.total or 0)
+
+    if payment_methods:
+        story.append(Paragraph("Zahlungsarten", styles["Heading3"]))
+        story.append(Spacer(1, 2 * mm))
+
+        pm_data = [["Zahlungsart", "Betrag", "Anteil"]]
+        for method, amount in sorted(payment_methods.items(), key=lambda x: -x[1]):
+            pct = (amount / total_amount * 100) if total_amount > 0 else 0
+            pm_data.append([method, f"{amount:.2f} EUR", f"{pct:.1f}%"])
+
+        pm_table = RLTable(pm_data, colWidths=[200, 130, 130])
+        pm_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e9ecef")),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                    ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#dee2e6")),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        story.append(pm_table)
+        story.append(Spacer(1, 6 * mm))
+
+    # ── Orders list ──
+    story.append(Paragraph("Bestellungen", styles["Heading3"]))
+    story.append(Spacer(1, 2 * mm))
+
+    order_data = [["Nr.", "Zeit", "Zahlungsart", "Betrag"]]
+    for order in orders:
+        t = order.opened_at.strftime("%H:%M") if order.opened_at else "-"
+        nr = order.order_number or str(order.id)[:8]
+        method = order.payment_method or "-"
+        order_data.append([nr, t, method, f"{float(order.total or 0):.2f} EUR"])
+
+    if len(order_data) > 1:
+        order_table = RLTable(order_data, colWidths=[80, 80, 160, 140])
+        order_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e9ecef")),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    ("ALIGN", (3, 0), (3, -1), "RIGHT"),
+                    ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#dee2e6")),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, light_bg]),
+                ]
+            )
+        )
+        story.append(order_table)
+    else:
+        story.append(Paragraph("Keine Bestellungen.", styles["Normal"]))
+
+    # ── Footer ──
+    story.append(Spacer(1, 8 * mm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+    story.append(Spacer(1, 2 * mm))
+    story.append(
+        Paragraph(
+            f"Generiert am {dt.now(tz=_UTC).strftime('%d.%m.%Y %H:%M:%S')} UTC "
+            f"&bull; GastroPilot Tagesabschluss",
+            style_small,
+        )
+    )
+
+    doc.build(story)
+    buffer.seek(0)
+
+    filename = f"tagesabschluss_{closing.business_date}.pdf"
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dashboard warnings
+# ---------------------------------------------------------------------------
+
+
+@router.get("/daily-closing-warnings")
+async def get_daily_closing_warnings(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_owner_or_above),
+):
+    """Return warnings about automatic daily closings for the dashboard."""
+    from datetime import date, timedelta
+
+    tenant_id = _resolve_tenant_id(request, current_user)
+
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+
+    result = await db.execute(
+        select(FiskalyCashPointClosing).where(
+            FiskalyCashPointClosing.tenant_id == tenant_id,
+            FiskalyCashPointClosing.business_date == yesterday,
+            FiskalyCashPointClosing.is_automatic.is_(True),
+            FiskalyCashPointClosing.state.notin_(["DELETED"]),
+        )
+    )
+    auto_closing = result.scalar_one_or_none()
+
+    warnings = []
+    if auto_closing:
+        warnings.append({
+            "type": "auto_daily_closing",
+            "severity": "warning",
+            "business_date": auto_closing.business_date,
+            "closing_id": str(auto_closing.closing_id),
+            "state": auto_closing.state,
+            "total_amount": auto_closing.total_amount,
+            "message": (
+                f"Der Tagesabschluss für den {auto_closing.business_date} wurde "
+                f"automatisch um 23:59 Uhr durchgeführt. Bitte prüfen Sie die Daten."
+            ),
+        })
+
+    return {"warnings": warnings}

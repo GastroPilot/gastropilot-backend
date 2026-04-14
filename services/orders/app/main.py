@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 import uuid
@@ -72,7 +73,15 @@ def _normalize_uuid(value: str | None) -> str | None:
 async def lifespan(app: FastAPI):
     logger.info("Starting GastroPilot Orders Service...")
     get_session_factories()
+
+    # Start auto daily closing scheduler
+    from app.tasks.auto_daily_closing import auto_daily_closing_loop
+
+    closing_task = asyncio.create_task(auto_daily_closing_loop())
+
     yield
+
+    closing_task.cancel()
     logger.info("Shutting down Orders Service...")
     await close_engines()
 
@@ -105,6 +114,7 @@ from app.api.routes import (
     kitchen_device,
     orders,
     public_orders,
+    receipts,
     statistics,
     sumup,
     waitlist,
@@ -127,6 +137,7 @@ for prefix in ("/api/v1", "/v1"):
     app.include_router(public_orders.router, prefix=prefix)
     app.include_router(kitchen_device.router, prefix=prefix)
     app.include_router(fiskaly.router, prefix=prefix)
+    app.include_router(receipts.router, prefix=prefix)
 
 
 @app.websocket("/ws/{tenant_id}")

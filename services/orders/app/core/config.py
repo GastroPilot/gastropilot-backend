@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     FISKALY_API_SECRET: str = ""
     FISKALY_BASE_URL: str = "https://kassensichv-middleware.fiskaly.com/api/v2"
     FISKALY_MANAGEMENT_URL: str = "https://dashboard.fiskaly.com/api/v0"
+    FISKALY_DSFINVK_URL: str = "https://dsfinvk.fiskaly.com/api/v1"
     FISKALY_TEST_MODE: bool = True
 
     @property
