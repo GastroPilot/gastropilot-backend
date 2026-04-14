@@ -116,6 +116,7 @@ from app.api.routes import (
     public_orders,
     receipts,
     statistics,
+    terminals,
     sumup,
     waitlist,
     webhook_sumup,
@@ -138,6 +139,7 @@ for prefix in ("/api/v1", "/v1"):
     app.include_router(kitchen_device.router, prefix=prefix)
     app.include_router(fiskaly.router, prefix=prefix)
     app.include_router(receipts.router, prefix=prefix)
+    app.include_router(terminals.router, prefix=prefix)
 
 
 @app.websocket("/ws/{tenant_id}")

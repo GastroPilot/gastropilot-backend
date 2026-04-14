@@ -374,15 +374,31 @@ def _build_receipt_payload(order: Order, items: list[OrderItem], payment_type: s
         for rate, amount in amounts_by_rate.items()
     ]
 
+    # § 6 KassenSichV: Storno-Beleg bei Stornierung
+    is_cancellation = order.status == "canceled"
     total = order.total or 0.0
+
+    # Bei Split-Payments: alle Zahlungsarten abbilden (Fix 5)
+    amounts_per_payment_type = []
+    if order.split_payments and isinstance(order.split_payments, list):
+        for sp in order.split_payments:
+            sp_method = sp.get("method", "cash")
+            sp_amount = float(sp.get("amount", 0)) + float(sp.get("tip_amount", 0))
+            sp_type = "CASH" if sp_method == "cash" else "NON_CASH"
+            amounts_per_payment_type.append(
+                {"payment_type": sp_type, "amount": f"{sp_amount:.2f}", "currency_code": "EUR"}
+            )
+    if not amounts_per_payment_type:
+        amounts_per_payment_type.append(
+            {"payment_type": payment_type, "amount": f"{total:.2f}", "currency_code": "EUR"}
+        )
+
     return {
         "standard_v1": {
             "receipt": {
-                "receipt_type": "RECEIPT",
+                "receipt_type": "CANCELLATION" if is_cancellation else "RECEIPT",
                 "amounts_per_vat_rate": amounts_per_vat_rate,
-                "amounts_per_payment_type": [
-                    {"payment_type": payment_type, "amount": f"{total:.2f}", "currency_code": "EUR"}
-                ],
+                "amounts_per_payment_type": amounts_per_payment_type,
             }
         }
     }
