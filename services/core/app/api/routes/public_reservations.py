@@ -18,6 +18,7 @@ from app.core.guest_deps import get_optional_guest
 from app.models.block import Block, BlockAssignment
 from app.models.reservation import Guest, Reservation
 from app.models.restaurant import Restaurant, Table
+from app.models.table_config import ReservationTable
 from app.models.user import GuestProfile
 from app.services.table_group_service import (
     fetch_reserved_table_ids,
@@ -88,7 +89,23 @@ class PublicReservationResponse(BaseModel):
     time: str
     party_size: int
     table_number: str | None = None
+    has_outdoor_table: bool = False
     message: str
+
+
+class PublicReservationStatusResponse(BaseModel):
+    confirmation_code: str
+    status: str
+    guest_name: str
+    guest_email: str
+    date: str
+    time: str
+    party_size: int
+    table_number: str | None = None
+    has_outdoor_table: bool = False
+    special_requests: str | None = None
+    can_modify: bool
+    hours_until_reservation: float
 
 
 class ReservationUpdateRequest(BaseModel):
@@ -99,6 +116,50 @@ class ReservationUpdateRequest(BaseModel):
 
 
 # --- Helpers ---
+
+
+def _compute_has_outdoor_table(
+    table_ids: list[UUID],
+    tables_by_id: dict[UUID, Table],
+) -> bool:
+    """Return True if any of the given table IDs maps to a Table with is_outdoor=True.
+
+    Unknown IDs are ignored — if a referenced table is missing from the lookup
+    (deleted / wrong tenant), it contributes False rather than raising.
+    """
+    return any(tables_by_id[tid].is_outdoor for tid in table_ids if tid in tables_by_id)
+
+
+async def _load_tables_by_id(
+    db: AsyncSession,
+    tenant_id: UUID,
+    table_ids: list[UUID],
+) -> dict[UUID, Table]:
+    if not table_ids:
+        return {}
+    result = await db.execute(
+        select(Table).where(
+            and_(
+                Table.tenant_id == tenant_id,
+                Table.id.in_(table_ids),
+            )
+        )
+    )
+    return {t.id: t for t in result.scalars().all()}
+
+
+async def _reservation_table_ids(
+    db: AsyncSession,
+    reservation: Reservation,
+) -> list[UUID]:
+    """Collect all table IDs linked to a reservation (group tables + legacy single table)."""
+    result = await db.execute(
+        select(ReservationTable.table_id).where(ReservationTable.reservation_id == reservation.id)
+    )
+    table_ids = list(result.scalars().all())
+    if not table_ids and reservation.table_id is not None:
+        table_ids = [reservation.table_id]
+    return table_ids
 
 
 async def _get_restaurant_by_slug(slug: str, db: AsyncSession) -> Restaurant:
@@ -394,6 +455,9 @@ async def create_reservation(
         raise HTTPException(status_code=404, detail=str(exc))
     await sync_reservation_table_links(db, reservation, resolved_table_ids)
 
+    tables_by_id = await _load_tables_by_id(db, restaurant.id, resolved_table_ids)
+    has_outdoor = _compute_has_outdoor_table(resolved_table_ids, tables_by_id)
+
     await db.commit()
     await db.refresh(reservation)
 
@@ -406,16 +470,20 @@ async def create_reservation(
         time=body.desired_time,
         party_size=body.party_size,
         table_number=table.number,
+        has_outdoor_table=has_outdoor,
         message="Reservation confirmed",
     )
 
 
-@router.get("/{slug}/reservations/{code}")
+@router.get(
+    "/{slug}/reservations/{code}",
+    response_model=PublicReservationStatusResponse,
+)
 async def get_reservation_status(
     slug: str,
     code: str,
     db: AsyncSession = Depends(get_db),
-):
+) -> PublicReservationStatusResponse:
     restaurant = await _get_restaurant_by_slug(slug, db)
     result = await db.execute(
         select(Reservation).where(
@@ -433,26 +501,28 @@ async def get_reservation_status(
     hours_until = (reservation.start_at - now_utc).total_seconds() / 3600
     can_modify = reservation.status in ("pending", "confirmed") and hours_until >= 2
 
-    table_number = None
-    if reservation.table_id:
-        table_result = await db.execute(select(Table).where(Table.id == reservation.table_id))
-        table = table_result.scalar_one_or_none()
-        if table:
-            table_number = table.number
+    table_ids = await _reservation_table_ids(db, reservation)
+    tables_by_id = await _load_tables_by_id(db, restaurant.id, table_ids)
+    has_outdoor = _compute_has_outdoor_table(table_ids, tables_by_id)
 
-    return {
-        "confirmation_code": reservation.confirmation_code,
-        "status": reservation.status,
-        "guest_name": reservation.guest_name,
-        "guest_email": reservation.guest_email,
-        "date": reservation.start_at.astimezone(RESTAURANT_TZ).date().isoformat(),
-        "time": reservation.start_at.astimezone(RESTAURANT_TZ).strftime("%H:%M"),
-        "party_size": reservation.party_size,
-        "table_number": table_number,
-        "special_requests": reservation.special_requests,
-        "can_modify": can_modify,
-        "hours_until_reservation": round(hours_until, 1),
-    }
+    table_number: str | None = None
+    if reservation.table_id and reservation.table_id in tables_by_id:
+        table_number = tables_by_id[reservation.table_id].number
+
+    return PublicReservationStatusResponse(
+        confirmation_code=reservation.confirmation_code,
+        status=reservation.status,
+        guest_name=reservation.guest_name,
+        guest_email=reservation.guest_email,
+        date=reservation.start_at.astimezone(RESTAURANT_TZ).date().isoformat(),
+        time=reservation.start_at.astimezone(RESTAURANT_TZ).strftime("%H:%M"),
+        party_size=reservation.party_size,
+        table_number=table_number,
+        has_outdoor_table=has_outdoor,
+        special_requests=reservation.special_requests,
+        can_modify=can_modify,
+        hours_until_reservation=round(hours_until, 1),
+    )
 
 
 @router.put("/{slug}/reservations/{code}/cancel")
