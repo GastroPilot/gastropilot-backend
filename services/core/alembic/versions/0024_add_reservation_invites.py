@@ -65,9 +65,19 @@ def upgrade() -> None:
             USING (tenant_id::text = current_setting('app.current_tenant_id', true))
     """)
 
-    # Grants
-    op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON reservation_invites TO gastropilot_app")
-    op.execute("GRANT ALL ON reservation_invites TO gastropilot_admin")
+    # Grants (nur wenn Rollen existieren, damit lokale Dev-DBs nicht fehlschlagen)
+    op.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gastropilot_app') THEN
+                GRANT SELECT, INSERT, UPDATE, DELETE ON reservation_invites TO gastropilot_app;
+            END IF;
+
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gastropilot_admin') THEN
+                GRANT ALL ON reservation_invites TO gastropilot_admin;
+            END IF;
+        END $$;
+    """)
 
     # Updated-at Trigger
     op.execute("""
