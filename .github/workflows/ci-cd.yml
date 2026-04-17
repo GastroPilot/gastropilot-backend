@@ -4,11 +4,15 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches:
-      - main
-      - 'feature/**'
-      - 'feat/**'
-      - 'fix/**'
+    branches: [main]
+    paths:
+      - 'services/**'
+      - 'packages/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'requirements*.txt'
+      - 'Dockerfile'
+      - '.github/workflows/ci-cd.yml'
   workflow_dispatch:
     inputs:
       tag:
@@ -19,6 +23,10 @@ on:
           - test
           - staging
           - demo
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -56,18 +64,83 @@ jobs:
       - name: Check import sorting (isort)
         run: isort --check-only services/ packages/
 
+  detect-changes:
+    name: Detect Changed Services
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.changes.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve changed services
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          ALL_SERVICES='["core","orders","ai","notifications"]'
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "services=${ALL_SERVICES}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE_BRANCH="${BASE_REF:-main}"
+            git fetch --no-tags --depth=1 origin "${BASE_BRANCH}"
+            CHANGED_FILES="$(git diff --name-only "origin/${BASE_BRANCH}"...HEAD || true)"
+          else
+            if [ -n "${BEFORE_SHA:-}" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+              CHANGED_FILES="$(git diff --name-only "${BEFORE_SHA}"...HEAD || true)"
+            else
+              CHANGED_FILES="$(git show --pretty='' --name-only HEAD || true)"
+            fi
+          fi
+
+          if [ -z "${CHANGED_FILES}" ]; then
+            echo "services=${ALL_SERVICES}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if printf '%s\n' "${CHANGED_FILES}" | grep -Eq '^(packages/|tests/|pyproject.toml$|requirements.*\.txt$|Dockerfile$|\.github/workflows/ci-cd\.yml$)'; then
+            echo "services=${ALL_SERVICES}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          SERVICES=()
+          for SERVICE in core orders ai notifications; do
+            if printf '%s\n' "${CHANGED_FILES}" | grep -Eq "^services/${SERVICE}/"; then
+              SERVICES+=("\"${SERVICE}\"")
+            fi
+          done
+
+          if [ "${#SERVICES[@]}" -eq 0 ]; then
+            echo "services=${ALL_SERVICES}" >> "$GITHUB_OUTPUT"
+          else
+            MATRIX="[$(IFS=,; echo "${SERVICES[*]}")]"
+            echo "services=${MATRIX}" >> "$GITHUB_OUTPUT"
+          fi
+
   build-check:
     name: Build Check
     runs-on: ubuntu-latest
+    needs: [detect-changes]
     strategy:
+      fail-fast: false
       matrix:
-        service: [core, orders, ai, notifications]
+        service: ${{ fromJSON(needs.detect-changes.outputs.services) }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
 
       - name: Install service dependencies
         run: |
@@ -89,21 +162,14 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    needs: [build-check]
+    needs: [detect-changes, build-check]
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'workflow_dispatch'
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - service: core
-            image: gastropilot-core
-          - service: orders
-            image: gastropilot-orders
-          - service: ai
-            image: gastropilot-ai
-          - service: notifications
-            image: gastropilot-notifications
+        service: ${{ fromJSON(needs.detect-changes.outputs.services) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -159,7 +225,7 @@ jobs:
           file: services/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:${{ steps.tag.outputs.tag }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:sha-${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/gastropilot-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/gastropilot-${{ matrix.service }}:sha-${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
