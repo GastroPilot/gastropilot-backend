@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 
+import secrets
+
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -86,6 +88,59 @@ class Reservation(Base):
     canceled_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     no_show_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+def _generate_invite_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+class ReservationInvite(Base):
+    """Einladung für Begleitgäste einer Reservierung."""
+
+    __tablename__ = "reservation_invites"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("restaurants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    reservation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("reservations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    invite_token: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True, default=_generate_invite_token
+    )
+    status: Mapped[str] = mapped_column(
+        Enum("pending", "accepted", "declined", name="invite_status", create_type=False),
+        nullable=False,
+        default="pending",
+    )
+
+    # Einladender Gast
+    inviter_guest_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("guest_profiles.id", ondelete="SET NULL"), nullable=True
+    )
+    inviter_name: Mapped[str] = mapped_column(String(240), nullable=False)
+
+    # Eingeladener Gast (wird bei Annahme ausgefüllt)
+    guest_first_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    guest_last_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    guest_allergen_ids: Mapped[list] = mapped_column(JSONB, default=list)
+
+    # Zeitstempel
+    accepted_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    declined_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
