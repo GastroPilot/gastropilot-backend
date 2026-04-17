@@ -152,7 +152,13 @@ async def _reservation_table_ids(
     db: AsyncSession,
     reservation: Reservation,
 ) -> list[UUID]:
-    """Collect all table IDs linked to a reservation (group tables + legacy single table)."""
+    """Collect all table IDs linked to a reservation (group tables + legacy single table).
+
+    Tenant scoping: the caller must pass a `Reservation` that was already
+    fetched via a tenant-scoped query. The `ReservationTable` join rows
+    are owned 1:1 by the reservation, so filtering them by `reservation_id`
+    alone cannot cross a tenant boundary.
+    """
     result = await db.execute(
         select(ReservationTable.table_id).where(ReservationTable.reservation_id == reservation.id)
     )

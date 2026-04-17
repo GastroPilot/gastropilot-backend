@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -134,8 +135,7 @@ async def test_get_reservation_status_returns_has_outdoor_for_outdoor_table(monk
         status="confirmed",
         guest_name="Guest",
         guest_email="g@example.com",
-        start_at=__import__("datetime").datetime.now(__import__("datetime").UTC)
-        + __import__("datetime").timedelta(hours=48),
+        start_at=datetime.now(UTC) + timedelta(hours=48),
         table_id=table_id,
         party_size=2,
         special_requests=None,
@@ -185,8 +185,7 @@ async def test_get_reservation_status_returns_false_for_indoor_table():
         status="confirmed",
         guest_name="Guest",
         guest_email="g@example.com",
-        start_at=__import__("datetime").datetime.now(__import__("datetime").UTC)
-        + __import__("datetime").timedelta(hours=3),
+        start_at=datetime.now(UTC) + timedelta(hours=3),
         table_id=table_id,
         party_size=2,
         special_requests=None,
@@ -231,8 +230,7 @@ async def test_get_reservation_status_pending_without_table_is_not_outdoor():
         status="pending",
         guest_name="Guest",
         guest_email="g@example.com",
-        start_at=__import__("datetime").datetime.now(__import__("datetime").UTC)
-        + __import__("datetime").timedelta(hours=5),
+        start_at=datetime.now(UTC) + timedelta(hours=5),
         table_id=None,
         party_size=2,
         special_requests=None,
@@ -256,19 +254,98 @@ async def test_get_reservation_status_pending_without_table_is_not_outdoor():
 
 
 @pytest.mark.asyncio
-async def test_get_reservation_status_cross_tenant_returns_404():
+async def test_get_reservation_status_unknown_slug_returns_404():
+    """Slug-based restaurant lookup miss (e.g. typo): no reservation data leaks."""
     from app.models.restaurant import Restaurant
 
-    # Restaurant-by-slug lookup returns None → 404, no reservation data leaks
     handlers = {
         Restaurant: lambda _stmt: [],
     }
 
     with pytest.raises(Exception) as exc_info:
         await pr.get_reservation_status(
-            slug="other-tenant-bistro",
+            slug="does-not-exist",
             code="ABC12345",
             db=_FakeSession(handlers),
         )
 
     assert "404" in str(exc_info.value) or "not found" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_get_reservation_status_same_code_other_tenant_returns_404():
+    """
+    Stronger cross-tenant check: a confirmation code that exists under
+    tenant B must NOT leak when the lookup targets tenant A's slug.
+
+    The route filters `Reservation.tenant_id == restaurant.id`. The fake
+    session mirrors that filter by inspecting the statement's compiled SQL
+    for the tenant UUID. When the query is scoped to tenant A, the
+    reservation handler returns []; only a hypothetical tenant-B-scoped
+    query (which the route never makes) would see the reservation.
+    """
+    from app.models.reservation import Reservation
+    from app.models.restaurant import Restaurant
+
+    tenant_a_id = uuid.uuid4()
+    tenant_b_id = uuid.uuid4()
+    assert tenant_a_id != tenant_b_id
+
+    restaurant_a = SimpleNamespace(
+        id=tenant_a_id,
+        name="Bistro A",
+        slug="bistro-a",
+        public_booking_enabled=True,
+    )
+    reservation_b = SimpleNamespace(
+        id=uuid.uuid4(),
+        tenant_id=tenant_b_id,
+        confirmation_code="SHARED01",
+        status="confirmed",
+        guest_name="Guest B",
+        guest_email="b@example.com",
+        start_at=datetime.now(UTC) + timedelta(hours=24),
+        table_id=None,
+        party_size=2,
+        special_requests=None,
+    )
+
+    reservation_calls: list[str] = []
+
+    def _uuid_markers(u: uuid.UUID) -> tuple[str, str]:
+        # SQLAlchemy's literal-bind compiler renders UUIDs as hex without
+        # dashes for the Postgres UUID type — check both forms to stay
+        # robust against dialect changes.
+        return (str(u), u.hex)
+
+    def reservation_handler(stmt):
+        try:
+            compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        except Exception:
+            compiled = str(stmt)
+        reservation_calls.append(compiled)
+        if any(marker in compiled for marker in _uuid_markers(tenant_a_id)):
+            return []
+        if any(marker in compiled for marker in _uuid_markers(tenant_b_id)):
+            return [reservation_b]
+        return []
+
+    handlers = {
+        Restaurant: lambda _stmt: [restaurant_a],
+        Reservation: reservation_handler,
+    }
+
+    with pytest.raises(Exception) as exc_info:
+        await pr.get_reservation_status(
+            slug="bistro-a",
+            code="SHARED01",
+            db=_FakeSession(handlers),
+        )
+
+    assert "404" in str(exc_info.value) or "not found" in str(exc_info.value).lower()
+    # The route must have queried reservations with tenant_a's filter,
+    # never with tenant_b's — otherwise the cross-tenant scope is broken.
+    assert reservation_calls, "expected a Reservation query"
+    joined = "\n".join(reservation_calls)
+    assert any(marker in joined for marker in _uuid_markers(tenant_a_id))
+    assert not any(marker in joined for marker in _uuid_markers(tenant_b_id))
