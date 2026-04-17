@@ -10,6 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.public_reservations import (
+    _compute_has_outdoor_table,
+    _load_tables_by_id,
+    _reservation_table_ids,
+)
 from app.core.deps import get_db
 from app.core.guest_deps import get_current_guest
 from app.models.guest_favorite import GuestFavorite
@@ -684,11 +689,23 @@ async def get_guest_reservation_detail(
         raise HTTPException(status_code=404, detail="Reservation not found")
 
     r, rest = row
+
+    # Weather-banner feed: the app shows an outdoor-weather warning <24h
+    # before the reservation when the assigned table is outdoor. Requires
+    # the `has_outdoor_table` flag (same semantic as the public widget
+    # endpoint — see public_reservations._compute_has_outdoor_table) plus
+    # enough location data to geocode via Open-Meteo.
+    table_ids = await _reservation_table_ids(db, r)
+    tables_by_id = await _load_tables_by_id(db, rest.id, table_ids)
+    has_outdoor_table = _compute_has_outdoor_table(table_ids, tables_by_id)
+
     return {
         "id": str(r.id),
         "restaurant_id": str(r.tenant_id),
         "restaurant_name": rest.name,
         "restaurant_slug": rest.slug or "",
+        "restaurant_city": rest.city,
+        "restaurant_zip_code": rest.zip_code,
         "date": (r.start_at.astimezone(RESTAURANT_TZ).date().isoformat() if r.start_at else None),
         "time": (r.start_at.astimezone(RESTAURANT_TZ).strftime("%H:%M") if r.start_at else None),
         "party_size": r.party_size,
@@ -698,6 +715,7 @@ async def get_guest_reservation_detail(
         "guest_phone": r.guest_phone,
         "special_requests": r.special_requests,
         "confirmation_code": r.confirmation_code,
+        "has_outdoor_table": has_outdoor_table,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "updated_at": r.updated_at.isoformat() if r.updated_at else None,
     }
