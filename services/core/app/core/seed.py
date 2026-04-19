@@ -32,7 +32,7 @@ MANAGER_ID = uuid.UUID("00000000-0000-4000-a000-000000000011")
 STAFF_ID = uuid.UUID("00000000-0000-4000-a000-000000000012")
 KITCHEN_ID = uuid.UUID("00000000-0000-4000-a000-000000000013")
 AREA_INDOOR_ID = uuid.UUID("00000000-0000-4000-a000-000000000020")
-AREA_OUTDOOR_ID = uuid.UUID("00000000-0000-4000-a000-000000000021")
+AREA_TERRACE_ID = uuid.UUID("00000000-0000-4000-a000-000000000021")
 GUEST_PROFILE_ID = uuid.UUID("00000000-0000-4000-a000-000000000030")
 
 
@@ -94,7 +94,7 @@ async def seed_demo_restaurant(session: AsyncSession) -> None:
             address="Musterstraße 42, 80331 München",
             phone="+49 89 12345678",
             email="info@bellavista-demo.de",
-            description="Italienisches Restaurant mit Terrasse – Demo-Tenant",
+            description="Italienisches Restaurant mit Innenbereich und Terrasse – Demo-Tenant",
             public_booking_enabled=True,
             booking_lead_time_hours=2,
             booking_max_party_size=10,
@@ -177,47 +177,225 @@ async def seed_demo_restaurant(session: AsyncSession) -> None:
     session.add_all(
         [
             Area(id=AREA_INDOOR_ID, tenant_id=RESTAURANT_ID, name="Innenbereich"),
-            Area(id=AREA_OUTDOOR_ID, tenant_id=RESTAURANT_ID, name="Terrasse"),
+            Area(id=AREA_TERRACE_ID, tenant_id=RESTAURANT_ID, name="Terrasse"),
         ]
     )
 
     # ── Tables ──────────────────────────────────────────────────
-    tables = []
-    # Indoor: 6 tables in a grid
-    for i in range(1, 7):
-        row, col = divmod(i - 1, 3)
-        tables.append(
-            Table(
-                tenant_id=RESTAURANT_ID,
-                area_id=AREA_INDOOR_ID,
-                number=str(i),
-                capacity=4 if i <= 4 else 6,
-                shape="rectangle",
-                position_x=100 + col * 200,
-                position_y=100 + row * 200,
-                width=120,
-                height=120,
-                is_active=True,
-                is_outdoor=False,
-            )
-        )
-    # Outdoor: 4 tables
-    for i in range(7, 11):
-        tables.append(
-            Table(
-                tenant_id=RESTAURANT_ID,
-                area_id=AREA_OUTDOOR_ID,
-                number=str(i),
-                capacity=4 if i <= 9 else 8,
-                shape="circle" if i <= 9 else "rectangle",
-                position_x=100 + (i - 7) * 180,
-                position_y=500,
-                width=100,
-                height=100,
-                is_active=True,
-                is_outdoor=True,
-            )
-        )
+    tables = [
+        # Innenbereich.
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_INDOOR_ID,
+            number="Stammtisch",
+            capacity=6,
+            shape="rectangle",
+            position_x=953,
+            position_y=271,
+            width=162,
+            height=114,
+            rotation=38,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_INDOOR_ID,
+            number="Tisch 1",
+            capacity=4,
+            shape="rectangle",
+            position_x=335,
+            position_y=71,
+            width=143,
+            height=120,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_INDOOR_ID,
+            number="Tisch 2",
+            capacity=4,
+            shape="rectangle",
+            position_x=527,
+            position_y=71,
+            width=148,
+            height=120,
+            rotation=-360,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_INDOOR_ID,
+            number="Tisch 3",
+            capacity=4,
+            shape="rectangle",
+            position_x=335,
+            position_y=214,
+            width=143,
+            height=129,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_INDOOR_ID,
+            number="Tisch 4",
+            capacity=4,
+            shape="rectangle",
+            position_x=527,
+            position_y=214,
+            width=148,
+            height=129,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_INDOOR_ID,
+            number="Tisch 5",
+            capacity=4,
+            shape="rectangle",
+            position_x=740,
+            position_y=71,
+            width=155,
+            height=120,
+            rotation=-720,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_INDOOR_ID,
+            number="Tisch 6",
+            capacity=4,
+            shape="rectangle",
+            position_x=740,
+            position_y=214,
+            width=155,
+            height=114,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_INDOOR_ID,
+            number="Tisch 7",
+            capacity=4,
+            shape="rectangle",
+            position_x=953,
+            position_y=71,
+            width=162,
+            height=120,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_INDOOR_ID,
+            number="Tisch 8",
+            capacity=4,
+            shape="rectangle",
+            position_x=740,
+            position_y=385,
+            width=155,
+            height=121,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        # Terrasse.
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_TERRACE_ID,
+            number="Tisch 11",
+            capacity=4,
+            shape="rectangle",
+            position_x=74,
+            position_y=46,
+            width=140,
+            height=130,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_TERRACE_ID,
+            number="Tisch 12",
+            capacity=4,
+            shape="rectangle",
+            position_x=240,
+            position_y=46,
+            width=140,
+            height=130,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_TERRACE_ID,
+            number="Tisch 13",
+            capacity=4,
+            shape="rectangle",
+            position_x=74,
+            position_y=221,
+            width=140,
+            height=130,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_TERRACE_ID,
+            number="Tisch 14",
+            capacity=4,
+            shape="rectangle",
+            position_x=240,
+            position_y=221,
+            width=140,
+            height=130,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_TERRACE_ID,
+            number="Tisch 15",
+            capacity=4,
+            shape="rectangle",
+            position_x=466,
+            position_y=46,
+            width=140,
+            height=130,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+        Table(
+            tenant_id=RESTAURANT_ID,
+            area_id=AREA_TERRACE_ID,
+            number="Tisch 16",
+            capacity=4,
+            shape="rectangle",
+            position_x=466,
+            position_y=221,
+            width=140,
+            height=130,
+            rotation=0,
+            is_active=True,
+            is_outdoor=False,
+        ),
+    ]
     session.add_all(tables)
     await session.flush()  # get table IDs
 
@@ -336,7 +514,7 @@ async def seed_demo_restaurant(session: AsyncSession) -> None:
         # Heute Mittag
         (
             guest_ids[0],
-            table_map.get("1"),
+            table_map.get("Tisch 1"),
             today,
             "12:00",
             "14:00",
@@ -349,7 +527,7 @@ async def seed_demo_restaurant(session: AsyncSession) -> None:
         # Heute Abend
         (
             guest_ids[1],
-            table_map.get("3"),
+            table_map.get("Tisch 3"),
             today,
             "19:00",
             "21:00",
@@ -361,7 +539,7 @@ async def seed_demo_restaurant(session: AsyncSession) -> None:
         ),
         (
             guest_ids[2],
-            table_map.get("5"),
+            table_map.get("Tisch 5"),
             today,
             "20:00",
             "22:00",
@@ -374,7 +552,7 @@ async def seed_demo_restaurant(session: AsyncSession) -> None:
         # Morgen
         (
             guest_ids[3],
-            table_map.get("2"),
+            table_map.get("Tisch 2"),
             today + timedelta(days=1),
             "19:30",
             "21:30",
@@ -387,7 +565,7 @@ async def seed_demo_restaurant(session: AsyncSession) -> None:
         # Übermorgen
         (
             guest_ids[4],
-            table_map.get("6"),
+            table_map.get("Tisch 6"),
             today + timedelta(days=2),
             "20:00",
             "22:00",
@@ -505,8 +683,8 @@ async def seed_demo_restaurant(session: AsyncSession) -> None:
             "o1": order1_id,
             "o2": order2_id,
             "tid": RESTAURANT_ID,
-            "t1": table_map.get("1"),
-            "t3": table_map.get("3"),
+            "t1": table_map.get("Tisch 1"),
+            "t3": table_map.get("Tisch 3"),
             "now": now,
             "yesterday": now - timedelta(hours=20),
             "staff": STAFF_ID,
@@ -583,7 +761,7 @@ async def seed_demo_restaurant(session: AsyncSession) -> None:
     logger.info("Guest Portal Login:")
     logger.info("  gast@example.com / gast1234")
     logger.info("")
-    logger.info("10 Tables (6 indoor, 4 outdoor)")
+    logger.info("15 Tables (9x Innenbereich, 6x Terrasse)")
     logger.info("24 Menu Items in 6 Kategorien")
     logger.info("5 Reservierungen, 2 Warteliste, 2 Bestellungen")
     logger.info("=" * 60)
