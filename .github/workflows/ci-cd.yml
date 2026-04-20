@@ -3,6 +3,17 @@ name: CI/CD Pipeline
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'services/**'
+      - 'packages/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'requirements*.txt'
+      - 'Dockerfile'
+      - '.github/workflows/ci-cd.yml'
+      - '!**/*.md'
+      - '!**/*.mdx'
+      - '!docs/**'
   push:
     branches: [main]
     paths:
@@ -13,6 +24,9 @@ on:
       - 'requirements*.txt'
       - 'Dockerfile'
       - '.github/workflows/ci-cd.yml'
+      - '!**/*.md'
+      - '!**/*.mdx'
+      - '!docs/**'
   workflow_dispatch:
     inputs:
       tag:
@@ -25,7 +39,7 @@ on:
           - demo
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
