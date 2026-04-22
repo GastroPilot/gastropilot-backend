@@ -502,6 +502,55 @@ async def get_insights_data(
     )
     res_count, guests_served = reservations_result.one()
 
+    reservations_by_day: list[dict[str, int | str]] = []
+    reservations_by_hour: list[dict[str, int | str]] = []
+    try:
+        reservations_by_day_result = await session.execute(
+            text("""
+                SELECT
+                    DATE(start_at AT TIME ZONE 'UTC') AS day,
+                    COUNT(*) AS cnt
+                FROM reservations
+                WHERE tenant_id = :tid
+                  AND start_at >= :from_dt
+                  AND start_at < :to_dt
+                GROUP BY day
+                ORDER BY day ASC
+                """),
+            {"tid": str(rid), "from_dt": period_start, "to_dt": period_end},
+        )
+        reservations_by_day = [
+            {"date": str(row.day), "count": int(row.cnt)} for row in reservations_by_day_result
+        ]
+
+        reservations_by_hour_result = await session.execute(
+            text("""
+                SELECT
+                    EXTRACT(HOUR FROM start_at AT TIME ZONE 'UTC')::int AS hour,
+                    COUNT(*) AS cnt
+                FROM reservations
+                WHERE tenant_id = :tid
+                  AND start_at >= :from_dt
+                  AND start_at < :to_dt
+                GROUP BY hour
+                ORDER BY hour ASC
+                """),
+            {"tid": str(rid), "from_dt": period_start, "to_dt": period_end},
+        )
+        reservations_by_hour = [
+            {"hour": str(int(row.hour)).zfill(2), "count": int(row.cnt)}
+            for row in reservations_by_hour_result
+        ]
+    except SQLAlchemyError:
+        logger.exception(
+            "Reservation-Insights konnten nicht berechnet werden",
+            extra={
+                "restaurant_id": str(rid),
+                "from_dt": period_start.isoformat(),
+                "to_dt": period_end.isoformat(),
+            },
+        )
+
     # Orders-Aggregat
     try:
         agg_result = await session.execute(
@@ -543,6 +592,26 @@ async def get_insights_data(
             {"date": str(row.day), "revenue": float(row.revenue)} for row in revenue_by_day_result
         ]
 
+        # Bestellungen pro Tag
+        orders_by_day_result = await session.execute(
+            text("""
+                SELECT
+                    DATE(opened_at AT TIME ZONE 'UTC') AS day,
+                    COUNT(*) AS cnt
+                FROM orders
+                WHERE tenant_id = :tid
+                  AND opened_at >= :from_dt
+                  AND opened_at < :to_dt
+                  AND status NOT IN ('canceled')
+                GROUP BY day
+                ORDER BY day ASC
+                """),
+            {"tid": str(rid), "from_dt": period_start, "to_dt": period_end},
+        )
+        orders_by_day = [
+            {"date": str(row.day), "count": int(row.cnt)} for row in orders_by_day_result
+        ]
+
         # Bestellungen nach Status
         status_result = await session.execute(
             text("""
@@ -581,6 +650,57 @@ async def get_insights_data(
             for row in popular_result
         ]
 
+        # Kategorie-Statistiken
+        category_result = await session.execute(
+            text("""
+                SELECT
+                    COALESCE(NULLIF(oi.category, ''), 'Uncategorized') AS category,
+                    SUM(oi.quantity) AS quantity,
+                    COALESCE(SUM(oi.total_price), 0) AS revenue
+                FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE o.tenant_id = :tid
+                  AND o.opened_at >= :from_dt
+                  AND o.opened_at < :to_dt
+                  AND o.status NOT IN ('canceled')
+                GROUP BY category
+                """),
+            {"tid": str(rid), "from_dt": period_start, "to_dt": period_end},
+        )
+        category_statistics: dict[str, dict[str, float | int]] = {}
+        for row in category_result:
+            category_statistics[str(row.category)] = {
+                "quantity": int(row.quantity or 0),
+                "revenue": float(row.revenue or 0.0),
+            }
+
+        # Stunden-Statistiken (wie /order-statistics/hourly-statistics)
+        hourly_statistics: dict[str, dict[str, float | int]] = {
+            str(hour).zfill(2): {"order_count": 0, "revenue": 0.0} for hour in range(24)
+        }
+        hourly_result = await session.execute(
+            text("""
+                SELECT
+                    EXTRACT(HOUR FROM opened_at AT TIME ZONE 'UTC')::int AS hour,
+                    COUNT(*) AS order_count,
+                    COALESCE(SUM(total), 0) AS revenue
+                FROM orders
+                WHERE tenant_id = :tid
+                  AND opened_at >= :from_dt
+                  AND opened_at < :to_dt
+                  AND status NOT IN ('canceled')
+                GROUP BY hour
+                ORDER BY hour ASC
+                """),
+            {"tid": str(rid), "from_dt": period_start, "to_dt": period_end},
+        )
+        for row in hourly_result:
+            hour_key = str(int(row.hour)).zfill(2)
+            hourly_statistics[hour_key] = {
+                "order_count": int(row.order_count or 0),
+                "revenue": float(row.revenue or 0.0),
+            }
+
     except SQLAlchemyError:
         logger.exception(
             "Orders-Insights konnten nicht berechnet werden",
@@ -594,8 +714,13 @@ async def get_insights_data(
         total_revenue = 0.0
         avg_order_value = 0.0
         revenue_by_day = []
+        orders_by_day = []
         orders_by_status = {}
         popular_items = []
+        category_statistics = {}
+        hourly_statistics = {
+            str(hour).zfill(2): {"order_count": 0, "revenue": 0.0} for hour in range(24)
+        }
 
     return {
         "total_revenue": total_revenue,
@@ -604,6 +729,11 @@ async def get_insights_data(
         "reservations_count": int(res_count),
         "guests_served": int(guests_served),
         "popular_items": popular_items,
+        "category_statistics": category_statistics,
+        "hourly_statistics": hourly_statistics,
         "revenue_by_day": revenue_by_day,
+        "orders_by_day": orders_by_day,
+        "reservations_by_day": reservations_by_day,
+        "reservations_by_hour": reservations_by_hour,
         "orders_by_status": orders_by_status,
     }
