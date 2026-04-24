@@ -53,6 +53,7 @@ async def login(
     for improved security against XSS attacks.
     """
     user = None
+    invalid_credentials_detail = "Invalid credentials"
 
     # E-Mail/Passwort-Login (platform_admin)
     if login_data.email and login_data.password:
@@ -67,6 +68,7 @@ async def login(
 
     # PIN-Login (staff)
     elif login_data.operator_number and login_data.pin:
+        invalid_credentials_detail = "Invalid operator number or PIN"
         result = await session.execute(
             select(User).where(User.operator_number == login_data.operator_number)
         )
@@ -75,7 +77,10 @@ async def login(
             user = candidate
 
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=invalid_credentials_detail,
+        )
 
     if not user.is_active:
         raise HTTPException(
