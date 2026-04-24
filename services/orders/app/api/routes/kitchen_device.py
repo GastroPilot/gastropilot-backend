@@ -24,7 +24,7 @@ router = APIRouter(prefix="/kitchen/device", tags=["kitchen-device"])
 
 class DeviceLoginRequest(BaseModel):
     device_token: str
-    tenant_id: str
+    restaurant_slug: str
 
 
 class DeviceLoginResponse(BaseModel):
@@ -41,10 +41,24 @@ async def device_login(
     db: AsyncSession = Depends(get_db),
 ):
     """Authenticate a KDS device using its device token."""
+    slug = data.restaurant_slug.strip()
+    if not slug:
+        raise HTTPException(status_code=400, detail="restaurant_slug must not be empty")
+
+    rest_by_slug_result = await db.execute(
+        text("SELECT id FROM restaurants WHERE slug = :slug"),
+        {"slug": slug},
+    )
+    rest_by_slug = rest_by_slug_result.mappings().first()
+    if not rest_by_slug:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+
+    tenant_id = str(rest_by_slug["id"])
+
     # Set tenant context for RLS
     await db.execute(
         text("SELECT set_tenant_context(:tid, 'owner')"),
-        {"tid": data.tenant_id},
+        {"tid": tenant_id},
     )
 
     result = await db.execute(
@@ -52,7 +66,7 @@ async def device_login(
             "SELECT id, tenant_id, name, station FROM devices "
             "WHERE device_token = :token AND tenant_id = :tid"
         ),
-        {"token": data.device_token, "tid": data.tenant_id},
+        {"token": data.device_token, "tid": tenant_id},
     )
     device = result.mappings().first()
     if not device:
@@ -61,7 +75,7 @@ async def device_login(
     # Get restaurant name
     rest_result = await db.execute(
         text("SELECT name FROM restaurants WHERE id = :tid"),
-        {"tid": data.tenant_id},
+        {"tid": tenant_id},
     )
     restaurant = rest_result.mappings().first()
     restaurant_name = restaurant["name"] if restaurant else "Unknown"
@@ -76,7 +90,7 @@ async def device_login(
     # Create a JWT for the device
     token_data = {
         "sub": str(device["id"]),
-        "tenant_id": data.tenant_id,
+        "tenant_id": tenant_id,
         "role": "kitchen",
         "device": True,
         "station": device["station"] or "alle",
@@ -87,7 +101,7 @@ async def device_login(
         access_token=access_token,
         device_id=str(device["id"]),
         restaurant_name=restaurant_name,
-        tenant_id=data.tenant_id,
+        tenant_id=tenant_id,
     )
 
 
