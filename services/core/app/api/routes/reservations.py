@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date as date_type, datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
@@ -29,6 +30,7 @@ from app.services.table_group_service import (
 )
 
 router = APIRouter(prefix="/reservations", tags=["reservations"])
+DEFAULT_RESTAURANT_TIMEZONE = "Europe/Berlin"
 
 
 class ReservationCancelRequest(BaseModel):
@@ -50,6 +52,23 @@ def _require_tenant_context(request: Request, current_user: User) -> UUID:
     if not effective_tenant_id:
         raise HTTPException(status_code=400, detail="Tenant context required")
     return effective_tenant_id
+
+
+def _resolve_timezone_name(restaurant: Restaurant | None) -> str:
+    settings = restaurant.settings if restaurant and isinstance(restaurant.settings, dict) else {}
+    timezone_name = settings.get("timezone")
+    if isinstance(timezone_name, str) and timezone_name.strip():
+        return timezone_name.strip()
+    return DEFAULT_RESTAURANT_TIMEZONE
+
+
+async def _resolve_tenant_timezone(db: AsyncSession, tenant_id: UUID) -> ZoneInfo:
+    restaurant = await db.get(Restaurant, tenant_id)
+    timezone_name = _resolve_timezone_name(restaurant)
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo(DEFAULT_RESTAURANT_TIMEZONE)
 
 
 async def _sync_active_order_tables_for_reservation(
@@ -188,8 +207,27 @@ async def list_reservations(
         filters.append(Reservation.start_at >= start)
         filters.append(Reservation.start_at <= end)
     elif date:
-        day_start = dt.fromisoformat(date).replace(tzinfo=UTC)
-        day_end = day_start + timedelta(days=1)
+        target_date = date_type.fromisoformat(date)
+        if effective_tenant_id:
+            restaurant_tz = await _resolve_tenant_timezone(db, effective_tenant_id)
+            local_day_start = dt(
+                target_date.year,
+                target_date.month,
+                target_date.day,
+                tzinfo=restaurant_tz,
+            )
+            next_day = target_date + timedelta(days=1)
+            local_day_end = dt(
+                next_day.year,
+                next_day.month,
+                next_day.day,
+                tzinfo=restaurant_tz,
+            )
+            day_start = local_day_start.astimezone(UTC)
+            day_end = local_day_end.astimezone(UTC)
+        else:
+            day_start = dt.fromisoformat(date).replace(tzinfo=UTC)
+            day_end = day_start + timedelta(days=1)
         filters.append(Reservation.start_at >= day_start)
         filters.append(Reservation.start_at < day_end)
 

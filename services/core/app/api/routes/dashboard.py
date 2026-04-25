@@ -6,6 +6,7 @@ import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select, text
@@ -22,6 +23,7 @@ from app.services.table_group_service import fetch_reservation_table_ids_map
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 logger = logging.getLogger(__name__)
+DEFAULT_RESTAURANT_TIMEZONE = "Europe/Berlin"
 
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen
@@ -85,6 +87,43 @@ async def _get_scoped_restaurant_or_404(
     return restaurant
 
 
+def _resolve_restaurant_timezone(restaurant: Restaurant) -> ZoneInfo:
+    settings = restaurant.settings if isinstance(restaurant.settings, dict) else {}
+    timezone_name = settings.get("timezone")
+
+    if isinstance(timezone_name, str) and timezone_name.strip():
+        try:
+            return ZoneInfo(timezone_name.strip())
+        except ZoneInfoNotFoundError:
+            logger.warning(
+                "Unbekannte Restaurant-Zeitzone, fallback auf Default",
+                extra={
+                    "restaurant_id": str(restaurant.id),
+                    "timezone": timezone_name,
+                    "fallback_timezone": DEFAULT_RESTAURANT_TIMEZONE,
+                },
+            )
+
+    return ZoneInfo(DEFAULT_RESTAURANT_TIMEZONE)
+
+
+def _build_utc_day_window(target_date: date, restaurant_tz: ZoneInfo) -> tuple[datetime, datetime]:
+    local_day_start = datetime(
+        target_date.year,
+        target_date.month,
+        target_date.day,
+        tzinfo=restaurant_tz,
+    )
+    next_day = target_date + timedelta(days=1)
+    local_day_end = datetime(
+        next_day.year,
+        next_day.month,
+        next_day.day,
+        tzinfo=restaurant_tz,
+    )
+    return local_day_start.astimezone(UTC), local_day_end.astimezone(UTC)
+
+
 # ---------------------------------------------------------------------------
 # GET /dashboard/batch/{restaurant_id}
 # ---------------------------------------------------------------------------
@@ -111,6 +150,7 @@ async def get_dashboard_batch(
         session=session,
     )
     rid = restaurant.id
+    restaurant_tz = _resolve_restaurant_timezone(restaurant)
 
     # Areas
     areas_result = await session.execute(select(Area).where(Area.tenant_id == rid))
@@ -126,10 +166,9 @@ async def get_dashboard_batch(
     obstacles_result = await session.execute(select(Obstacle).where(Obstacle.tenant_id == rid))
     obstacles = [_serialize(r) for r in obstacles_result.scalars().all()]
 
-    # Reservations – gefiltert nach Datum wenn angegeben, sonst heutiger Tag
-    target_date = date or datetime.now(UTC).date()
-    day_start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=UTC)
-    day_end = day_start + timedelta(days=1)
+    # Tagesfenster in Restaurant-Zeitzone bestimmen und als UTC queryen.
+    target_date = date or datetime.now(restaurant_tz).date()
+    day_start, day_end = _build_utc_day_window(target_date, restaurant_tz)
 
     reservations_result = await session.execute(
         select(Reservation).where(
