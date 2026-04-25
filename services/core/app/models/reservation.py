@@ -78,7 +78,6 @@ class Reservation(Base):
     guest_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     guest_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     confirmation_code: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    special_requests: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list] = mapped_column(JSONB, default=list)
     confirmed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)

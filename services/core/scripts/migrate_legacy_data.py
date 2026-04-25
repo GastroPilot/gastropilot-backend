@@ -400,15 +400,26 @@ async def migrate_reservations(ctx: MigrationContext) -> None:
         table_id = ctx.get_mapped_id("tables", row.get("table_id"))
         if not tenant_id:
             continue
+        legacy_notes = (row.get("notes") or "").strip()
+        legacy_special_requests = (row.get("special_requests") or "").strip()
+        merged_notes_parts = [part for part in [legacy_notes, legacy_special_requests] if part]
+        merged_notes = (
+            "\n".join(
+                merged_notes_parts[idx]
+                for idx in range(len(merged_notes_parts))
+                if merged_notes_parts[idx] not in merged_notes_parts[:idx]
+            )
+            or None
+        )
         await ctx.execute(
             """INSERT INTO reservations (
                 id, tenant_id, guest_id, table_id, start_at, end_at,
                 party_size, status, channel, guest_name, guest_email, guest_phone,
-                confirmation_code, special_requests, notes,
+                confirmation_code, notes,
                 confirmed_at, seated_at, completed_at, canceled_at, canceled_reason, no_show_at,
                 tags,
                 created_at, updated_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
             ON CONFLICT (id) DO NOTHING""",
             new_id,
             tenant_id,
@@ -423,8 +434,7 @@ async def migrate_reservations(ctx: MigrationContext) -> None:
             row.get("guest_email"),
             row.get("guest_phone"),
             row.get("confirmation_code"),
-            row.get("special_requests"),
-            row.get("notes"),
+            merged_notes,
             row.get("confirmed_at"),
             row.get("seated_at"),
             row.get("completed_at"),

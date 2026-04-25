@@ -271,7 +271,7 @@ async def get_guest_history(
                 "date": (r.start_at.isoformat() if r.start_at else None),
                 "party_size": r.party_size,
                 "status": r.status,
-                "special_requests": r.special_requests,
+                "notes": r.notes,
             }
             for r in reservations
         ],

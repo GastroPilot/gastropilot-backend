@@ -35,7 +35,7 @@ class ReservationNotification(BaseModel):
     time: str
     party_size: int
     table_number: str | None = None
-    special_requests: str | None = None
+    notes: str | None = None
     manage_url: str | None = None  # URL zum Verwalten der Reservierung
     ics_content: str | None = None  # ICS-Datei-Inhalt für Kalender-Anhang
 
@@ -292,17 +292,17 @@ class NotificationService:
             else ""
         )
 
-        special_requests_section = (
+        notes_section = (
             f"""
                     <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 24px;">
                         <tr>
                             <td style="background: #fef3c7; border-radius: 12px; padding: 16px 20px; border-left: 4px solid #f59e0b;">
-                                <div style="font-size: 12px; color: #92400e; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">📝 Besondere Wünsche</div>
-                                <div style="font-size: 14px; color: #78350f; margin-top: 8px; line-height: 1.5;">{n.special_requests}</div>
+                                <div style="font-size: 12px; color: #92400e; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">📝 Notiz</div>
+                                <div style="font-size: 14px; color: #78350f; margin-top: 8px; line-height: 1.5;">{n.notes}</div>
                             </td>
                         </tr>
                     </table>"""
-            if n.special_requests
+            if n.notes
             else ""
         )
 
@@ -452,8 +452,8 @@ class NotificationService:
                                 </tr>
                             </table>
                             
-                            <!-- Besondere Wünsche (optional) -->
-                            {special_requests_section}
+                            <!-- Notiz (optional) -->
+                            {notes_section}
                         </td>
                     </tr>
                     

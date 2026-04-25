@@ -50,7 +50,7 @@ class PublicReservationCreate(BaseModel):
     party_size: int
     desired_date: date
     desired_time: str  # HH:MM
-    special_requests: str | None = None
+    notes: str | None = None
     channel: str = "web"
     privacy_accepted: bool = True
     notification_channels: NotificationChannels = NotificationChannels()
@@ -103,7 +103,7 @@ class PublicReservationStatusResponse(BaseModel):
     party_size: int
     table_number: str | None = None
     has_outdoor_table: bool = False
-    special_requests: str | None = None
+    notes: str | None = None
     can_modify: bool
     hours_until_reservation: float
 
@@ -112,7 +112,7 @@ class ReservationUpdateRequest(BaseModel):
     desired_date: date | None = None
     desired_time: str | None = None
     party_size: int | None = None
-    special_requests: str | None = None
+    notes: str | None = None
 
 
 # --- Helpers ---
@@ -444,7 +444,7 @@ async def create_reservation(
         guest_email=body.guest_email,
         guest_phone=body.guest_phone or "",
         confirmation_code=confirmation_code,
-        special_requests=body.special_requests,
+        notes=body.notes,
         confirmed_at=datetime.now(UTC),
     )
 
@@ -525,7 +525,7 @@ async def get_reservation_status(
         party_size=reservation.party_size,
         table_number=table_number,
         has_outdoor_table=has_outdoor,
-        special_requests=reservation.special_requests,
+        notes=reservation.notes,
         can_modify=can_modify,
         hours_until_reservation=round(hours_until, 1),
     )

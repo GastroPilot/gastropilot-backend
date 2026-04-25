@@ -53,7 +53,7 @@ class PublicReservationCreate(BaseModel):
     party_size: int = Field(gt=0, le=50)
     desired_date: date
     desired_time: str = Field(pattern=r"^\d{2}:\d{2}$")  # HH:MM Format
-    special_requests: str | None = Field(None, max_length=1000)
+    notes: str | None = Field(None, max_length=1000)
     channel: str = Field(default="web", pattern="^(web|whatsapp|phone)$")
     privacy_accepted: bool = True
     notification_channels: NotificationChannels = Field(default_factory=NotificationChannels)
@@ -457,6 +457,7 @@ async def create_public_reservation(
     confirmation_code = _generate_confirmation_code()
 
     # Erstelle Reservierung - als "confirmed" mit zugewiesenem Tisch
+    reservation_note = reservation_data.notes
     reservation = Reservation(
         restaurant_id=restaurant.id,
         table_id=table.id,
@@ -469,7 +470,7 @@ async def create_public_reservation(
         guest_email=reservation_data.guest_email,
         guest_phone=reservation_data.guest_phone,
         confirmation_code=confirmation_code,
-        special_requests=reservation_data.special_requests,
+        notes=reservation_note,
     )
 
     try:
@@ -521,10 +522,8 @@ async def create_public_reservation(
                     f"Reservierung für {reservation_data.party_size} {'Person' if reservation_data.party_size == 1 else 'Personen'}",
                     f"Bestätigungscode: {confirmation_code}",
                 ]
-                if reservation_data.special_requests:
-                    description_parts.append(
-                        f"Besondere Wünsche: {reservation_data.special_requests}"
-                    )
+                if reservation_note:
+                    description_parts.append(f"Notiz: {reservation_note}")
                 description = "\n".join(description_parts)
                 location = restaurant.address or restaurant.name
 
@@ -562,7 +561,7 @@ async def create_public_reservation(
                 party_size=reservation_data.party_size,
                 table_number=table.number,
                 confirmation_code=confirmation_code,
-                special_requests=reservation_data.special_requests,
+                notes=reservation_note,
                 manage_url=manage_url,
                 ics_content=ics_content,
             )
@@ -656,7 +655,7 @@ async def get_reservation_status(
         "time": local_start.strftime("%H:%M"),
         "party_size": reservation.party_size,
         "table_number": table.number if table else None,
-        "special_requests": reservation.special_requests,
+        "notes": reservation.notes,
         "restaurant_name": restaurant.name,
         "restaurant_address": restaurant.address,
         "restaurant_phone": restaurant.phone,
@@ -672,7 +671,7 @@ class ReservationUpdateRequest(BaseModel):
     desired_date: date | None = None
     desired_time: str | None = Field(None, pattern=r"^\d{2}:\d{2}$")
     party_size: int | None = Field(None, gt=0, le=50)
-    special_requests: str | None = Field(None, max_length=1000)
+    notes: str | None = Field(None, max_length=1000)
 
 
 @router.patch("/{restaurant_slug}/reservation/{confirmation_code}")
@@ -799,8 +798,8 @@ async def update_reservation(
     reservation.start_at = new_start_at
     reservation.end_at = new_end_at
     reservation.party_size = new_party_size
-    if update_data.special_requests is not None:
-        reservation.special_requests = update_data.special_requests
+    if update_data.notes is not None:
+        reservation.notes = update_data.notes
 
     await session.commit()
     await session.refresh(reservation)
@@ -822,7 +821,7 @@ async def update_reservation(
             "time": local_start.strftime("%H:%M"),
             "party_size": reservation.party_size,
             "table_number": table.number if table else None,
-            "special_requests": reservation.special_requests,
+            "notes": reservation.notes,
         },
     }
 
@@ -970,7 +969,7 @@ async def cancel_reservation(
                 party_size=reservation.party_size,
                 table_number=None,  # Nicht relevant für Stornierung
                 confirmation_code=reservation.confirmation_code or "",
-                special_requests=None,
+                notes=None,
                 manage_url=manage_url,
             )
 
@@ -1036,8 +1035,8 @@ async def download_reservation_ics(
         summary += f" - Tisch {table_number}"
 
     description = f"Reservierung für {reservation.party_size} {'Person' if reservation.party_size == 1 else 'Personen'}"
-    if reservation.special_requests:
-        description += f"\n\nBesondere Wünsche: {reservation.special_requests}"
+    if reservation.notes:
+        description += f"\n\nNotiz: {reservation.notes}"
     description += f"\n\nBestätigungscode: {confirmation_code}"
 
     location = restaurant.address or ""

@@ -482,7 +482,7 @@ async def _create_whatsapp_reservation(
         guest_name=conv.guest_name,
         guest_phone=phone,
         confirmation_code=confirmation_code,
-        special_requests=conv.special_requests,
+        notes=conv.special_requests,
     )
 
     session.add(reservation)
