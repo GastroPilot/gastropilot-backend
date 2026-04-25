@@ -138,7 +138,6 @@ async def test_get_reservation_status_returns_has_outdoor_for_outdoor_table(monk
         start_at=datetime.now(UTC) + timedelta(hours=48),
         table_id=table_id,
         party_size=2,
-        special_requests=None,
     )
     outdoor_table = _fake_table(table_id, is_outdoor=True, number="7")
 
@@ -188,7 +187,6 @@ async def test_get_reservation_status_returns_false_for_indoor_table():
         start_at=datetime.now(UTC) + timedelta(hours=3),
         table_id=table_id,
         party_size=2,
-        special_requests=None,
     )
     indoor_table = _fake_table(table_id, is_outdoor=False, number="3")
 
@@ -233,7 +231,6 @@ async def test_get_reservation_status_pending_without_table_is_not_outdoor():
         start_at=datetime.now(UTC) + timedelta(hours=5),
         table_id=None,
         party_size=2,
-        special_requests=None,
     )
 
     handlers = {
@@ -307,7 +304,6 @@ async def test_get_reservation_status_same_code_other_tenant_returns_404():
         start_at=datetime.now(UTC) + timedelta(hours=24),
         table_id=None,
         party_size=2,
-        special_requests=None,
     )
 
     reservation_calls: list[str] = []

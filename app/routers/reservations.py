@@ -115,7 +115,6 @@ async def create_reservation(
         guest_email=reservation_data.guest_email,
         guest_phone=reservation_data.guest_phone,
         confirmation_code=reservation_data.confirmation_code,
-        special_requests=reservation_data.special_requests,
         notes=reservation_data.notes,
         tags=reservation_data.tags,
     )
@@ -523,7 +522,7 @@ async def cancel_reservation(
                 party_size=reservation.party_size,
                 table_number=None,  # Nicht relevant für Stornierung
                 confirmation_code=reservation.confirmation_code or "",
-                special_requests=None,
+                notes=None,
                 manage_url=manage_url,
             )
 

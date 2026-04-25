@@ -35,7 +35,6 @@ class ReservationCreate(ReservationBase):
     guest_name: str | None = None
     guest_email: str | None = None
     guest_phone: str | None = None
-    special_requests: str | None = None
     tags: list[str] | None = None
 
     @field_validator("party_size")
@@ -61,7 +60,6 @@ class ReservationUpdate(BaseModel):
     guest_name: str | None = None
     guest_email: str | None = None
     guest_phone: str | None = None
-    special_requests: str | None = None
     tags: list[str] | None = None
 
 

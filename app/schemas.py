@@ -325,7 +325,6 @@ class ReservationCreate(BaseModel):
     guest_email: EmailStr | None = None
     guest_phone: str | None = None
     confirmation_code: str | None = None
-    special_requests: str | None = None
     notes: str | None = None
     tags: list[str] | None = None
 
@@ -341,7 +340,6 @@ class ReservationUpdate(BaseModel):
     guest_email: EmailStr | None = None
     guest_phone: str | None = None
     confirmation_code: str | None = None
-    special_requests: str | None = None
     notes: str | None = None
     tags: list[str] | None = None
     canceled_reason: str | None = None
@@ -362,7 +360,6 @@ class ReservationRead(Timestamped):
     guest_email: str | None = None
     guest_phone: str | None = None
     confirmation_code: str | None = None
-    special_requests: str | None = None
     notes: str | None = None
     tags: list[str] | None = None
     confirmed_at: datetime | None = None

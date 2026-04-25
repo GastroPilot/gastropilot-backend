@@ -668,7 +668,7 @@ async def list_reservations(
                 "end_at": r.end_at.isoformat() if r.end_at else None,
                 "status": r.status,
                 "channel": r.channel,
-                "special_requests": r.special_requests,
+                "notes": r.notes,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r, restaurant_name in rows
@@ -707,7 +707,6 @@ async def get_reservation(
         "end_at": r.end_at.isoformat() if r.end_at else None,
         "status": r.status,
         "channel": r.channel,
-        "special_requests": r.special_requests,
         "notes": r.notes,
         "confirmation_code": r.confirmation_code,
         "canceled_reason": r.canceled_reason,

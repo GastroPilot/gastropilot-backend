@@ -270,7 +270,6 @@ class Reservation(Base):
     guest_phone = Column(String(32), nullable=True)
     confirmation_code = Column(String(64), nullable=True, index=True)
 
-    special_requests = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
 
     confirmed_at = Column(DateTime(timezone=True), nullable=True)
