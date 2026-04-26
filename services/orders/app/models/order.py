@@ -21,6 +21,9 @@ class Order(Base):
     table_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     guest_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     reservation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    selected_menu_deal_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     order_number: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     status: Mapped[str] = mapped_column(
         Enum(
@@ -85,6 +88,13 @@ class OrderItem(Base):
         UUID(as_uuid=True), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True
     )
     menu_item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    menu_deal_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    menu_deal_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    menu_deal_component_label: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
     item_name: Mapped[str] = mapped_column(String(200), nullable=False)
     item_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)

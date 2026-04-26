@@ -213,7 +213,10 @@ async def get_dashboard_batch(
         )
         block_assignments = [_serialize(a) for a in assignments_result.scalars().all()]
 
-    # Orders – aktive Orders für heute (status != closed/canceled)
+    # Orders:
+    # - alle Orders des gewählten Tages
+    # - plus aktive, unbezahlte Orders außerhalb des Tages (z.B. Altlasten),
+    #   damit Konflikte im Tischplan sichtbar sind.
     try:
         has_table_ids_column_result = await session.execute(
             text("""
@@ -231,32 +234,48 @@ async def get_dashboard_batch(
         if has_table_ids_column:
             orders_result = await session.execute(
                 text("""
-                    SELECT id, tenant_id, table_id, table_ids, order_number, status,
+                    SELECT id, tenant_id, reservation_id, table_id, table_ids, order_number, status,
                            subtotal, tax_amount, total, payment_status,
                            notes, opened_at, sent_to_kitchen_at, in_preparation_at,
                            ready_at, served_at, closed_at, created_at, updated_at
                     FROM orders
                     WHERE tenant_id = :tid
-                      AND opened_at >= :day_start
-                      AND opened_at < :day_end
-                    ORDER BY opened_at DESC
-                    LIMIT 500
+                      AND (
+                        (opened_at >= :day_start AND opened_at < :day_end)
+                        OR (status NOT IN ('paid', 'canceled') AND payment_status <> 'paid')
+                      )
+                    ORDER BY
+                      CASE
+                        WHEN status NOT IN ('paid', 'canceled') AND payment_status <> 'paid'
+                        THEN 0
+                        ELSE 1
+                      END,
+                      opened_at DESC
+                    LIMIT 1000
                     """),
                 {"tid": str(rid), "day_start": day_start, "day_end": day_end},
             )
         else:
             orders_result = await session.execute(
                 text("""
-                    SELECT id, tenant_id, table_id, order_number, status,
+                    SELECT id, tenant_id, reservation_id, table_id, order_number, status,
                            subtotal, tax_amount, total, payment_status,
                            notes, opened_at, sent_to_kitchen_at, in_preparation_at,
                            ready_at, served_at, closed_at, created_at, updated_at
                     FROM orders
                     WHERE tenant_id = :tid
-                      AND opened_at >= :day_start
-                      AND opened_at < :day_end
-                    ORDER BY opened_at DESC
-                    LIMIT 500
+                      AND (
+                        (opened_at >= :day_start AND opened_at < :day_end)
+                        OR (status NOT IN ('paid', 'canceled') AND payment_status <> 'paid')
+                      )
+                    ORDER BY
+                      CASE
+                        WHEN status NOT IN ('paid', 'canceled') AND payment_status <> 'paid'
+                        THEN 0
+                        ELSE 1
+                      END,
+                      opened_at DESC
+                    LIMIT 1000
                     """),
                 {"tid": str(rid), "day_start": day_start, "day_end": day_end},
             )

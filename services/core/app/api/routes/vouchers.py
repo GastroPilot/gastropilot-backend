@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
-from sqlalchemy import select
+from pydantic import BaseModel, field_validator, model_validator
+from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_manager_or_above, require_staff_or_above
@@ -15,6 +16,26 @@ from app.models.voucher import Voucher, VoucherUsage
 
 router = APIRouter(prefix="/vouchers", tags=["vouchers"])
 
+ALLOWED_DISCOUNT_TYPES = {"fixed", "percentage"}
+ALLOWED_SERVICE_TYPES = {"all", "breakfast", "lunch", "dinner"}
+
+
+def _normalize_service_type(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    return normalized or None
+
+
+def _normalize_weekdays(value: list[int] | None) -> list[int] | None:
+    if value is None:
+        return None
+    unique_days = sorted(set(value))
+    for day in unique_days:
+        if day < 0 or day > 6:
+            raise ValueError("valid_weekdays must only contain numbers from 0 (Mon) to 6 (Sun)")
+    return unique_days
+
 
 class VoucherCreate(BaseModel):
     restaurant_id: UUID | None = None
@@ -23,11 +44,69 @@ class VoucherCreate(BaseModel):
     description: str | None = None
     type: str = "fixed"
     value: float
+    applies_to: str = "all"
+    valid_weekdays: list[int] | None = None
+    valid_time_from: time | None = None
+    valid_time_until: time | None = None
     valid_from: date | None = None
     valid_until: date | None = None
     max_uses: int | None = None
     min_order_value: float | None = None
     is_active: bool = True
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 4:
+            raise ValueError("Code must have at least 4 characters")
+        return cleaned
+
+    @field_validator("type")
+    @classmethod
+    def validate_discount_type(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_DISCOUNT_TYPES:
+            raise ValueError("type must be 'fixed' or 'percentage'")
+        return normalized
+
+    @field_validator("applies_to")
+    @classmethod
+    def validate_applies_to(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_SERVICE_TYPES:
+            raise ValueError("applies_to must be one of: all, breakfast, lunch, dinner")
+        return normalized
+
+    @field_validator("valid_weekdays")
+    @classmethod
+    def validate_weekdays(cls, value: list[int] | None) -> list[int] | None:
+        return _normalize_weekdays(value)
+
+    @model_validator(mode="after")
+    def validate_ranges(self) -> "VoucherCreate":
+        if self.valid_from and self.valid_until and self.valid_until < self.valid_from:
+            raise ValueError("valid_until must be on or after valid_from")
+
+        if self.max_uses is not None and self.max_uses < 1:
+            raise ValueError("max_uses must be >= 1")
+
+        if self.min_order_value is not None and self.min_order_value < 0:
+            raise ValueError("min_order_value must be >= 0")
+
+        if self.value <= 0:
+            raise ValueError("value must be > 0")
+
+        if self.type == "percentage" and self.value > 100:
+            raise ValueError("percentage value must be <= 100")
+
+        if (self.valid_time_from is None) != (self.valid_time_until is None):
+            raise ValueError("valid_time_from and valid_time_until must both be set or both be null")
+
+        if self.valid_time_from and self.valid_time_until and self.valid_time_until <= self.valid_time_from:
+            raise ValueError("valid_time_until must be later than valid_time_from")
+
+        return self
 
 
 class VoucherUpdate(BaseModel):
@@ -36,11 +115,78 @@ class VoucherUpdate(BaseModel):
     description: str | None = None
     type: str | None = None
     value: float | None = None
+    applies_to: str | None = None
+    valid_weekdays: list[int] | None = None
+    valid_time_from: time | None = None
+    valid_time_until: time | None = None
     valid_from: date | None = None
     valid_until: date | None = None
     max_uses: int | None = None
     min_order_value: float | None = None
     is_active: bool | None = None
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if len(cleaned) < 4:
+            raise ValueError("Code must have at least 4 characters")
+        return cleaned
+
+    @field_validator("type")
+    @classmethod
+    def validate_discount_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_DISCOUNT_TYPES:
+            raise ValueError("type must be 'fixed' or 'percentage'")
+        return normalized
+
+    @field_validator("applies_to")
+    @classmethod
+    def validate_applies_to(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_SERVICE_TYPES:
+            raise ValueError("applies_to must be one of: all, breakfast, lunch, dinner")
+        return normalized
+
+    @field_validator("valid_weekdays")
+    @classmethod
+    def validate_weekdays(cls, value: list[int] | None) -> list[int] | None:
+        return _normalize_weekdays(value)
+
+    @model_validator(mode="after")
+    def validate_ranges(self) -> "VoucherUpdate":
+        if self.valid_from and self.valid_until and self.valid_until < self.valid_from:
+            raise ValueError("valid_until must be on or after valid_from")
+
+        if self.max_uses is not None and self.max_uses < 1:
+            raise ValueError("max_uses must be >= 1")
+
+        if self.min_order_value is not None and self.min_order_value < 0:
+            raise ValueError("min_order_value must be >= 0")
+
+        if self.value is not None and self.value <= 0:
+            raise ValueError("value must be > 0")
+
+        if self.type == "percentage" and self.value is not None and self.value > 100:
+            raise ValueError("percentage value must be <= 100")
+
+        if (
+            "valid_time_from" in self.model_fields_set
+            or "valid_time_until" in self.model_fields_set
+        ) and ((self.valid_time_from is None) != (self.valid_time_until is None)):
+            raise ValueError("valid_time_from and valid_time_until must both be set or both be null")
+
+        if self.valid_time_from and self.valid_time_until and self.valid_time_until <= self.valid_time_from:
+            raise ValueError("valid_time_until must be later than valid_time_from")
+
+        return self
 
 
 class VoucherResponse(BaseModel):
@@ -51,6 +197,10 @@ class VoucherResponse(BaseModel):
     description: str | None = None
     type: str
     value: float
+    applies_to: str
+    valid_weekdays: list[int] | None = None
+    valid_time_from: time | None = None
+    valid_time_until: time | None = None
     valid_from: date | None = None
     valid_until: date | None = None
     max_uses: int | None = None
@@ -66,6 +216,18 @@ class VoucherResponse(BaseModel):
 class VoucherValidateRequest(BaseModel):
     code: str
     order_value: float | None = None
+    service_type: str | None = None
+    order_timestamp: datetime | None = None
+
+    @field_validator("service_type")
+    @classmethod
+    def validate_service_type(cls, value: str | None) -> str | None:
+        normalized = _normalize_service_type(value)
+        if normalized is None:
+            return None
+        if normalized not in ALLOWED_SERVICE_TYPES:
+            raise ValueError("service_type must be one of: all, breakfast, lunch, dinner")
+        return normalized
 
 
 class VoucherValidateResponse(BaseModel):
@@ -142,6 +304,10 @@ async def create_voucher(
         description=body.description,
         type=body.type,
         value=body.value,
+        applies_to=body.applies_to,
+        valid_weekdays=body.valid_weekdays,
+        valid_time_from=body.valid_time_from,
+        valid_time_until=body.valid_time_until,
         valid_from=body.valid_from,
         valid_until=body.valid_until,
         max_uses=body.max_uses,
@@ -150,7 +316,11 @@ async def create_voucher(
         created_by_user_id=current_user.id,
     )
     db.add(voucher)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Voucher code already exists for this restaurant")
     await db.refresh(voucher)
     return voucher
 
@@ -194,7 +364,11 @@ async def update_voucher(
             value = value.upper().strip()
         setattr(voucher, field, value)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Voucher code already exists for this restaurant")
     await db.refresh(voucher)
     return voucher
 
@@ -222,8 +396,18 @@ async def validate_voucher(
 ):
     """Public endpoint to validate a voucher code."""
     effective_tenant_id = getattr(request.state, "tenant_id", None)
+    if not effective_tenant_id:
+        return VoucherValidateResponse(valid=False, message="Tenant context missing")
 
-    result = await db.execute(select(Voucher).where(Voucher.code == body.code.upper().strip()))
+    code = body.code.upper().strip()
+    result = await db.execute(
+        select(Voucher).where(
+            and_(
+                Voucher.tenant_id == effective_tenant_id,
+                Voucher.code == code,
+            )
+        )
+    )
     voucher = result.scalar_one_or_none()
 
     if not voucher:
@@ -232,7 +416,8 @@ async def validate_voucher(
     if not voucher.is_active:
         return VoucherValidateResponse(valid=False, message="Voucher is inactive")
 
-    today = date.today()
+    now_ref = body.order_timestamp or datetime.now()
+    today = now_ref.date()
     if voucher.valid_from and today < voucher.valid_from:
         return VoucherValidateResponse(valid=False, message="Voucher not yet valid")
     if voucher.valid_until and today > voucher.valid_until:
@@ -250,6 +435,29 @@ async def validate_voucher(
             valid=False,
             message=f"Minimum order value of {voucher.min_order_value} EUR required",
         )
+
+    requested_service_type = _normalize_service_type(body.service_type)
+    if voucher.applies_to != "all":
+        if not requested_service_type:
+            return VoucherValidateResponse(
+                valid=False,
+                message="Voucher requires service_type context",
+            )
+        if requested_service_type != voucher.applies_to:
+            return VoucherValidateResponse(
+                valid=False,
+                message=f"Voucher only valid for {voucher.applies_to}",
+            )
+
+    current_weekday = now_ref.weekday()
+    if voucher.valid_weekdays and current_weekday not in voucher.valid_weekdays:
+        return VoucherValidateResponse(valid=False, message="Voucher is not valid on this weekday")
+
+    current_time = now_ref.time().replace(tzinfo=None)
+    if voucher.valid_time_from and current_time < voucher.valid_time_from:
+        return VoucherValidateResponse(valid=False, message="Voucher is not yet valid at this time")
+    if voucher.valid_time_until and current_time > voucher.valid_time_until:
+        return VoucherValidateResponse(valid=False, message="Voucher has expired for this time window")
 
     discount_amount = voucher.value
     if voucher.type == "percentage" and body.order_value is not None:

@@ -51,7 +51,11 @@ class OrderCreate(BaseModel):
     table_id: uuid.UUID | None = None
     guest_id: uuid.UUID | None = None
     reservation_id: uuid.UUID | None = None
+    selected_menu_deal_id: uuid.UUID | None = None
     party_size: int | None = None
+    discount_amount: float | None = None
+    discount_percentage: float | None = None
+    special_requests: str | None = None
     notes: str | None = None
     items: list[dict] = []
 
@@ -61,6 +65,7 @@ class OrderUpdate(BaseModel):
     table_id: uuid.UUID | None = None
     guest_id: uuid.UUID | None = None
     reservation_id: uuid.UUID | None = None
+    selected_menu_deal_id: uuid.UUID | None = None
     party_size: int | None = None
     discount_amount: float | None = None
     discount_percentage: float | None = None
@@ -80,6 +85,9 @@ class OrderStatusUpdate(BaseModel):
 
 class OrderItemCreate(BaseModel):
     menu_item_id: uuid.UUID | None = None
+    menu_deal_id: uuid.UUID | None = None
+    menu_deal_name: str | None = None
+    menu_deal_component_label: str | None = None
     item_name: str
     item_description: str | None = None
     category: str | None = None
@@ -94,6 +102,9 @@ class OrderItemUpdate(BaseModel):
     item_name: str | None = None
     item_description: str | None = None
     category: str | None = None
+    menu_deal_id: uuid.UUID | None = None
+    menu_deal_name: str | None = None
+    menu_deal_component_label: str | None = None
     quantity: int | None = None
     unit_price: float | None = None
     tax_rate: float | None = None
@@ -278,6 +289,9 @@ def _serialize_item(item: OrderItem) -> dict:
         "id": str(item.id),
         "order_id": str(item.order_id),
         "menu_item_id": str(item.menu_item_id) if item.menu_item_id else None,
+        "menu_deal_id": str(item.menu_deal_id) if item.menu_deal_id else None,
+        "menu_deal_name": item.menu_deal_name,
+        "menu_deal_component_label": item.menu_deal_component_label,
         "item_name": item.item_name,
         "item_description": item.item_description,
         "category": item.category,
@@ -300,14 +314,29 @@ def _serialize_item(item: OrderItem) -> dict:
 def _serialize_order(order: Order, include_items: list[dict] | None = None) -> dict:
     payload: dict[str, Any] = {
         "id": str(order.id),
+        "tenant_id": str(order.tenant_id),
         "order_number": order.order_number,
         "status": order.status,
         "kitchen_ticket_seq": order.kitchen_ticket_seq,
         "table_id": str(order.table_id) if order.table_id else None,
         "table_ids": normalize_order_table_ids(order.table_ids, order.table_id),
+        "guest_id": str(order.guest_id) if order.guest_id else None,
         "reservation_id": str(order.reservation_id) if order.reservation_id else None,
+        "selected_menu_deal_id": (
+            str(order.selected_menu_deal_id) if order.selected_menu_deal_id else None
+        ),
+        "party_size": order.party_size,
+        "subtotal": order.subtotal,
+        "tax_amount": order.tax_amount,
+        "discount_amount": order.discount_amount,
+        "discount_percentage": order.discount_percentage,
+        "tip_amount": order.tip_amount,
         "total": order.total,
+        "payment_method": order.payment_method,
         "payment_status": order.payment_status,
+        "split_payments": order.split_payments,
+        "notes": order.notes,
+        "special_requests": order.special_requests,
         "opened_at": order.opened_at.isoformat() if order.opened_at else None,
         "sent_to_kitchen_at": (
             order.sent_to_kitchen_at.isoformat() if order.sent_to_kitchen_at else None
@@ -319,6 +348,9 @@ def _serialize_order(order: Order, include_items: list[dict] | None = None) -> d
         "served_at": order.served_at.isoformat() if order.served_at else None,
         "closed_at": order.closed_at.isoformat() if order.closed_at else None,
         "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+        "created_by_user_id": str(order.created_by_user_id) if order.created_by_user_id else None,
+        "created_at_utc": order.created_at.isoformat() if order.created_at else None,
+        "updated_at_utc": order.updated_at.isoformat() if order.updated_at else None,
     }
     # § 146a Abs. 2 AO: Belegausgabepflicht — Beleg-URL bei bezahlten Bestellungen
     if order.payment_status == "paid":
@@ -407,8 +439,12 @@ async def create_order(
         ),
         guest_id=data.guest_id,
         reservation_id=data.reservation_id,
+        selected_menu_deal_id=data.selected_menu_deal_id,
         party_size=data.party_size,
+        discount_amount=max(0.0, data.discount_amount or 0.0),
+        discount_percentage=data.discount_percentage,
         notes=data.notes,
+        special_requests=data.special_requests,
         order_number=order_number,
         created_by_user_id=current_user.id,
     )
@@ -466,6 +502,9 @@ async def create_order(
                 sent_to_kitchen_at=None,
                 notes=item_data.get("notes"),
                 menu_item_id=mid,
+                menu_deal_id=item_data.get("menu_deal_id"),
+                menu_deal_name=item_data.get("menu_deal_name"),
+                menu_deal_component_label=item_data.get("menu_deal_component_label"),
                 allergens=item_allergens,
             )
             session.add(item)
@@ -805,6 +844,9 @@ async def add_order_item(
     item = OrderItem(
         order_id=order.id,
         menu_item_id=data.menu_item_id,
+        menu_deal_id=data.menu_deal_id,
+        menu_deal_name=data.menu_deal_name,
+        menu_deal_component_label=data.menu_deal_component_label,
         item_name=data.item_name,
         item_description=data.item_description,
         category=data.category,

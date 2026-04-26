@@ -124,6 +124,21 @@ async def _resolve_tenant_context_for_message(
     )
 
 
+async def _resolve_effective_tenant_id(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+) -> UUID:
+    return await _resolve_tenant_context_for_message(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=None,
+        reservation_id=None,
+        guest_id=None,
+    )
+
+
 @router.post("", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 async def create_message(
     request: Request,
@@ -157,21 +172,46 @@ async def create_message(
 
 @router.get("", response_model=list[MessageResponse])
 async def list_messages(
+    request: Request,
+    restaurant_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(Message).order_by(Message.created_at.desc()))
+    effective_tenant_id = await _resolve_tenant_context_for_message(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+        reservation_id=None,
+        guest_id=None,
+    )
+    result = await db.execute(
+        select(Message)
+        .where(Message.tenant_id == effective_tenant_id)
+        .order_by(Message.created_at.desc())
+    )
     return result.scalars().all()
 
 
 @router.patch("/{message_id}", response_model=MessageResponse)
 async def update_message(
+    request: Request,
     message_id: UUID,
     body: MessageUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(Message).where(Message.id == message_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    result = await db.execute(
+        select(Message).where(
+            Message.id == message_id,
+            Message.tenant_id == effective_tenant_id,
+        )
+    )
     msg = result.scalar_one_or_none()
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
@@ -186,11 +226,22 @@ async def update_message(
 
 @router.delete("/{message_id}")
 async def delete_message(
+    request: Request,
     message_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(Message).where(Message.id == message_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    result = await db.execute(
+        select(Message).where(
+            Message.id == message_id,
+            Message.tenant_id == effective_tenant_id,
+        )
+    )
     msg = result.scalar_one_or_none()
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")

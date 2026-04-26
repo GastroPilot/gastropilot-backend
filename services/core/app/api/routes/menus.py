@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import (
@@ -62,6 +62,31 @@ async def _resolve_tenant_context_for_menu(
     )
 
 
+async def _resolve_effective_tenant_id(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+) -> UUID:
+    return await _resolve_tenant_context_for_menu(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=None,
+    )
+
+
+async def _ensure_tenant_context_for_query(
+    db: AsyncSession,
+    tenant_id: UUID,
+    role: str,
+) -> None:
+    # Ensure RLS sees the same tenant context we resolved in route logic.
+    await db.execute(
+        text("SELECT set_tenant_context(:tenant_id, :role)"),
+        {"tenant_id": str(tenant_id), "role": role},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Kategorien
 # ---------------------------------------------------------------------------
@@ -69,11 +94,22 @@ async def _resolve_tenant_context_for_menu(
 
 @router.get("/categories", response_model=list[MenuCategoryResponse])
 async def list_categories(
+    request: Request,
+    restaurant_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
+    effective_tenant_id = await _resolve_tenant_context_for_menu(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+    )
+    await _ensure_tenant_context_for_query(db, effective_tenant_id, str(current_user.role))
     result = await db.execute(
-        select(MenuCategory).order_by(MenuCategory.sort_order, MenuCategory.name)
+        select(MenuCategory)
+        .where(MenuCategory.tenant_id == effective_tenant_id)
+        .order_by(MenuCategory.sort_order, MenuCategory.name)
     )
     return result.scalars().all()
 
@@ -93,6 +129,7 @@ async def create_category(
         db=db,
         requested_tenant_id=body.restaurant_id,
     )
+    await _ensure_tenant_context_for_query(db, effective_tenant_id, str(current_user.role))
     category = MenuCategory(
         tenant_id=effective_tenant_id,
         **body.model_dump(exclude={"restaurant_id"}),
@@ -105,12 +142,24 @@ async def create_category(
 
 @router.patch("/categories/{category_id}", response_model=MenuCategoryResponse)
 async def update_category(
+    request: Request,
     category_id: UUID,
     body: MenuCategoryUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(MenuCategory).where(MenuCategory.id == category_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    await _ensure_tenant_context_for_query(db, effective_tenant_id, str(current_user.role))
+    result = await db.execute(
+        select(MenuCategory).where(
+            MenuCategory.id == category_id,
+            MenuCategory.tenant_id == effective_tenant_id,
+        )
+    )
     category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
@@ -125,11 +174,23 @@ async def update_category(
 
 @router.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_category(
+    request: Request,
     category_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(MenuCategory).where(MenuCategory.id == category_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    await _ensure_tenant_context_for_query(db, effective_tenant_id, str(current_user.role))
+    result = await db.execute(
+        select(MenuCategory).where(
+            MenuCategory.id == category_id,
+            MenuCategory.tenant_id == effective_tenant_id,
+        )
+    )
     category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
@@ -144,12 +205,21 @@ async def delete_category(
 
 @router.get("/items", response_model=list[MenuItemResponse])
 async def list_items(
+    request: Request,
+    restaurant_id: UUID | None = None,
     category_id: UUID | None = None,
     available_only: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    query = select(MenuItem)
+    effective_tenant_id = await _resolve_tenant_context_for_menu(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+    )
+    await _ensure_tenant_context_for_query(db, effective_tenant_id, str(current_user.role))
+    query = select(MenuItem).where(MenuItem.tenant_id == effective_tenant_id)
     if category_id:
         query = query.where(MenuItem.category_id == category_id)
     if available_only:
@@ -173,6 +243,7 @@ async def create_item(
         db=db,
         requested_tenant_id=body.restaurant_id,
     )
+    await _ensure_tenant_context_for_query(db, effective_tenant_id, str(current_user.role))
     if body.category_id:
         category_result = await db.execute(
             select(MenuCategory).where(MenuCategory.id == body.category_id)
@@ -205,11 +276,23 @@ async def create_item(
 
 @router.get("/items/{item_id}", response_model=MenuItemResponse)
 async def get_item(
+    request: Request,
     item_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(MenuItem).where(MenuItem.id == item_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    await _ensure_tenant_context_for_query(db, effective_tenant_id, str(current_user.role))
+    result = await db.execute(
+        select(MenuItem).where(
+            MenuItem.id == item_id,
+            MenuItem.tenant_id == effective_tenant_id,
+        )
+    )
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Gericht nicht gefunden")
@@ -218,15 +301,40 @@ async def get_item(
 
 @router.patch("/items/{item_id}", response_model=MenuItemResponse)
 async def update_item(
+    request: Request,
     item_id: UUID,
     body: MenuItemUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(MenuItem).where(MenuItem.id == item_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    await _ensure_tenant_context_for_query(db, effective_tenant_id, str(current_user.role))
+    result = await db.execute(
+        select(MenuItem).where(
+            MenuItem.id == item_id,
+            MenuItem.tenant_id == effective_tenant_id,
+        )
+    )
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Gericht nicht gefunden")
+
+    if "category_id" in body.model_fields_set and body.category_id:
+        category_result = await db.execute(
+            select(MenuCategory).where(MenuCategory.id == body.category_id)
+        )
+        category = category_result.scalar_one_or_none()
+        if not category:
+            raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
+        if category.tenant_id != effective_tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Kategorie gehört nicht zum Tenant-Kontext",
+            )
 
     valid_fields = {c.key for c in MenuItem.__table__.columns} - {
         "id",
@@ -245,11 +353,23 @@ async def update_item(
 
 @router.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item(
+    request: Request,
     item_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(MenuItem).where(MenuItem.id == item_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    await _ensure_tenant_context_for_query(db, effective_tenant_id, str(current_user.role))
+    result = await db.execute(
+        select(MenuItem).where(
+            MenuItem.id == item_id,
+            MenuItem.tenant_id == effective_tenant_id,
+        )
+    )
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Gericht nicht gefunden")
