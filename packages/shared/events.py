@@ -18,10 +18,15 @@ RESERVATION_REMINDER = "reservation.reminder"
 ORDER_CREATED = "order.created"
 ORDER_UPDATED = "order.updated"
 ORDER_SENT_TO_KITCHEN = "order.sent_to_kitchen"
+ORDER_IN_PREPARATION = "order.in_preparation"
 ORDER_READY = "order.ready"
 ORDER_SERVED = "order.served"
 ORDER_PAID = "order.paid"
 ORDER_CANCELED = "order.canceled"
+# Generisches Status-Event mit ``new_status`` im Payload – wird vom
+# Live-Activity-Hook konsumiert, falls Service ein einheitliches Event
+# emittiert statt eines pro Status.
+ORDER_STATUS_CHANGED = "order_status_changed"
 
 TABLE_UPDATED = "table.updated"
 TABLE_STATUS_CHANGED = "table.status_changed"

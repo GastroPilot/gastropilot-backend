@@ -113,11 +113,12 @@ from app.api.routes import (
     kitchen_courses,
     kitchen_device,
     orders,
+    public_guest_orders,
     public_orders,
     receipts,
     statistics,
-    terminals,
     sumup,
+    terminals,
     waitlist,
     webhook_sumup,
 )
@@ -136,6 +137,7 @@ for prefix in ("/api/v1", "/v1"):
     app.include_router(invoices.router, prefix=prefix)
     app.include_router(sumup.router, prefix=prefix)
     app.include_router(public_orders.router, prefix=prefix)
+    app.include_router(public_guest_orders.router, prefix=prefix)
     app.include_router(kitchen_device.router, prefix=prefix)
     app.include_router(fiskaly.router, prefix=prefix)
     app.include_router(receipts.router, prefix=prefix)
