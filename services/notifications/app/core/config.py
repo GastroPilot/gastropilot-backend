@@ -42,6 +42,18 @@ class Settings(BaseSettings):
     # Push (Expo)
     EXPO_ACCESS_TOKEN: str = ""
 
+    # APNs Live Activity (Token-based Auth, .p8 key)
+    # Alle Felder optional zur Boot-Zeit – Channel meldet erst beim Versand,
+    # falls Pflichtfelder fehlen.
+    APNS_KEY_ID: str = ""
+    APNS_TEAM_ID: str = ""
+    APNS_BUNDLE_ID: str = ""
+    APNS_AUTH_KEY_PATH: str = ""
+    # Sandbox-Server für Dev/TestFlight, Production für App-Store-Builds.
+    APNS_USE_SANDBOX: bool = True
+    # Wieviele Sekunden nach Endstatus (served / canceled) die Live Activity beendet wird.
+    LIVE_ACTIVITY_END_DELAY_SECONDS: int = 300
+
     # Celery
     CELERY_BROKER_URL: str = "redis://redis:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/2"

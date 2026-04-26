@@ -8,6 +8,12 @@ from typing import Any
 import redis
 from celery import Celery
 
+from app.channels.apns_liveactivity import (
+    APNsConfigurationError,
+    APNsTokenExpiredError,
+    send_live_activity_end,
+    send_live_activity_update,
+)
 from app.channels.email import render_template, send_email
 from app.channels.push import PushMessage, send_push_notification
 from app.channels.sms import send_sms
@@ -478,6 +484,221 @@ def send_waitlist_notification(
 
 
 # ---------------------------------------------------------------------------
+# iOS Live Activity (APNs)
+# ---------------------------------------------------------------------------
+
+
+# Mapping interner Order-Status → guest-facing State, das die iOS-Activity zeigt.
+_LIVE_ACTIVITY_STATUS_MAP = {
+    "open": "ordered",
+    "sent_to_kitchen": "preparing",
+    "in_preparation": "preparing",
+    "ready": "ready",
+    "served": "served",
+    "paid": "served",
+    "canceled": "cancelled",
+}
+
+# Status, ab denen die Live Activity nach Delay beendet wird.
+_LIVE_ACTIVITY_TERMINAL_STATUSES = {"served", "paid", "canceled"}
+
+
+def _live_activity_db_dsn() -> str | None:
+    """Wandelt den asyncpg-DSN in einen psycopg2-tauglichen DSN um."""
+    if not settings.DATABASE_URL:
+        return None
+    return settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
+
+def _fetch_active_live_activity_tokens(order_id: str) -> list[dict]:
+    """Liest aktive Tokens (ended_at IS NULL) für die Order via psycopg2."""
+    dsn = _live_activity_db_dsn()
+    if not dsn:
+        logger.debug("DATABASE_URL fehlt – keine Live Activity Tokens lesbar")
+        return []
+
+    try:
+        import psycopg2
+
+        conn = psycopg2.connect(dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id::text, push_token, tenant_id::text "
+                    "FROM live_activity_tokens "
+                    "WHERE order_id = %s AND ended_at IS NULL",
+                    (order_id,),
+                )
+                rows = cur.fetchall()
+            return [{"id": r[0], "push_token": r[1], "tenant_id": r[2]} for r in rows]
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("Konnte Live Activity Tokens nicht lesen: %s", exc)
+        return []
+
+
+def _mark_live_activity_token_ended(token_id: str) -> None:
+    dsn = _live_activity_db_dsn()
+    if not dsn:
+        return
+    try:
+        import psycopg2
+
+        conn = psycopg2.connect(dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE live_activity_tokens "
+                    "SET ended_at = NOW() WHERE id = %s AND ended_at IS NULL",
+                    (token_id,),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("Konnte Live Activity Token nicht beenden: %s", exc)
+
+
+async def _dispatch_live_activity_update(
+    token_id: str,
+    push_token: str,
+    content_state: dict,
+    *,
+    end: bool,
+) -> None:
+    """Sendet ein Update oder End-Event an APNs und behandelt 410."""
+    try:
+        if end:
+            await send_live_activity_end(push_token, content_state)
+        else:
+            await send_live_activity_update(push_token, content_state)
+    except APNsTokenExpiredError:
+        logger.info("Live Activity Token abgelaufen – markiere ended_at: %s", token_id)
+        _mark_live_activity_token_ended(token_id)
+    except APNsConfigurationError as exc:
+        logger.error("APNs nicht konfiguriert, überspringe Live Activity Update: %s", exc)
+    except Exception:
+        logger.exception("Unerwarteter Fehler beim Live Activity Versand")
+
+
+@celery_app.task(name="notifications.send_live_activity_update")
+def send_live_activity_update_task(
+    *,
+    order_id: str,
+    new_status: str,
+    tenant_id: str | None = None,
+    eta_minutes: int | None = None,
+    extra: dict | None = None,
+) -> dict:
+    """Sendet pro aktivem Token ein Live-Activity-Update."""
+    tokens = _fetch_active_live_activity_tokens(order_id)
+    if not tokens:
+        return {"sent": 0, "tokens": 0}
+
+    public_status = _LIVE_ACTIVITY_STATUS_MAP.get(new_status, new_status)
+    content_state: dict = {
+        "status": public_status,
+        "internal_status": new_status,
+        "order_id": order_id,
+    }
+    if tenant_id:
+        content_state["tenant_id"] = tenant_id
+    if eta_minutes is not None:
+        content_state["eta_minutes"] = eta_minutes
+    if extra:
+        content_state.update(extra)
+
+    for token in tokens:
+        _run_async(
+            _dispatch_live_activity_update(
+                token_id=token["id"],
+                push_token=token["push_token"],
+                content_state=content_state,
+                end=False,
+            )
+        )
+
+    # Bei terminalem Status terminales End-Event nach Delay einplanen.
+    if new_status in _LIVE_ACTIVITY_TERMINAL_STATUSES:
+        delay = max(0, settings.LIVE_ACTIVITY_END_DELAY_SECONDS)
+        end_live_activity_task.apply_async(
+            kwargs={
+                "order_id": order_id,
+                "final_status": new_status,
+                "tenant_id": tenant_id,
+            },
+            countdown=delay,
+        )
+
+    return {"sent": len(tokens), "tokens": len(tokens)}
+
+
+@celery_app.task(name="notifications.end_live_activity")
+def end_live_activity_task(
+    *,
+    order_id: str,
+    final_status: str,
+    tenant_id: str | None = None,
+) -> dict:
+    """Beendet alle aktiven Live Activities einer Order (event=end + ended_at)."""
+    tokens = _fetch_active_live_activity_tokens(order_id)
+    if not tokens:
+        return {"ended": 0}
+
+    public_status = _LIVE_ACTIVITY_STATUS_MAP.get(final_status, final_status)
+    content_state = {
+        "status": public_status,
+        "internal_status": final_status,
+        "order_id": order_id,
+    }
+    if tenant_id:
+        content_state["tenant_id"] = tenant_id
+
+    for token in tokens:
+        _run_async(
+            _dispatch_live_activity_update(
+                token_id=token["id"],
+                push_token=token["push_token"],
+                content_state=content_state,
+                end=True,
+            )
+        )
+        _mark_live_activity_token_ended(token["id"])
+
+    return {"ended": len(tokens)}
+
+
+def _maybe_dispatch_live_activity_for_order_event(event_name: str, payload: dict) -> None:
+    """Routet Order-Status-Events zu ``send_live_activity_update_task``.
+
+    Eingehende Events:  ``order.<status>`` (z.B. ``order.ready``, ``order.paid``).
+    Spezial-Event:      ``order_status_changed`` (mit ``new_status`` im Payload).
+    """
+    new_status: str | None = None
+    order_id = payload.get("order_id")
+    tenant_id = payload.get("tenant_id")
+
+    if event_name == "order_status_changed":
+        new_status = payload.get("new_status")
+    elif event_name.startswith("order."):
+        candidate = event_name.split(".", 1)[1]
+        if candidate in _LIVE_ACTIVITY_STATUS_MAP:
+            new_status = candidate
+
+    if not new_status or not order_id:
+        return
+
+    send_live_activity_update_task.delay(
+        order_id=str(order_id),
+        new_status=new_status,
+        tenant_id=str(tenant_id) if tenant_id else None,
+        eta_minutes=payload.get("eta_minutes"),
+        extra=payload.get("live_activity_extra"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Redis Pub/Sub Consumer
 # ---------------------------------------------------------------------------
 
@@ -506,6 +727,9 @@ def process_redis_event(event_name: str, payload_json: str) -> None:
         handler.delay(**payload)
     else:
         logger.debug("Unbekanntes Event, wird ignoriert: %s", event_name)
+
+    # Live-Activity-Dispatch parallel zu allen Order-Status-Events.
+    _maybe_dispatch_live_activity_for_order_event(event_name, payload)
 
 
 def start_redis_consumer() -> None:
