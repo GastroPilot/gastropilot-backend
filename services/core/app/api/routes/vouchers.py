@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
@@ -327,20 +327,47 @@ async def create_voucher(
 
 @router.get("", response_model=list[VoucherResponse])
 async def list_vouchers(
+    request: Request,
+    restaurant_id: UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(Voucher).order_by(Voucher.created_at.desc()))
+    effective_tenant_id = await _resolve_tenant_context_for_voucher(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+    )
+    result = await db.execute(
+        select(Voucher)
+        .where(Voucher.tenant_id == effective_tenant_id)
+        .order_by(Voucher.created_at.desc())
+    )
     return result.scalars().all()
 
 
 @router.get("/{voucher_id}", response_model=VoucherResponse)
 async def get_voucher(
     voucher_id: UUID,
+    request: Request,
+    restaurant_id: UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(Voucher).where(Voucher.id == voucher_id))
+    effective_tenant_id = await _resolve_tenant_context_for_voucher(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+    )
+    result = await db.execute(
+        select(Voucher).where(
+            and_(
+                Voucher.id == voucher_id,
+                Voucher.tenant_id == effective_tenant_id,
+            )
+        )
+    )
     voucher = result.scalar_one_or_none()
     if not voucher:
         raise HTTPException(status_code=404, detail="Voucher not found")
@@ -350,11 +377,26 @@ async def get_voucher(
 @router.put("/{voucher_id}", response_model=VoucherResponse)
 async def update_voucher(
     voucher_id: UUID,
+    request: Request,
     body: VoucherUpdate,
+    restaurant_id: UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(Voucher).where(Voucher.id == voucher_id))
+    effective_tenant_id = await _resolve_tenant_context_for_voucher(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+    )
+    result = await db.execute(
+        select(Voucher).where(
+            and_(
+                Voucher.id == voucher_id,
+                Voucher.tenant_id == effective_tenant_id,
+            )
+        )
+    )
     voucher = result.scalar_one_or_none()
     if not voucher:
         raise HTTPException(status_code=404, detail="Voucher not found")
@@ -376,10 +418,25 @@ async def update_voucher(
 @router.delete("/{voucher_id}")
 async def delete_voucher(
     voucher_id: UUID,
+    request: Request,
+    restaurant_id: UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(Voucher).where(Voucher.id == voucher_id))
+    effective_tenant_id = await _resolve_tenant_context_for_voucher(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+    )
+    result = await db.execute(
+        select(Voucher).where(
+            and_(
+                Voucher.id == voucher_id,
+                Voucher.tenant_id == effective_tenant_id,
+            )
+        )
+    )
     voucher = result.scalar_one_or_none()
     if not voucher:
         raise HTTPException(status_code=404, detail="Voucher not found")
@@ -475,12 +532,25 @@ async def validate_voucher(
 @router.get("/{voucher_id}/usage", response_model=list[VoucherUsageResponse])
 async def get_voucher_usage(
     voucher_id: UUID,
+    request: Request,
+    restaurant_id: UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
+    effective_tenant_id = await _resolve_tenant_context_for_voucher(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+    )
     result = await db.execute(
         select(VoucherUsage)
-        .where(VoucherUsage.voucher_id == voucher_id)
+        .where(
+            and_(
+                VoucherUsage.voucher_id == voucher_id,
+                VoucherUsage.tenant_id == effective_tenant_id,
+            )
+        )
         .order_by(VoucherUsage.used_at.desc())
     )
     return result.scalars().all()

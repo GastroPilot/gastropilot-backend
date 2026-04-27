@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_db, require_platform_admin
 from app.core.security import create_access_token, hash_password, hash_pin
 from app.models.audit import PlatformAuditLog
-from app.models.reservation import Reservation
+from app.models.reservation import Guest, Reservation
 from app.models.restaurant import Restaurant
 from app.models.review import Review
 from app.models.user import GuestProfile, User
@@ -486,10 +486,20 @@ async def list_guests(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
     search: str = Query("", max_length=200),
+    restaurant_id: uuid.UUID | None = Query(None),
     current_user=Depends(require_platform_admin),
     session: AsyncSession = Depends(get_db),
 ):
     query = select(GuestProfile)
+    if restaurant_id:
+        query = query.where(
+            select(Guest.id)
+            .where(
+                Guest.guest_profile_id == GuestProfile.id,
+                Guest.tenant_id == restaurant_id,
+            )
+            .exists()
+        )
     if search:
         pattern = f"%{search}%"
         query = query.where(
