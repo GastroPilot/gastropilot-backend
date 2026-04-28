@@ -286,10 +286,12 @@ async def test_delete_token_idempotent_when_not_present():
         ]
     )
     guest = GuestIdentity(id=uuid.uuid4(), raw_payload={})
-    body = public_guest_orders.LiveActivityTokenBody(push_token="abc12345xyz")
 
     response = await public_guest_orders.end_live_activity_token(
-        order_id=order_id, body=body, guest=guest, db=session  # type: ignore[arg-type]
+        order_id=order_id,
+        push_token="abc12345xyz",
+        guest=guest,
+        db=session,  # type: ignore[arg-type]
     )
     assert response.status_code == 204
 
@@ -318,10 +320,12 @@ async def test_delete_token_sets_ended_at_when_present():
         ]
     )
     guest = GuestIdentity(id=uuid.uuid4(), raw_payload={})
-    body = public_guest_orders.LiveActivityTokenBody(push_token="abc12345xyz")
 
     await public_guest_orders.end_live_activity_token(
-        order_id=order_id, body=body, guest=guest, db=session  # type: ignore[arg-type]
+        order_id=order_id,
+        push_token="abc12345xyz",
+        guest=guest,
+        db=session,  # type: ignore[arg-type]
     )
     assert fake_token.ended_at is not None
     assert session.committed is True
