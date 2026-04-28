@@ -1,8 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.models.order import Order
+
+# Default-Schätzung für die Küche-bis-fertig-Dauer beim Übergang nach
+# ``sent_to_kitchen``. AI-Service wird die Spalte später mit feineren
+# Schätzungen überschreiben (Issue #40 BE-4 / weiteres Folge-Issue).
+KITCHEN_DEFAULT_PREP_MINUTES = 15
 
 
 def apply_order_status_timestamps(order: Order, new_status: str) -> None:
@@ -12,12 +17,18 @@ def apply_order_status_timestamps(order: Order, new_status: str) -> None:
 
     if new_status == "sent_to_kitchen":
         order.sent_to_kitchen_at = now
+        # Persistierte ETA-Schätzung; nicht überschreiben falls schon
+        # gesetzt (z.B. vom AI-Service).
+        if order.estimated_completion_at is None:
+            order.estimated_completion_at = now + timedelta(minutes=KITCHEN_DEFAULT_PREP_MINUTES)
         return
 
     if new_status == "in_preparation":
         if order.sent_to_kitchen_at is None:
             order.sent_to_kitchen_at = opened_at
         order.in_preparation_at = now
+        if order.estimated_completion_at is None:
+            order.estimated_completion_at = now + timedelta(minutes=KITCHEN_DEFAULT_PREP_MINUTES)
         return
 
     if new_status == "ready":
