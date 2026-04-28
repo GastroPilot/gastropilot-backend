@@ -6,8 +6,8 @@ prüfen aber selbst einen Guest-JWT mit ``role='guest'``.
 
 Routen:
 
-    PUT    /public/orders/{order_id}/live-activity-token   – upsert push token
-    DELETE /public/orders/{order_id}/live-activity-token   – soft-end activity
+    PUT    /public/orders/{order_id}/live-activity-token              – upsert push token
+    DELETE /public/orders/{order_id}/live-activity-token/{push_token} – soft-end activity
     GET    /public/me/orders/{order_id}                    – eigener Order-Detail
 """
 
@@ -103,23 +103,28 @@ async def register_live_activity_token(
 
 
 @router.delete(
-    "/orders/{order_id}/live-activity-token",
+    "/orders/{order_id}/live-activity-token/{push_token}",
     status_code=204,
     response_class=Response,
 )
 async def end_live_activity_token(
     order_id: uuid.UUID,
-    body: LiveActivityTokenBody,
+    push_token: str,
     guest: GuestIdentity = Depends(get_current_guest),
     db: AsyncSession = Depends(get_guest_db),
 ) -> Response:
-    """Beendet die Live Activity (soft delete) für ein konkretes Token."""
+    """Beendet die Live Activity (soft delete) für ein konkretes Token.
+
+    Token wird als Pfad-Parameter erwartet, nicht im Body — DELETE-Bodies
+    werden von einigen Reverse-Proxies (Cloudflare u.a.) verworfen, was
+    zu stillen Token-Lecks führen würde.
+    """
     order = await _resolve_guest_owned_order(db, guest, order_id)
 
     result = await db.execute(
         select(LiveActivityToken).where(
             LiveActivityToken.order_id == order.id,
-            LiveActivityToken.push_token == body.push_token,
+            LiveActivityToken.push_token == push_token,
         )
     )
     token_row = result.scalar_one_or_none()
