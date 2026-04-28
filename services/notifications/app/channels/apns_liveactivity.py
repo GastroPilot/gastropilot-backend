@@ -141,9 +141,11 @@ async def _send(
 
     # 410 → Token expired / unregistered
     if status in ("410", 410):
-        raise APNsTokenExpiredError(
-            f"APNs Token expired für {activity_push_token[:10]}…: {description}"
-        )
+        # Truncate to the first 10 chars for the log message — APNs tokens
+        # are 64 hex chars, the prefix is enough to correlate across log
+        # lines without leaking the full identifier.
+        token_prefix = activity_push_token[: min(len(activity_push_token), 10)]
+        raise APNsTokenExpiredError(f"APNs Token expired für {token_prefix}…: {description}")
 
     return LiveActivityResult(
         success=False,

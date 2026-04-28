@@ -383,6 +383,40 @@ async def test_get_my_order_happy_path():
 
 
 @pytest.mark.asyncio
+async def test_get_my_order_returns_eta_for_in_preparation_with_opened_at():
+    """ETA-Heuristik: Status `in_preparation` + opened_at gesetzt → 15 min.
+
+    Deckt den Branch in ``public_guest_orders.get_my_order`` ab, der von
+    den anderen Detail-Tests übersprungen wird, weil ``_FakeOrder.opened_at``
+    standardmäßig ``None`` ist. Sobald BE-4 (#40) die Stub-Heuristik durch
+    den AI-Service ersetzt, sollte dieser Test entsprechend angepasst werden.
+    """
+    from datetime import UTC, datetime
+
+    order_id = uuid.uuid4()
+    fake_order = _FakeOrder(
+        order_id=order_id,
+        tenant_id=uuid.uuid4(),
+        guest_id=uuid.uuid4(),
+    )
+    fake_order.opened_at = datetime.now(UTC)
+    fake_order.status = "in_preparation"
+
+    session = FakeSession(
+        responses=[
+            _ResultWithScalars([fake_order]),
+            _ResultWithScalars([(1,)]),  # ownership
+            _ResultWithScalars([]),  # no items
+            _ResultWithScalars([("Test Restaurant",)]),
+        ]
+    )
+    guest = GuestIdentity(id=uuid.uuid4(), raw_payload={})
+
+    payload = await public_guest_orders.get_my_order(order_id=order_id, repo=_repo(session, guest))
+    assert payload["eta_minutes"] == 15
+
+
+@pytest.mark.asyncio
 async def test_get_my_order_404_for_other_tenant():
     """Cross-Tenant: gleicher Guest, aber Order gehört einer anderen guests-Zeile.
 

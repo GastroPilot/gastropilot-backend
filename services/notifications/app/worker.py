@@ -503,6 +503,25 @@ _LIVE_ACTIVITY_STATUS_MAP = {
 _LIVE_ACTIVITY_TERMINAL_STATUSES = {"served", "paid", "canceled"}
 
 
+# ─── RLS-bypass: synchronous psycopg2 access from the celery worker ─────────
+#
+# The worker is cross-tenant by definition — it consumes Redis events
+# from every tenant and routes APNs pushes accordingly. There is no
+# per-request `tenant_id` we could push into the Postgres session, so
+# RLS would lock us out of `live_activity_tokens` entirely.
+#
+# Instead, we connect with the same admin role the rest of the worker
+# uses and scope every read/write manually by `order_id` (and, where
+# relevant, `token_id`). The values come from Redis events that are
+# already tenant-namespaced (`gastropilot:{tenant_id}:order_status_…`),
+# so leakage across tenants would require a publishing service to
+# misroute its own events.
+#
+# A future cleanup is tracked in #40 (BE-5 / BE-6): move these helpers
+# behind a typed wrapper and unify the event payload format with the
+# `EventPublisher` shape used in `services/orders`.
+
+
 def _live_activity_db_dsn() -> str | None:
     """Wandelt den asyncpg-DSN in einen psycopg2-tauglichen DSN um."""
     if not settings.DATABASE_URL:
@@ -511,7 +530,11 @@ def _live_activity_db_dsn() -> str | None:
 
 
 def _fetch_active_live_activity_tokens(order_id: str) -> list[dict]:
-    """Liest aktive Tokens (ended_at IS NULL) für die Order via psycopg2."""
+    """Liest aktive Tokens (ended_at IS NULL) für die Order via psycopg2.
+
+    RLS-bypass: scoped manually by ``order_id`` — see the section comment
+    above for why this is acceptable in the worker.
+    """
     dsn = _live_activity_db_dsn()
     if not dsn:
         logger.debug("DATABASE_URL fehlt – keine Live Activity Tokens lesbar")
@@ -539,6 +562,7 @@ def _fetch_active_live_activity_tokens(order_id: str) -> list[dict]:
 
 
 def _mark_live_activity_token_ended(token_id: str) -> None:
+    """RLS-bypass: marks one token row as ended; scoped by primary key."""
     dsn = _live_activity_db_dsn()
     if not dsn:
         return
