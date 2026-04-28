@@ -67,7 +67,14 @@ from app.channels import apns_liveactivity  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _configure_apns(monkeypatch):
-    """Setzt Pflicht-Settings, sodass _ensure_configured nicht fehlschlägt."""
+    """Setzt Pflicht-Settings, sodass _ensure_configured nicht fehlschlägt.
+
+    ``APNS_BUNDLE_ID`` muss in der Realität exakt der iOS-Main-App-Bundle-ID
+    entsprechen (dev/internal/production unterschiedlich – siehe
+    ``app.config.ts`` der Gäste-App). Hier verwenden wir absichtlich einen
+    Platzhalter, weil die Tests nur die Header-Konstruktion und
+    Fehlerbehandlung verifizieren – nicht die echte APNs-Topic-Auflösung.
+    """
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "APNS_KEY_ID", "TESTKEYID")
