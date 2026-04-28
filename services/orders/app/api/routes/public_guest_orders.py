@@ -26,7 +26,9 @@ Routen:
 
 from __future__ import annotations
 
+import math
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
@@ -96,10 +98,15 @@ async def get_my_order(
     restaurant_name = await repo.get_restaurant_name(order.tenant_id)
 
     eta_minutes: int | None = None
-    if order.status in ("sent_to_kitchen", "in_preparation") and order.opened_at:
-        # Sehr grobe Heuristik – die echte ETA-Logik kommt vom AI-Service.
-        # Tracked als BE-4 in #40.
-        eta_minutes = 15
+    if (
+        order.status in ("sent_to_kitchen", "in_preparation")
+        and order.estimated_completion_at is not None
+    ):
+        # Liest die persistierte Schätzung, die beim Status-Übergang gesetzt
+        # wurde (siehe ``services.order_timing``). Wert kann später vom
+        # AI-Service via Redis-Event aktualisiert werden.
+        delta = order.estimated_completion_at - datetime.now(UTC)
+        eta_minutes = max(0, math.ceil(delta.total_seconds() / 60))
 
     return {
         "id": str(order.id),

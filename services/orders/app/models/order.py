@@ -70,6 +70,14 @@ class Order(Base):
     served_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paid_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Geschätzte Fertigstellungs-Zeit. Wird beim Übergang nach
+    # ``sent_to_kitchen`` als ``now() + KITCHEN_DEFAULT_PREP_MINUTES`` gesetzt
+    # (siehe ``order_timing.apply_order_status_timestamps``). Eine spätere
+    # Anpassung durch den AI-Service via Redis-Event wird absichtlich offen
+    # gelassen — dieselbe Spalte trägt dann die feinere Schätzung.
+    estimated_completion_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(

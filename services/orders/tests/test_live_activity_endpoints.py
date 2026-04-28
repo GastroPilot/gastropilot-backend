@@ -51,6 +51,7 @@ class _FakeOrder:
         self.opened_at = None
         self.created_at = None
         self.updated_at = None
+        self.estimated_completion_at = None
 
 
 @dataclass
@@ -383,15 +384,15 @@ async def test_get_my_order_happy_path():
 
 
 @pytest.mark.asyncio
-async def test_get_my_order_returns_eta_for_in_preparation_with_opened_at():
-    """ETA-Heuristik: Status `in_preparation` + opened_at gesetzt → 15 min.
+async def test_get_my_order_returns_eta_from_persisted_column():
+    """ETA wird aus ``orders.estimated_completion_at`` berechnet.
 
-    Deckt den Branch in ``public_guest_orders.get_my_order`` ab, der von
-    den anderen Detail-Tests übersprungen wird, weil ``_FakeOrder.opened_at``
-    standardmäßig ``None`` ist. Sobald BE-4 (#40) die Stub-Heuristik durch
-    den AI-Service ersetzt, sollte dieser Test entsprechend angepasst werden.
+    Vorher (BE-4) hat der Endpoint eine 15-min-Heuristik aus ``opened_at``
+    abgeleitet. Jetzt liest er die persistierte Spalte, die beim Übergang
+    nach ``sent_to_kitchen`` per ``apply_order_status_timestamps`` gefüllt
+    wird (oder später vom AI-Service überschrieben).
     """
-    from datetime import UTC, datetime
+    from datetime import UTC, datetime, timedelta
 
     order_id = uuid.uuid4()
     fake_order = _FakeOrder(
@@ -399,8 +400,8 @@ async def test_get_my_order_returns_eta_for_in_preparation_with_opened_at():
         tenant_id=uuid.uuid4(),
         guest_id=uuid.uuid4(),
     )
-    fake_order.opened_at = datetime.now(UTC)
     fake_order.status = "in_preparation"
+    fake_order.estimated_completion_at = datetime.now(UTC) + timedelta(minutes=12, seconds=10)
 
     session = FakeSession(
         responses=[
@@ -413,7 +414,37 @@ async def test_get_my_order_returns_eta_for_in_preparation_with_opened_at():
     guest = GuestIdentity(id=uuid.uuid4(), raw_payload={})
 
     payload = await public_guest_orders.get_my_order(order_id=order_id, repo=_repo(session, guest))
-    assert payload["eta_minutes"] == 15
+    # 12m 10s rounds up to 13 minutes (math.ceil), never below 0.
+    assert payload["eta_minutes"] == 13
+
+
+@pytest.mark.asyncio
+async def test_get_my_order_eta_clamped_to_zero_when_overdue():
+    """Wenn die Schätzung in der Vergangenheit liegt → eta_minutes = 0,
+    nicht negativ. Schützt das Mobile-UI gegen ``-3 min``-Anzeige."""
+    from datetime import UTC, datetime, timedelta
+
+    order_id = uuid.uuid4()
+    fake_order = _FakeOrder(
+        order_id=order_id,
+        tenant_id=uuid.uuid4(),
+        guest_id=uuid.uuid4(),
+    )
+    fake_order.status = "in_preparation"
+    fake_order.estimated_completion_at = datetime.now(UTC) - timedelta(minutes=3)
+
+    session = FakeSession(
+        responses=[
+            _ResultWithScalars([fake_order]),
+            _ResultWithScalars([(1,)]),
+            _ResultWithScalars([]),
+            _ResultWithScalars([("Test Restaurant",)]),
+        ]
+    )
+    guest = GuestIdentity(id=uuid.uuid4(), raw_payload={})
+
+    payload = await public_guest_orders.get_my_order(order_id=order_id, repo=_repo(session, guest))
+    assert payload["eta_minutes"] == 0
 
 
 @pytest.mark.asyncio
