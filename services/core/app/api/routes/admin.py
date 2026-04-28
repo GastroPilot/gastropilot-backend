@@ -16,6 +16,7 @@ from app.models.reservation import Guest, Reservation
 from app.models.restaurant import Restaurant
 from app.models.review import Review
 from app.models.user import GuestProfile, User
+from app.services.geocoding import build_address_string, geocode_address
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -235,6 +236,23 @@ async def create_tenant(
     )
     session.add(log)
 
+    # 4. Best-effort Geocoding via Nominatim — Failure unterbricht den Tenant-Create nicht.
+    address_string = build_address_string(
+        street=None,
+        zip_code=None,
+        city=None,
+        country=None,
+        address_fallback=data.address,
+    )
+    if address_string:
+        coords = await geocode_address(address_string)
+        if coords is not None:
+            lat, lng = coords
+            current_settings = dict(restaurant.settings or {})
+            current_settings["latitude"] = lat
+            current_settings["longitude"] = lng
+            restaurant.settings = current_settings
+
     await session.commit()
 
     return TenantCreateResponse(
@@ -285,6 +303,8 @@ async def update_tenant(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
+    previous_address = tenant.address
+
     if data.name is not None:
         tenant.name = data.name
     if data.slug is not None:
@@ -304,6 +324,24 @@ async def update_tenant(
         current = dict(tenant.settings or {})
         current.update(data.settings)
         tenant.settings = current
+
+    address_changed = data.address is not None and data.address != previous_address
+    if address_changed and tenant.address:
+        address_string = build_address_string(
+            street=None,
+            zip_code=None,
+            city=None,
+            country=None,
+            address_fallback=tenant.address,
+        )
+        if address_string:
+            coords = await geocode_address(address_string)
+            if coords is not None:
+                lat, lng = coords
+                current_settings = dict(tenant.settings or {})
+                current_settings["latitude"] = lat
+                current_settings["longitude"] = lng
+                tenant.settings = current_settings
 
     log = PlatformAuditLog(
         admin_user_id=current_user.id,

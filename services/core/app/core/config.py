@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     ENV: str = "development"
     SEED_ON_STARTUP: bool = False
+    APP_VERSION: str = "0.16.0"
 
     DATABASE_URL: str = "postgresql+asyncpg://gastropilot:gastropilot@localhost:5432/gastropilot"
     DATABASE_ADMIN_URL: str = (

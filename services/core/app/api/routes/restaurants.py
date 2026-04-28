@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db, require_manager_or_above, require_owner_or_above
 from app.models.restaurant import Area, Obstacle, Restaurant, Table
+from app.services.geocoding import build_address_string, geocode_address
 
 router = APIRouter(prefix="/restaurants", tags=["restaurants"])
 
@@ -210,6 +211,9 @@ async def get_restaurant(
     return _restaurant_response(restaurant)
 
 
+_GEOCODING_FIELDS = ("address", "street", "zip_code", "city", "country")
+
+
 @router.patch("/{restaurant_id}", response_model=RestaurantResponse)
 async def update_restaurant(
     restaurant_id: uuid.UUID,
@@ -224,8 +228,34 @@ async def update_restaurant(
     if current_user.role != "platform_admin" and current_user.tenant_id != restaurant_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    # Snapshot der relevanten Adress-Felder VOR dem Apply.
+    previous_address = {field: getattr(restaurant, field) for field in _GEOCODING_FIELDS}
+
+    update_payload = data.model_dump(exclude_none=True)
+    for field, value in update_payload.items():
         setattr(restaurant, field, value)
+
+    # Re-Geocoding nur, wenn sich tatsächlich ein Adress-Feld geändert hat.
+    address_changed = any(
+        field in update_payload and update_payload[field] != previous_address[field]
+        for field in _GEOCODING_FIELDS
+    )
+    if address_changed:
+        address_string = build_address_string(
+            street=restaurant.street,
+            zip_code=restaurant.zip_code,
+            city=restaurant.city,
+            country=restaurant.country,
+            address_fallback=restaurant.address,
+        )
+        if address_string:
+            coords = await geocode_address(address_string)
+            if coords is not None:
+                lat, lng = coords
+                current_settings = dict(restaurant.settings or {})
+                current_settings["latitude"] = lat
+                current_settings["longitude"] = lng
+                restaurant.settings = current_settings
 
     await session.commit()
     await session.refresh(restaurant)
