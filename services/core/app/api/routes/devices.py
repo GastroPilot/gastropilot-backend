@@ -61,13 +61,38 @@ async def _resolve_tenant_context_for_device(
     )
 
 
+async def _resolve_effective_tenant_id(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+) -> UUID:
+    return await _resolve_tenant_context_for_device(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=None,
+    )
+
+
 @router.get("", response_model=list[DeviceResponse])
 async def list_devices(
+    request: Request,
+    restaurant_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_owner_or_above),
 ):
     """List all KDS devices for the current tenant."""
-    result = await db.execute(select(Device).order_by(Device.created_at.desc()))
+    effective_tenant_id = await _resolve_tenant_context_for_device(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+    )
+    result = await db.execute(
+        select(Device)
+        .where(Device.tenant_id == effective_tenant_id)
+        .order_by(Device.created_at.desc())
+    )
     return result.scalars().all()
 
 
@@ -104,12 +129,23 @@ async def create_device(
 
 @router.delete("/{device_id}")
 async def delete_device(
+    request: Request,
     device_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_owner_or_above),
 ):
     """Delete / revoke a KDS device."""
-    result = await db.execute(select(Device).where(Device.id == device_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    result = await db.execute(
+        select(Device).where(
+            Device.id == device_id,
+            Device.tenant_id == effective_tenant_id,
+        )
+    )
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -124,12 +160,23 @@ async def delete_device(
     response_model=DeviceRegenerateResponse,
 )
 async def regenerate_device_token(
+    request: Request,
     device_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_owner_or_above),
 ):
     """Regenerate the token for a KDS device (invalidates old token)."""
-    result = await db.execute(select(Device).where(Device.id == device_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    result = await db.execute(
+        select(Device).where(
+            Device.id == device_id,
+            Device.tenant_id == effective_tenant_id,
+        )
+    )
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")

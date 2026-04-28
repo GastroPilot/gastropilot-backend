@@ -9,13 +9,12 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import (
-    get_current_user,
     get_db,
     require_manager_or_above,
     require_staff_or_above,
 )
 from app.models.restaurant import Area, Restaurant, Table
-from app.models.table_config import ReservationTableDayConfig, TableDayConfig
+from app.models.table_config import TableDayConfig
 from app.models.user import User
 
 router = APIRouter(prefix="/table-day-configs", tags=["table-day-configs"])
@@ -168,23 +167,64 @@ async def _resolve_tenant_context_for_config(
     )
 
 
+async def _resolve_effective_tenant_id(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+) -> UUID:
+    return await _resolve_tenant_context_for_config(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=None,
+        table_id=None,
+        area_id=None,
+    )
+
+
 @router.get("/by-date/{date}", response_model=list[TableDayConfigResponse])
 async def list_configs_by_date(
+    request: Request,
     date: date_type,
+    restaurant_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(TableDayConfig).where(TableDayConfig.date == date))
+    effective_tenant_id = await _resolve_tenant_context_for_config(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+        table_id=None,
+        area_id=None,
+    )
+    result = await db.execute(
+        select(TableDayConfig).where(
+            TableDayConfig.date == date,
+            TableDayConfig.tenant_id == effective_tenant_id,
+        )
+    )
     return result.scalars().all()
 
 
 @router.get("/{config_id}", response_model=TableDayConfigResponse)
 async def get_config(
+    request: Request,
     config_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(TableDayConfig).where(TableDayConfig.id == config_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    result = await db.execute(
+        select(TableDayConfig).where(
+            TableDayConfig.id == config_id,
+            TableDayConfig.tenant_id == effective_tenant_id,
+        )
+    )
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="Config not found")
@@ -266,12 +306,26 @@ async def create_or_update_config(
 
 @router.patch("/{config_id}", response_model=TableDayConfigResponse)
 async def update_config(
+    request: Request,
     config_id: UUID,
     body: TableDayConfigUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(TableDayConfig).where(TableDayConfig.id == config_id))
+    effective_tenant_id = await _resolve_tenant_context_for_config(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=None,
+        table_id=None,
+        area_id=body.area_id,
+    )
+    result = await db.execute(
+        select(TableDayConfig).where(
+            TableDayConfig.id == config_id,
+            TableDayConfig.tenant_id == effective_tenant_id,
+        )
+    )
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="Config not found")
@@ -286,36 +340,55 @@ async def update_config(
 
 @router.delete("/by-date/{date}/table/{table_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_config_by_date_table(
+    request: Request,
     date: date_type,
     table_id: UUID,
+    restaurant_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
+    effective_tenant_id = await _resolve_tenant_context_for_config(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+        table_id=table_id,
+        area_id=None,
+    )
     result = await db.execute(
         select(TableDayConfig).where(
-            and_(TableDayConfig.date == date, TableDayConfig.table_id == table_id)
+            and_(
+                TableDayConfig.date == date,
+                TableDayConfig.table_id == table_id,
+                TableDayConfig.tenant_id == effective_tenant_id,
+            )
         )
     )
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="Config not found")
-    # Cascade: remove linked reservation configs
-    await db.execute(
-        select(ReservationTableDayConfig).where(
-            ReservationTableDayConfig.table_day_config_id == config.id
-        )
-    )
     await db.delete(config)
     await db.commit()
 
 
 @router.delete("/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_config(
+    request: Request,
     config_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(TableDayConfig).where(TableDayConfig.id == config_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    result = await db.execute(
+        select(TableDayConfig).where(
+            TableDayConfig.id == config_id,
+            TableDayConfig.tenant_id == effective_tenant_id,
+        )
+    )
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="Config not found")
@@ -325,11 +398,26 @@ async def delete_config(
 
 @router.delete("/by-date/{date}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_all_configs_by_date(
+    request: Request,
     date: date_type,
+    restaurant_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result = await db.execute(select(TableDayConfig).where(TableDayConfig.date == date))
+    effective_tenant_id = await _resolve_tenant_context_for_config(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+        table_id=None,
+        area_id=None,
+    )
+    result = await db.execute(
+        select(TableDayConfig).where(
+            TableDayConfig.date == date,
+            TableDayConfig.tenant_id == effective_tenant_id,
+        )
+    )
     configs = result.scalars().all()
     for config in configs:
         await db.delete(config)

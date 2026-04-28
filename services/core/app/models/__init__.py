@@ -14,6 +14,8 @@ from app.models.table_config import (  # noqa: F401
     ReservationTableDayConfig,
     TableDayConfig,
 )
+from app.models.upsell import ReservationUpsellPackage, UpsellPackage  # noqa: F401
 from app.models.user import GuestProfile, RefreshToken, User  # noqa: F401
 from app.models.user_settings import UserSettings  # noqa: F401
+from app.models.voucher import Voucher, VoucherUsage  # noqa: F401
 from app.models.waitlist import Message, Waitlist  # noqa: F401

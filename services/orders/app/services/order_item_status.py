@@ -12,12 +12,14 @@ ORDER_ITEM_STATUSES = (
 _ORDER_ITEM_STATUS_SET = set(ORDER_ITEM_STATUSES)
 
 _ALLOWED_NEXT_STATUSES: dict[str, set[str]] = {
+    # Allow forward + manual corrective backward transitions between
+    # kitchen workflow steps. Terminal transitions still require explicit action.
     "pending": {"sent", "canceled"},
-    "sent": {"in_preparation", "canceled"},
-    "in_preparation": {"ready", "canceled"},
+    "sent": {"pending", "in_preparation", "canceled"},
+    "in_preparation": {"sent", "ready", "canceled"},
     # KDS undo: allow moving a ready item back to active preparation.
     "ready": {"in_preparation", "served", "canceled"},
-    "served": {"canceled"},
+    "served": {"ready", "canceled"},
     "canceled": set(),
 }
 

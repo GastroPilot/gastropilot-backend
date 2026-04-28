@@ -144,9 +144,11 @@ from app.api.routes import (  # noqa: E402
     restaurants,
     reviews,
     table_day_configs,
+    upsell_packages,
     uploads,
     user_settings,
     users,
+    vouchers,
     waitlist,
 )
 
@@ -179,6 +181,8 @@ _all_routers = [
     public_waitlist.router,
     billing.router,
     devices.router,
+    upsell_packages.router,
+    vouchers.router,
     uploads.router,
     notification_inbox.router,
     internal.router,

@@ -121,6 +121,20 @@ async def _resolve_tenant_context_for_waitlist(
     )
 
 
+async def _resolve_effective_tenant_id(
+    request: Request,
+    current_user: User,
+    db: AsyncSession,
+) -> UUID:
+    return await _resolve_tenant_context_for_waitlist(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=None,
+        guest_id=None,
+    )
+
+
 @router.post("", response_model=WaitlistResponse, status_code=status.HTTP_201_CREATED)
 async def create_entry(
     request: Request,
@@ -153,21 +167,47 @@ async def create_entry(
 
 @router.get("", response_model=list[WaitlistResponse])
 async def list_entries(
+    request: Request,
+    restaurant_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(Waitlist).order_by(Waitlist.created_at))
+    effective_tenant_id = await _resolve_tenant_context_for_waitlist(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=restaurant_id,
+        guest_id=None,
+    )
+    result = await db.execute(
+        select(Waitlist)
+        .where(Waitlist.tenant_id == effective_tenant_id)
+        .order_by(Waitlist.created_at)
+    )
     return result.scalars().all()
 
 
 @router.patch("/{wait_id}", response_model=WaitlistResponse)
 async def update_entry(
+    request: Request,
     wait_id: UUID,
     body: WaitlistUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(Waitlist).where(Waitlist.id == wait_id))
+    effective_tenant_id = await _resolve_tenant_context_for_waitlist(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=None,
+        guest_id=body.guest_id,
+    )
+    result = await db.execute(
+        select(Waitlist).where(
+            Waitlist.id == wait_id,
+            Waitlist.tenant_id == effective_tenant_id,
+        )
+    )
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Waitlist entry not found")
@@ -186,11 +226,22 @@ async def update_entry(
 
 @router.delete("/{wait_id}")
 async def delete_entry(
+    request: Request,
     wait_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    result = await db.execute(select(Waitlist).where(Waitlist.id == wait_id))
+    effective_tenant_id = await _resolve_effective_tenant_id(
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+    result = await db.execute(
+        select(Waitlist).where(
+            Waitlist.id == wait_id,
+            Waitlist.tenant_id == effective_tenant_id,
+        )
+    )
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Waitlist entry not found")
