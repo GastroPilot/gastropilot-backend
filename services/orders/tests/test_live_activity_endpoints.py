@@ -16,6 +16,14 @@ from fastapi import HTTPException
 
 from app.api.routes import public_guest_orders
 from app.core.guest_deps import GuestIdentity
+from app.core.guest_repository import GuestOrdersRepository
+
+
+def _repo(session: FakeSession, guest: GuestIdentity) -> GuestOrdersRepository:
+    """Build a repo with the in-memory FakeSession; mirrors what FastAPI
+    constructs via ``get_guest_orders_repo`` at request time."""
+    return GuestOrdersRepository(db=session, guest=guest)  # type: ignore[arg-type]
+
 
 # ---------------------------------------------------------------------------
 # Mini-Fakes
@@ -207,7 +215,7 @@ async def test_register_token_404_for_foreign_order(monkeypatch):
 
     with pytest.raises(HTTPException) as exc:
         await public_guest_orders.register_live_activity_token(
-            order_id=order_id, body=body, guest=guest, db=session  # type: ignore[arg-type]
+            order_id=order_id, body=body, repo=_repo(session, guest)
         )
     assert exc.value.status_code == 404
 
@@ -221,7 +229,7 @@ async def test_register_token_404_when_order_missing():
 
     with pytest.raises(HTTPException) as exc:
         await public_guest_orders.register_live_activity_token(
-            order_id=order_id, body=body, guest=guest, db=session  # type: ignore[arg-type]
+            order_id=order_id, body=body, repo=_repo(session, guest)
         )
     assert exc.value.status_code == 404
 
@@ -254,7 +262,7 @@ async def test_register_token_upsert_calls_commit():
     body = public_guest_orders.LiveActivityTokenBody(push_token="abc12345xyz")
 
     response = await public_guest_orders.register_live_activity_token(
-        order_id=order_id, body=body, guest=guest, db=session  # type: ignore[arg-type]
+        order_id=order_id, body=body, repo=_repo(session, guest)
     )
     assert response.status_code == 204
     assert session.committed is True
@@ -290,8 +298,7 @@ async def test_delete_token_idempotent_when_not_present():
     response = await public_guest_orders.end_live_activity_token(
         order_id=order_id,
         push_token="abc12345xyz",
-        guest=guest,
-        db=session,  # type: ignore[arg-type]
+        repo=_repo(session, guest),
     )
     assert response.status_code == 204
 
@@ -324,8 +331,7 @@ async def test_delete_token_sets_ended_at_when_present():
     await public_guest_orders.end_live_activity_token(
         order_id=order_id,
         push_token="abc12345xyz",
-        guest=guest,
-        db=session,  # type: ignore[arg-type]
+        repo=_repo(session, guest),
     )
     assert fake_token.ended_at is not None
     assert session.committed is True
@@ -360,19 +366,20 @@ async def test_get_my_order_happy_path():
     session = FakeSession(
         responses=[
             _ResultWithScalars([fake_order]),
-            _ResultWithScalars([(1,)]),  # ownership
+            _ResultWithScalars([(1,)]),  # ownership (cached for the rest of the request)
             _ResultWithScalars([_FakeItem()]),  # items
             _ResultWithScalars([("Test Restaurant",)]),  # restaurant name
         ]
     )
     guest = GuestIdentity(id=uuid.uuid4(), raw_payload={})
 
-    payload = await public_guest_orders.get_my_order(
-        order_id=order_id, guest=guest, db=session  # type: ignore[arg-type]
-    )
+    payload = await public_guest_orders.get_my_order(order_id=order_id, repo=_repo(session, guest))
     assert payload["id"] == str(order_id)
     assert payload["restaurant_name"] == "Test Restaurant"
     assert payload["items"][0]["name"] == "Pizza"
+    # Ownership cache prevents the second call (list_order_items) from
+    # re-fetching the order — exactly 4 execute calls expected.
+    assert len(session.executed) == 4
 
 
 @pytest.mark.asyncio
@@ -399,7 +406,5 @@ async def test_get_my_order_404_for_other_tenant():
     guest = GuestIdentity(id=uuid.uuid4(), raw_payload={})
 
     with pytest.raises(HTTPException) as exc:
-        await public_guest_orders.get_my_order(
-            order_id=order_id, guest=guest, db=session  # type: ignore[arg-type]
-        )
+        await public_guest_orders.get_my_order(order_id=order_id, repo=_repo(session, guest))
     assert exc.value.status_code == 404
