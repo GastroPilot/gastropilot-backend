@@ -41,6 +41,12 @@ class PublicOrderItemRequest(BaseModel):
 
 class PublicOrderCreateRequest(BaseModel):
     items: list[PublicOrderItemRequest]
+    # Optional client-side allergen profile for guests without a login
+    # (no ``guest_id`` resolved server-side). Persisted to ``Order.guest_allergens``
+    # so the KDS can render warnings even for QR-only walk-in orders.
+    # Falls eine guest_id aufgelöst wird, gewinnt das Profil aus der DB
+    # (siehe ``orders.py`` resolve-Pfad).
+    guest_allergens: list[str] | None = None
 
 
 class PublicOrderItemResponse(BaseModel):

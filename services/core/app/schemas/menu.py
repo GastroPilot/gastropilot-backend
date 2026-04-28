@@ -91,11 +91,14 @@ class AllergenCheckRequest(BaseModel):
     guest_allergens: list[str]
 
 
+AllergenRiskLevel = Literal["safe", "warning", "danger", "unknown"]
+
+
 class AllergenCheckResult(BaseModel):
     item_id: UUID
     item_name: str
     is_safe: bool
     matched_allergens: list[str]
-    risk_level: str = "safe"  # "safe" | "warning" | "danger"
+    risk_level: AllergenRiskLevel = "safe"
     may_contain: list[str] = Field(default_factory=list)
     ingredients: list[dict]
