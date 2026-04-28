@@ -16,6 +16,33 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Self-heal for environments bootstrapped via install/sql/init.sql + alembic stamp,
+    # where 0003_add_missing_models never executed because init.sql historically did not
+    # contain the upsell_packages table. Schema mirrors 0003 exactly.
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS upsell_packages (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            tenant_id UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+            name VARCHAR(240) NOT NULL,
+            description TEXT,
+            price FLOAT NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            available_from_date DATE,
+            available_until_date DATE,
+            min_party_size INTEGER,
+            max_party_size INTEGER,
+            available_times JSONB,
+            available_weekdays JSONB,
+            image_url VARCHAR(512),
+            display_order INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """)
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_upsell_packages_tenant_id ON upsell_packages(tenant_id)"
+    )
+
     op.execute(
         "ALTER TABLE upsell_packages ADD COLUMN IF NOT EXISTS package_type VARCHAR(24) NOT NULL DEFAULT 'addon'"
     )
