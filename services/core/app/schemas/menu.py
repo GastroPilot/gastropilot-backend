@@ -6,8 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.services.allergen_service import _normalize_allergen
-
 MenuCategoryType = Literal["food", "drink"]
 
 
@@ -55,6 +53,10 @@ class MenuItemBase(BaseModel):
     @field_validator("allergens", mode="before")
     @classmethod
     def normalize_allergens(cls, value):
+        # Inline-Import vermeidet circular import:
+        # allergen_service -> schemas.menu (AllergenCheckResult) -> services.allergen_service.
+        from app.services.allergen_service import _normalize_allergen
+
         if value is None:
             return []
         # Legacy-Object-Format: {"contains": [...], "may_contain": [...], "vegan": ..., "vegetarisch": ...}
