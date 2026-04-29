@@ -47,6 +47,7 @@ class Voucher(Base):
     valid_until: Mapped[Date | None] = mapped_column(Date, nullable=True)
     max_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
     used_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    remaining_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     min_order_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

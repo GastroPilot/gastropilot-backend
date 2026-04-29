@@ -261,6 +261,7 @@ class VoucherResponse(BaseModel):
     valid_until: date | None = None
     max_uses: int | None = None
     used_count: int
+    remaining_value: float | None = None
     min_order_value: float | None = None
     is_active: bool
     created_by_user_id: UUID | None = None
@@ -294,6 +295,7 @@ class VoucherValidateResponse(BaseModel):
     voucher_scope: str | None = None
     discount_value: float | None = None
     discount_amount: float | None = None
+    remaining_value: float | None = None
     message: str | None = None
 
 
@@ -326,6 +328,7 @@ class VoucherRedeemResponse(BaseModel):
     discount_amount: float | None = None
     used_count: int | None = None
     max_uses: int | None = None
+    remaining_value: float | None = None
     message: str | None = None
 
 
@@ -412,12 +415,21 @@ def _resolve_effective_max_uses(kind: str, scope: str, max_uses: int | None) -> 
     return max_uses
 
 
+def _resolve_voucher_remaining_value(voucher: Voucher) -> float | None:
+    if _normalize_voucher_kind(voucher.kind) != "voucher":
+        return None
+    if voucher.remaining_value is None:
+        return float(voucher.value)
+    return max(0.0, float(voucher.remaining_value))
+
+
 def _evaluate_voucher_for_context(
     voucher: Voucher,
     order_value: float | None,
     service_type: str | None,
     now_ref: datetime,
 ) -> tuple[bool, str | None, float | None]:
+    normalized_kind = _normalize_voucher_kind(voucher.kind)
     if not voucher.is_active:
         return False, "Voucher is inactive", None
 
@@ -427,7 +439,15 @@ def _evaluate_voucher_for_context(
     if voucher.valid_until and today > voucher.valid_until:
         return False, "Voucher expired", None
 
-    if voucher.max_uses and voucher.used_count >= voucher.max_uses:
+    remaining_value = _resolve_voucher_remaining_value(voucher)
+    if normalized_kind == "voucher" and (remaining_value is None or remaining_value <= 0):
+        return False, "Voucher balance exhausted", None
+
+    if (
+        normalized_kind != "voucher"
+        and voucher.max_uses
+        and voucher.used_count >= voucher.max_uses
+    ):
         return False, "Voucher usage limit reached", None
 
     if order_value is not None and voucher.min_order_value and order_value < voucher.min_order_value:
@@ -458,7 +478,10 @@ def _evaluate_voucher_for_context(
     if voucher.type == "percentage" and order_value is not None:
         discount_amount = round(order_value * voucher.value / 100, 2)
     elif voucher.type == "fixed" and order_value is not None:
-        discount_amount = min(order_value, voucher.value)
+        if normalized_kind == "voucher" and remaining_value is not None:
+            discount_amount = min(order_value, remaining_value)
+        else:
+            discount_amount = min(order_value, voucher.value)
 
     return True, None, discount_amount
 
@@ -494,6 +517,7 @@ async def create_voucher(
         valid_from=body.valid_from,
         valid_until=body.valid_until,
         max_uses=_resolve_effective_max_uses(normalized_kind, normalized_scope, body.max_uses),
+        remaining_value=body.value if normalized_kind == "voucher" else None,
         min_order_value=body.min_order_value,
         is_active=body.is_active,
         created_by_user_id=current_user.id,
@@ -584,6 +608,9 @@ async def update_voucher(
     if not voucher:
         raise HTTPException(status_code=404, detail="Voucher not found")
 
+    previous_kind = _normalize_voucher_kind(voucher.kind)
+    previous_value = float(voucher.value)
+    previous_remaining_value = _resolve_voucher_remaining_value(voucher)
     payload = body.model_dump(exclude_unset=True)
     if "kind" in payload and payload["kind"] is not None:
         payload["kind"] = _normalize_voucher_kind(payload["kind"])
@@ -615,6 +642,19 @@ async def update_voucher(
         if field == "code" and value is not None:
             value = value.upper().strip()
         setattr(voucher, field, value)
+
+    if _normalize_voucher_kind(voucher.kind) == "voucher":
+        if previous_kind != "voucher":
+            voucher.remaining_value = float(voucher.value)
+        elif "value" in payload:
+            consumed_amount = max(0.0, previous_value - (previous_remaining_value or 0.0))
+            voucher.remaining_value = max(0.0, round(float(voucher.value) - consumed_amount, 2))
+        elif voucher.remaining_value is None:
+            voucher.remaining_value = float(voucher.value)
+        if voucher.remaining_value > float(voucher.value):
+            voucher.remaining_value = float(voucher.value)
+    else:
+        voucher.remaining_value = None
 
     try:
         await db.commit()
@@ -698,6 +738,7 @@ async def validate_voucher(
         discount_type=voucher.type,
         discount_value=voucher.value,
         discount_amount=discount_amount,
+        remaining_value=_resolve_voucher_remaining_value(voucher),
     )
 
 
@@ -740,8 +781,15 @@ async def redeem_voucher(
     if not is_valid or discount_amount is None:
         return VoucherRedeemResponse(redeemed=False, message=message or "Voucher is not redeemable")
 
+    normalized_kind = _normalize_voucher_kind(voucher.kind)
     voucher.used_count += 1
-    if voucher.max_uses and voucher.used_count >= voucher.max_uses:
+    if normalized_kind == "voucher":
+        remaining_before = _resolve_voucher_remaining_value(voucher) or 0.0
+        remaining_after = max(0.0, round(remaining_before - float(discount_amount), 2))
+        voucher.remaining_value = remaining_after
+        if remaining_after <= 0:
+            voucher.is_active = False
+    elif voucher.max_uses and voucher.used_count >= voucher.max_uses:
         voucher.is_active = False
     usage = VoucherUsage(
         voucher_id=voucher.id,
@@ -764,6 +812,7 @@ async def redeem_voucher(
         discount_amount=discount_amount,
         used_count=voucher.used_count,
         max_uses=voucher.max_uses,
+        remaining_value=_resolve_voucher_remaining_value(voucher),
         message="Voucher redeemed",
     )
 
