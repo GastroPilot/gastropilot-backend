@@ -208,6 +208,19 @@ async def create_public_order(
         status="open",
         special_requests=session_id,
     )
+
+    # Public/QR orders never carry a logged-in ``guest_id`` (this route does
+    # not resolve a guest from cookies). Therefore the client-supplied
+    # ``guest_allergens`` is the only signal we have — persist it directly.
+    # If a future variant of this route resolves a guest, the authoritative
+    # path in ``services/orders/app/api/routes/orders.py`` (lines 471–484)
+    # takes precedence and the request payload is treated as a fallback only.
+    if body.guest_allergens:
+        # Strip blanks defensively — frontends sometimes send empty entries.
+        cleaned = [a.strip() for a in body.guest_allergens if a and a.strip()]
+        if cleaned and getattr(order, "guest_id", None) is None:
+            order.guest_allergens = cleaned
+
     db.add(order)
     await db.flush()
 

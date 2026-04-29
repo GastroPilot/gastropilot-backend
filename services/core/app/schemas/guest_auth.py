@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, model_validator
 
 
 class GuestRegisterRequest(BaseModel):
@@ -35,11 +35,21 @@ class GuestProfileResponse(BaseModel):
     email: str | None = None
     phone: str | None = None
     allergen_profile: list | None = None
+    allergen_ids: list | None = None
     email_verified: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def _mirror_allergen_fields(self):
+        # Frontend-Aliase: app/ liest allergen_ids, restaurant-app/admin
+        # liest allergen_profile. Beide Felder spiegeln das DB-Feld
+        # GuestProfile.allergen_profile.
+        if self.allergen_ids is None:
+            self.allergen_ids = self.allergen_profile
+        return self
 
 
 class GuestProfileUpdateRequest(BaseModel):
@@ -47,6 +57,15 @@ class GuestProfileUpdateRequest(BaseModel):
     last_name: str | None = None
     phone: str | None = None
     allergen_profile: list | None = None
+    allergen_ids: list | None = None
+
+    @model_validator(mode="after")
+    def _consolidate_allergens(self):
+        # App schickt allergen_ids, andere Clients allergen_profile.
+        # Falls beide leer sind, bleibt None (kein Update).
+        if self.allergen_profile is None and self.allergen_ids is not None:
+            self.allergen_profile = self.allergen_ids
+        return self
 
 
 class GuestChangeEmailRequest(BaseModel):

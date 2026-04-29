@@ -25,6 +25,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/public/restaurants", tags=["restaurant-search"])
 
 
+def _normalize_item_allergens(raw) -> list[str]:
+    """Convert legacy DB shapes (Object with `contains` + DE codes) to a
+    flat list of EU-14 EN-singular codes for public clients."""
+    from app.services.allergen_service import _normalize_allergen
+
+    if raw is None:
+        return []
+    # Legacy object: {"contains": [...], "may_contain": [...], "vegan": ..., "vegetarisch": ...}
+    if isinstance(raw, dict):
+        raw = raw.get("contains") or []
+    if not isinstance(raw, list):
+        return []
+    return [_normalize_allergen(str(v)) for v in raw if v]
+
+
 def _resolve_booking_max_party_size(restaurant: Restaurant) -> int:
     """Resolve max party size with DB column as source of truth.
 
@@ -305,7 +320,7 @@ async def get_restaurant_menu(
                         "name": item.name,
                         "description": item.description,
                         "price": item.price,
-                        "allergens": item.allergens or [],
+                        "allergens": _normalize_item_allergens(item.allergens),
                         "modifiers": item.modifiers,
                     }
                     for item in items

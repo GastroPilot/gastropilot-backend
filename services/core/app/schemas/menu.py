@@ -50,7 +50,24 @@ class MenuItemBase(BaseModel):
     image_url: str | None = None
     sort_order: int = 0
 
-    @field_validator("allergens", "ingredients", "tags", mode="before")
+    @field_validator("allergens", mode="before")
+    @classmethod
+    def normalize_allergens(cls, value):
+        # Inline-Import vermeidet circular import:
+        # allergen_service -> schemas.menu (AllergenCheckResult) -> services.allergen_service.
+        from app.services.allergen_service import _normalize_allergen
+
+        if value is None:
+            return []
+        # Legacy-Object-Format: {"contains": [...], "may_contain": [...], "vegan": ..., "vegetarisch": ...}
+        # may_contain wird hier verworfen — separates Schema-Feld in Folge-Issue.
+        if isinstance(value, dict):
+            value = value.get("contains") or []
+        if not isinstance(value, list):
+            return []
+        return [_normalize_allergen(str(v)) for v in value if v]
+
+    @field_validator("ingredients", "tags", mode="before")
     @classmethod
     def normalize_nullable_lists(cls, value):
         if value is None:
@@ -91,11 +108,14 @@ class AllergenCheckRequest(BaseModel):
     guest_allergens: list[str]
 
 
+AllergenRiskLevel = Literal["safe", "warning", "danger", "unknown"]
+
+
 class AllergenCheckResult(BaseModel):
     item_id: UUID
     item_name: str
     is_safe: bool
     matched_allergens: list[str]
-    risk_level: str = "safe"  # "safe" | "warning" | "danger"
+    risk_level: AllergenRiskLevel = "safe"
     may_contain: list[str] = Field(default_factory=list)
     ingredients: list[dict]
