@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time
 from uuid import UUID
 
@@ -18,6 +19,11 @@ router = APIRouter(prefix="/vouchers", tags=["vouchers"])
 
 ALLOWED_DISCOUNT_TYPES = {"fixed", "percentage"}
 ALLOWED_SERVICE_TYPES = {"all", "breakfast", "lunch", "dinner"}
+ALLOWED_OFFER_KINDS = {"discount", "voucher"}
+ALLOWED_OFFER_SCOPES = {"public", "individual"}
+UUID_IN_TEXT_PATTERN = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
 
 
 def _normalize_service_type(value: str | None) -> str | None:
@@ -42,6 +48,8 @@ class VoucherCreate(BaseModel):
     code: str
     name: str | None = None
     description: str | None = None
+    kind: str = "discount"
+    scope: str = "public"
     type: str = "fixed"
     value: float
     applies_to: str = "all"
@@ -68,6 +76,22 @@ class VoucherCreate(BaseModel):
         normalized = value.strip().lower()
         if normalized not in ALLOWED_DISCOUNT_TYPES:
             raise ValueError("type must be 'fixed' or 'percentage'")
+        return normalized
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_OFFER_KINDS:
+            raise ValueError("kind must be 'discount' or 'voucher'")
+        return normalized
+
+    @field_validator("scope")
+    @classmethod
+    def validate_scope(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_OFFER_SCOPES:
+            raise ValueError("scope must be 'public' or 'individual'")
         return normalized
 
     @field_validator("applies_to")
@@ -99,6 +123,12 @@ class VoucherCreate(BaseModel):
 
         if self.type == "percentage" and self.value > 100:
             raise ValueError("percentage value must be <= 100")
+        if self.kind == "voucher" and self.type == "percentage":
+            raise ValueError("voucher kind only supports fixed EUR values")
+        if self.scope == "individual" and not _extract_uuid_from_text(self.code):
+            raise ValueError(
+                "individual offers require a code containing a UUID"
+            )
 
         if (self.valid_time_from is None) != (self.valid_time_until is None):
             raise ValueError("valid_time_from and valid_time_until must both be set or both be null")
@@ -113,6 +143,8 @@ class VoucherUpdate(BaseModel):
     code: str | None = None
     name: str | None = None
     description: str | None = None
+    kind: str | None = None
+    scope: str | None = None
     type: str | None = None
     value: float | None = None
     applies_to: str | None = None
@@ -143,6 +175,26 @@ class VoucherUpdate(BaseModel):
         normalized = value.strip().lower()
         if normalized not in ALLOWED_DISCOUNT_TYPES:
             raise ValueError("type must be 'fixed' or 'percentage'")
+        return normalized
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_OFFER_KINDS:
+            raise ValueError("kind must be 'discount' or 'voucher'")
+        return normalized
+
+    @field_validator("scope")
+    @classmethod
+    def validate_scope(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_OFFER_SCOPES:
+            raise ValueError("scope must be 'public' or 'individual'")
         return normalized
 
     @field_validator("applies_to")
@@ -176,6 +228,8 @@ class VoucherUpdate(BaseModel):
 
         if self.type == "percentage" and self.value is not None and self.value > 100:
             raise ValueError("percentage value must be <= 100")
+        if self.kind == "voucher" and self.type == "percentage":
+            raise ValueError("voucher kind only supports fixed EUR values")
 
         if (
             "valid_time_from" in self.model_fields_set
@@ -195,6 +249,8 @@ class VoucherResponse(BaseModel):
     code: str
     name: str | None = None
     description: str | None = None
+    kind: str = "discount"
+    scope: str = "public"
     type: str
     value: float
     applies_to: str
@@ -234,8 +290,42 @@ class VoucherValidateResponse(BaseModel):
     valid: bool
     voucher_id: UUID | None = None
     discount_type: str | None = None
+    voucher_kind: str | None = None
+    voucher_scope: str | None = None
     discount_value: float | None = None
     discount_amount: float | None = None
+    message: str | None = None
+
+
+class VoucherRedeemRequest(BaseModel):
+    code: str
+    order_value: float | None = None
+    service_type: str | None = None
+    order_timestamp: datetime | None = None
+    reservation_id: UUID | None = None
+    used_by_email: str | None = None
+
+    @field_validator("service_type")
+    @classmethod
+    def validate_service_type(cls, value: str | None) -> str | None:
+        normalized = _normalize_service_type(value)
+        if normalized is None:
+            return None
+        if normalized not in ALLOWED_SERVICE_TYPES:
+            raise ValueError("service_type must be one of: all, breakfast, lunch, dinner")
+        return normalized
+
+
+class VoucherRedeemResponse(BaseModel):
+    redeemed: bool
+    voucher_id: UUID | None = None
+    voucher_kind: str | None = None
+    voucher_scope: str | None = None
+    discount_type: str | None = None
+    discount_value: float | None = None
+    discount_amount: float | None = None
+    used_count: int | None = None
+    max_uses: int | None = None
     message: str | None = None
 
 
@@ -284,6 +374,95 @@ async def _resolve_tenant_context_for_voucher(
     )
 
 
+def _normalize_voucher_kind(kind: str | None) -> str:
+    normalized = (kind or "").strip().lower()
+    if normalized in ALLOWED_OFFER_KINDS:
+        return normalized
+    return "discount"
+
+
+def _normalize_offer_scope(scope: str | None) -> str:
+    normalized = (scope or "").strip().lower()
+    if normalized in ALLOWED_OFFER_SCOPES:
+        return normalized
+    return "public"
+
+
+def _extract_uuid_from_text(value: str | None) -> UUID | None:
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    try:
+        return UUID(raw)
+    except ValueError:
+        match = UUID_IN_TEXT_PATTERN.search(raw)
+        if not match:
+            return None
+        try:
+            return UUID(match.group(0))
+        except ValueError:
+            return None
+
+
+def _resolve_effective_max_uses(kind: str, scope: str, max_uses: int | None) -> int | None:
+    if scope == "individual" and max_uses is None:
+        return 1
+    return max_uses
+
+
+def _evaluate_voucher_for_context(
+    voucher: Voucher,
+    order_value: float | None,
+    service_type: str | None,
+    now_ref: datetime,
+) -> tuple[bool, str | None, float | None]:
+    if not voucher.is_active:
+        return False, "Voucher is inactive", None
+
+    today = now_ref.date()
+    if voucher.valid_from and today < voucher.valid_from:
+        return False, "Voucher not yet valid", None
+    if voucher.valid_until and today > voucher.valid_until:
+        return False, "Voucher expired", None
+
+    if voucher.max_uses and voucher.used_count >= voucher.max_uses:
+        return False, "Voucher usage limit reached", None
+
+    if order_value is not None and voucher.min_order_value and order_value < voucher.min_order_value:
+        return (
+            False,
+            f"Minimum order value of {voucher.min_order_value} EUR required",
+            None,
+        )
+
+    requested_service_type = _normalize_service_type(service_type)
+    if voucher.applies_to != "all":
+        if not requested_service_type:
+            return False, "Voucher requires service_type context", None
+        if requested_service_type != voucher.applies_to:
+            return False, f"Voucher only valid for {voucher.applies_to}", None
+
+    current_weekday = now_ref.weekday()
+    if voucher.valid_weekdays and current_weekday not in voucher.valid_weekdays:
+        return False, "Voucher is not valid on this weekday", None
+
+    current_time = now_ref.time().replace(tzinfo=None)
+    if voucher.valid_time_from and current_time < voucher.valid_time_from:
+        return False, "Voucher is not yet valid at this time", None
+    if voucher.valid_time_until and current_time > voucher.valid_time_until:
+        return False, "Voucher has expired for this time window", None
+
+    discount_amount = voucher.value
+    if voucher.type == "percentage" and order_value is not None:
+        discount_amount = round(order_value * voucher.value / 100, 2)
+    elif voucher.type == "fixed" and order_value is not None:
+        discount_amount = min(order_value, voucher.value)
+
+    return True, None, discount_amount
+
+
 @router.post("", response_model=VoucherResponse, status_code=status.HTTP_201_CREATED)
 async def create_voucher(
     request: Request,
@@ -297,11 +476,15 @@ async def create_voucher(
         db=db,
         requested_tenant_id=body.restaurant_id,
     )
+    normalized_kind = _normalize_voucher_kind(body.kind)
+    normalized_scope = _normalize_offer_scope(body.scope)
     voucher = Voucher(
         tenant_id=effective_tenant_id,
         code=body.code.upper().strip(),
         name=body.name,
         description=body.description,
+        kind=normalized_kind,
+        scope=normalized_scope,
         type=body.type,
         value=body.value,
         applies_to=body.applies_to,
@@ -310,7 +493,7 @@ async def create_voucher(
         valid_time_until=body.valid_time_until,
         valid_from=body.valid_from,
         valid_until=body.valid_until,
-        max_uses=body.max_uses,
+        max_uses=_resolve_effective_max_uses(normalized_kind, normalized_scope, body.max_uses),
         min_order_value=body.min_order_value,
         is_active=body.is_active,
         created_by_user_id=current_user.id,
@@ -346,7 +529,7 @@ async def list_vouchers(
     return result.scalars().all()
 
 
-@router.get("/{voucher_id}", response_model=VoucherResponse)
+@router.get("/{voucher_id:uuid}", response_model=VoucherResponse)
 async def get_voucher(
     voucher_id: UUID,
     request: Request,
@@ -374,7 +557,7 @@ async def get_voucher(
     return voucher
 
 
-@router.put("/{voucher_id}", response_model=VoucherResponse)
+@router.put("/{voucher_id:uuid}", response_model=VoucherResponse)
 async def update_voucher(
     voucher_id: UUID,
     request: Request,
@@ -401,7 +584,34 @@ async def update_voucher(
     if not voucher:
         raise HTTPException(status_code=404, detail="Voucher not found")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    payload = body.model_dump(exclude_unset=True)
+    if "kind" in payload and payload["kind"] is not None:
+        payload["kind"] = _normalize_voucher_kind(payload["kind"])
+    if "scope" in payload and payload["scope"] is not None:
+        payload["scope"] = _normalize_offer_scope(payload["scope"])
+    effective_kind = _normalize_voucher_kind(payload.get("kind") or voucher.kind)
+    effective_scope = _normalize_offer_scope(payload.get("scope") or voucher.scope)
+    effective_type = payload.get("type") or voucher.type
+    effective_code = payload.get("code") or voucher.code
+    if effective_kind == "voucher":
+        if effective_type == "percentage":
+            raise HTTPException(
+                status_code=422,
+                detail="voucher kind only supports fixed EUR values",
+            )
+    if effective_scope == "individual":
+        if "max_uses" not in payload or payload.get("max_uses") is None:
+            payload["max_uses"] = _resolve_effective_max_uses(
+                effective_kind,
+                effective_scope,
+                voucher.max_uses,
+            )
+    if effective_scope == "individual" and not _extract_uuid_from_text(effective_code):
+        raise HTTPException(
+            status_code=422,
+            detail="individual offers require a code containing a UUID",
+        )
+    for field, value in payload.items():
         if field == "code" and value is not None:
             value = value.upper().strip()
         setattr(voucher, field, value)
@@ -415,7 +625,7 @@ async def update_voucher(
     return voucher
 
 
-@router.delete("/{voucher_id}")
+@router.delete("/{voucher_id:uuid}")
 async def delete_voucher(
     voucher_id: UUID,
     request: Request,
@@ -470,66 +680,95 @@ async def validate_voucher(
     if not voucher:
         return VoucherValidateResponse(valid=False, message="Voucher not found")
 
-    if not voucher.is_active:
-        return VoucherValidateResponse(valid=False, message="Voucher is inactive")
-
     now_ref = body.order_timestamp or datetime.now()
-    today = now_ref.date()
-    if voucher.valid_from and today < voucher.valid_from:
-        return VoucherValidateResponse(valid=False, message="Voucher not yet valid")
-    if voucher.valid_until and today > voucher.valid_until:
-        return VoucherValidateResponse(valid=False, message="Voucher expired")
-
-    if voucher.max_uses and voucher.used_count >= voucher.max_uses:
-        return VoucherValidateResponse(valid=False, message="Voucher usage limit reached")
-
-    if (
-        body.order_value is not None
-        and voucher.min_order_value
-        and body.order_value < voucher.min_order_value
-    ):
-        return VoucherValidateResponse(
-            valid=False,
-            message=f"Minimum order value of {voucher.min_order_value} EUR required",
-        )
-
-    requested_service_type = _normalize_service_type(body.service_type)
-    if voucher.applies_to != "all":
-        if not requested_service_type:
-            return VoucherValidateResponse(
-                valid=False,
-                message="Voucher requires service_type context",
-            )
-        if requested_service_type != voucher.applies_to:
-            return VoucherValidateResponse(
-                valid=False,
-                message=f"Voucher only valid for {voucher.applies_to}",
-            )
-
-    current_weekday = now_ref.weekday()
-    if voucher.valid_weekdays and current_weekday not in voucher.valid_weekdays:
-        return VoucherValidateResponse(valid=False, message="Voucher is not valid on this weekday")
-
-    current_time = now_ref.time().replace(tzinfo=None)
-    if voucher.valid_time_from and current_time < voucher.valid_time_from:
-        return VoucherValidateResponse(valid=False, message="Voucher is not yet valid at this time")
-    if voucher.valid_time_until and current_time > voucher.valid_time_until:
-        return VoucherValidateResponse(valid=False, message="Voucher has expired for this time window")
-
-    discount_amount = voucher.value
-    if voucher.type == "percentage" and body.order_value is not None:
-        discount_amount = round(body.order_value * voucher.value / 100, 2)
+    is_valid, message, discount_amount = _evaluate_voucher_for_context(
+        voucher=voucher,
+        order_value=body.order_value,
+        service_type=body.service_type,
+        now_ref=now_ref,
+    )
+    if not is_valid:
+        return VoucherValidateResponse(valid=False, message=message)
 
     return VoucherValidateResponse(
         valid=True,
         voucher_id=voucher.id,
+        voucher_kind=_normalize_voucher_kind(voucher.kind),
+        voucher_scope=_normalize_offer_scope(voucher.scope),
         discount_type=voucher.type,
         discount_value=voucher.value,
         discount_amount=discount_amount,
     )
 
 
-@router.get("/{voucher_id}/usage", response_model=list[VoucherUsageResponse])
+@router.post("/redeem", response_model=VoucherRedeemResponse)
+async def redeem_voucher(
+    request: Request,
+    body: VoucherRedeemRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_or_above),
+):
+    effective_tenant_id = await _resolve_tenant_context_for_voucher(
+        request=request,
+        current_user=current_user,
+        db=db,
+        requested_tenant_id=None,
+    )
+
+    code = body.code.upper().strip()
+    result = await db.execute(
+        select(Voucher)
+        .where(
+            and_(
+                Voucher.tenant_id == effective_tenant_id,
+                Voucher.code == code,
+            )
+        )
+        .with_for_update()
+    )
+    voucher = result.scalar_one_or_none()
+    if not voucher:
+        return VoucherRedeemResponse(redeemed=False, message="Voucher not found")
+
+    now_ref = body.order_timestamp or datetime.now()
+    is_valid, message, discount_amount = _evaluate_voucher_for_context(
+        voucher=voucher,
+        order_value=body.order_value,
+        service_type=body.service_type,
+        now_ref=now_ref,
+    )
+    if not is_valid or discount_amount is None:
+        return VoucherRedeemResponse(redeemed=False, message=message or "Voucher is not redeemable")
+
+    voucher.used_count += 1
+    if voucher.max_uses and voucher.used_count >= voucher.max_uses:
+        voucher.is_active = False
+    usage = VoucherUsage(
+        voucher_id=voucher.id,
+        reservation_id=body.reservation_id,
+        tenant_id=effective_tenant_id,
+        used_by_email=body.used_by_email or current_user.email,
+        discount_amount=discount_amount,
+    )
+    db.add(usage)
+    await db.commit()
+    await db.refresh(voucher)
+
+    return VoucherRedeemResponse(
+        redeemed=True,
+        voucher_id=voucher.id,
+        voucher_kind=_normalize_voucher_kind(voucher.kind),
+        voucher_scope=_normalize_offer_scope(voucher.scope),
+        discount_type=voucher.type,
+        discount_value=voucher.value,
+        discount_amount=discount_amount,
+        used_count=voucher.used_count,
+        max_uses=voucher.max_uses,
+        message="Voucher redeemed",
+    )
+
+
+@router.get("/{voucher_id:uuid}/usage", response_model=list[VoucherUsageResponse])
 async def get_voucher_usage(
     voucher_id: UUID,
     request: Request,

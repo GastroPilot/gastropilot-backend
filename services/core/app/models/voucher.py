@@ -35,6 +35,8 @@ class Voucher(Base):
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str | None] = mapped_column(String(240), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="discount")
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, default="public")
     applies_to: Mapped[str] = mapped_column(String(32), nullable=False, default="all")
     valid_weekdays: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     valid_time_from: Mapped[Time | None] = mapped_column(Time, nullable=True)
